@@ -1,0 +1,77 @@
+New Application: "Purchasing Management"
+
+Overview:
+App for managing internal orders, to trace from the Asking Quote up to validating the invoice. Including the workflow between to be able to trace all quote until the end.
+
+Features and wishes:
+
+Technical Requirements:
+- User Management with local users, and LDAP Users. LDAPS to Active Directory, Adding Users, and Groups (also nested Groups)
+- LDAPS must be able to import the CA and PKI Issuer Certificates to validate the active directory SSL Trust, with an Option to not verify the certificate on LDAPS Connection
+- try Kerberos SSO first, fall back to an LDAP login form
+- User Auditing, who logged in when, and who did which action. Audits must be cached and only visible to admins
+- Mail Server connection to be able to send notifications, and attachments from the workflows. In the Settings Area, the configuration for this mail server must be added.
+- Settings Page for editing preferences, like Users, LDAPS Connection, Lists, Departments, all informations eligible to have a dropdown list.
+- This App will be deployed as docker container, so integrate Docker Files for compose build
+- Add an Option in the Admin area to change the logo in the upper left corner of the web application.
+- Application Name is "Purchasing Management"
+
+View and Functions:
+- First left sidebar with search function to show the departments including "All Departments" (Selected by default) (List edit for Departments in Seetings to be able to manage departments, editing Names, Removing and adding) to be able to filter Workflows on the selected Department, giving each department better visibility. (In Usermanagement there must be the possibility to assign Groups and/or Users to Departments, to limit their visibility on their own department, they are assigned. Few groups and/or Users will have more than one department they are assigned to, as for financial users and/or groups to have view on every department an their ordering workflows
+- Adopt all sidebars to the width that every name from the Department List is shown completely, add the possibility to adjust the width by click and pull, save the settings on each user, so the width will be always the same size when the user reconnects.
+- Second Left sidebar right next to the department list, should show all the workflows from the selected department. By click on the workflow, show the details in main window. Add the informations in this sidebar with Quote Number, Purchase Order Number, Invoice Number, and actual Step (If existing) Give possibility to filter by actual Step to show only Workflows who are in current step.
+- Main Window should have the following: On the top, show the complete Workflow, and highlight (green) the completed steps. All Steps will have seperate forms, where the details in this step can be added, i define later in this text the informations needed for every step. By selecting the workflow from the second left side bar, the form for the actual step (Next after completed step) is shown by default, users can select completed steps to show their details.
+Add a global Search Function, to be able to search for all available informations an all forms in the Top Header Menu.
+
+Steps are the following:
+New - Waiting for Quote - Validating quote and transfer to Financial - Validating by Financial - *Here it will split to "1. GT Invest" "2. K Order" - Ordering - Delivery - Invoice - Validating Invoice - Payment
+
+Details about the split workflow. Creting a new Order Workflow, then waiting for the quote. Gives the possibility to see all ordering processes, and to send reminders if left unresponded. When the quote part is complete, it has to be validated by a specific group of users for that department, and the quote will be on next step in the financial department to get validated and selected which flow it will take. An Order can be ordered directly after validating by "K Order" or it has to be transfered to the Investment Meeting. This is done by the financial by validating the offer and selecting the way to go. after the purchase order is beeing send, the delivery will happen, and a specific group of people should validate the invoice, and financials will process the payment.
+
+Details about the forms:
+Global
+On each form for each step, you have the possibility to save the actual form, therefore the mandatory fields are not required, and a button to complete the step, on this all required fileds must be filled out.
+
+Step New:
+Date and Internal Number are generated automaticaly by opening a new workflow.
+Fields for Subject and Description.
+Field asking for the price with VAT
+Filed with Quote Number
+When Price with VAT is under a limit of X Euro, then show fields to add the Resellers Company Name, the contact Name and Emailadress (Contacts and Reseller Companys can be edited in Settings aera) and the quote by importing documents. More than one document can be imported on each quote.
+When the price is above this limit, change the form to ask for 3 different quotes of 3 different resellers you cannot be completed this step without the import of these 3 quotes when the price is higher than the limit. By quote ask for same details (Price with VAT, Resellers Company Name, the contact Name and Emailadress (Contacts and Reseller Companys can be edited in Settings aera) and the quote by importing documents) you can have to possibility to import more than one document. Give the possibility with Checkbox to "Ignore" one or more of the 3 quotes. By checking the checkbox a Note has to be added with an explanation why you ignore the quotes.
+
+Step Validating quote and transfer to Financial:
+Show the same form as for new, show button "Complete" as "Validating" for this step. And when there have been 3 quotes because the price is over the limit, give a dropdown list to select the winning quote. Usually it is the lowest price.
+
+Step Validating by Financial: 
+Show the details and the selected offer on the previous step. Mention as well the non selected quotes of the 3 quote model.
+ask for the ordering process: "K Order" proceed to step Ordering or "GT Invest" proceed to step Invest
+
+Step GT Invest:
+Ask for date of GT Invest Meeting (The dates can be added in the settings area, so you can select the meetings in the forms, Show them in the Forms with the month in text with the date added to the list in settings area (Janury 31/01/2026)
+The Result after the meeting (Listbox also managed in settings) "Approved" or "Refused" or "Postponed"
+Save can save the form, Complete will proceed to next step, but only if Approved is selected. Otherwise when "Refused" the workflow is closed. Ask for a reason when "Refused". Selecting Next Meeting, gives a dropdown for next meeting.
+
+Step Ordering:
+Show the accepted quote, ask date for Purche Order and a PO Number, attach the purchase order from our finance software. Give possibility to send the quote with the purchase order as attachments by mail to the contact, if there is an email adress from the contact. And Complete the step by clicking on "Complete" Button
+
+Step Delivery:
+Add the possibility to import the delivery note and mark the purchase as delivered by clicking on "Complete"
+
+Step Invoice:
+Add Invoice Number
+Add Import of scanned or saved invoice
+
+Step Validating Invoice:
+Show Quote, Purchase Order, Delivery, and Invoice Details. With the corresponding imported documents.
+Give the Option to Validate the invoice or to refuse the invoice. For Refusing ask for a reason and suspend the validation process with status "Waiting For".
+When possible, give the option to sign the current step, by using a User Certificate from the local User Cert Store an o Windows PC. Give the possibility to enable or disable this option in the settings menu.
+
+
+For Top Header Menu, add an Option to prepare GT Invest for People having access to all departments. Showing a list of all actual Workflows waiting in the Step GT Invest.
+In this view add an Option to Export as PDF all Data from these Workflows, including Department, Subject, Description, attached documents for the selected quote if 3 model quote regarding the price above Limit X. Create one PDF with first page the summary list of all Workflows, with Department, Subject, Description and Price with VAT, then add in the same order all corresponding attachments, merged into one complete PDF to save or to send by Mail to senders defined in Settingspage for GT Invest Members. In the Settings page, you can choose the user or groups or add manually mail addresses for this notification Group.
+
+For Top Header Menu, add as well an option to show all Workflows by their actual Step.
+
+For all Thumbnails showing for attached documents, by mouse hovering, show them in Original Size on a side image.
+
