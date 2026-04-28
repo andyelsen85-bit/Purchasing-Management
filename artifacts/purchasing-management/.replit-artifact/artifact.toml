@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Purchasing Management"
+version = "1.0.0"
+id = "artifacts/purchasing-management"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23162
+
+[services.development]
+run = "pnpm --filter @workspace/purchasing-management run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/purchasing-management", "run", "build" ]
+publicDir = "artifacts/purchasing-management/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23162"
+BASE_PATH = "/"
