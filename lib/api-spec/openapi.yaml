@@ -1293,6 +1293,12 @@ components:
         caCertSet: { type: boolean }
         kerberosEnabled: { type: boolean }
         servicePrincipalName: { type: ["string", "null"] }
+        groupRoleMap:
+          type: object
+          additionalProperties: { type: string }
+        groupDepartmentMap:
+          type: object
+          additionalProperties: { type: string }
       required: [enabled, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
 
     SmtpSettings:
@@ -1355,6 +1361,12 @@ components:
             caCert: { type: ["string", "null"] }
             kerberosEnabled: { type: ["boolean", "null"] }
             servicePrincipalName: { type: ["string", "null"] }
+            groupRoleMap:
+              type: object
+              additionalProperties: { type: string }
+            groupDepartmentMap:
+              type: object
+              additionalProperties: { type: string }
         smtp:
           type: object
           properties:

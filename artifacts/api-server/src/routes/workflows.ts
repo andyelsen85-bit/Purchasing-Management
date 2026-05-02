@@ -358,6 +358,7 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
       recipients,
       `${wf.reference}: advanced to ${next}`,
       `Workflow ${wf.reference} (${wf.title}) advanced from ${wf.currentStep} to ${next}.\n\nOpen the workflow in Purchasing Management to review.`,
+      { workflowId: wf.id, step: next },
     );
   }
 

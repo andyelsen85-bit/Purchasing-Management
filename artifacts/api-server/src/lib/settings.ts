@@ -12,6 +12,20 @@ export interface LdapConfigStored {
   caCert?: string | null;
   kerberosEnabled?: boolean;
   servicePrincipalName?: string | null;
+  /**
+   * Optional AD group → app role mapping. Keys are case-insensitive
+   * substrings matched against each `memberOf` DN (or the leftmost CN
+   * component); values are app role names (`ADMIN`, `FINANCIAL_ALL`, ...).
+   * Mapping is applied on every LDAP / Kerberos login so AD remains the
+   * source of truth and removing a user from a group revokes the role.
+   */
+  groupRoleMap?: Record<string, string> | null;
+  /**
+   * Optional AD group → department code mapping. Same matching rules as
+   * `groupRoleMap`; the matched department codes are looked up in the
+   * departments table and become the user's department memberships.
+   */
+  groupDepartmentMap?: Record<string, string> | null;
 }
 
 export interface SmtpConfigStored {
@@ -55,6 +69,8 @@ const DEFAULT: AppSettings = {
     caCert: null,
     kerberosEnabled: false,
     servicePrincipalName: null,
+    groupRoleMap: {},
+    groupDepartmentMap: {},
   },
   smtp: {
     enabled: false,
@@ -96,6 +112,8 @@ export function toPublicSettings(s: AppSettings) {
       caCertSet: !!s.ldap?.caCert,
       kerberosEnabled: !!s.ldap?.kerberosEnabled,
       servicePrincipalName: s.ldap?.servicePrincipalName ?? null,
+      groupRoleMap: s.ldap?.groupRoleMap ?? {},
+      groupDepartmentMap: s.ldap?.groupDepartmentMap ?? {},
     },
     smtp: {
       enabled: !!s.smtp?.enabled,

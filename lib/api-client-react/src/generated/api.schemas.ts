@@ -529,6 +529,10 @@ export interface SessionResponse {
   user?: SessionUser | null;
 }
 
+export type LdapsSettingsGroupRoleMap = { [key: string]: string };
+
+export type LdapsSettingsGroupDepartmentMap = { [key: string]: string };
+
 export interface LdapsSettings {
   enabled: boolean;
   /** @nullable */
@@ -545,6 +549,8 @@ export interface LdapsSettings {
   kerberosEnabled: boolean;
   /** @nullable */
   servicePrincipalName?: string | null;
+  groupRoleMap?: LdapsSettingsGroupRoleMap;
+  groupDepartmentMap?: LdapsSettingsGroupDepartmentMap;
 }
 
 export interface SmtpSettings {
@@ -575,6 +581,12 @@ export interface AppSettings {
   smtp: SmtpSettings;
 }
 
+export type UpdateSettingsInputLdapGroupRoleMap = { [key: string]: string };
+
+export type UpdateSettingsInputLdapGroupDepartmentMap = {
+  [key: string]: string;
+};
+
 export type UpdateSettingsInputLdap = {
   /** @nullable */
   enabled?: boolean | null;
@@ -596,6 +608,8 @@ export type UpdateSettingsInputLdap = {
   kerberosEnabled?: boolean | null;
   /** @nullable */
   servicePrincipalName?: string | null;
+  groupRoleMap?: UpdateSettingsInputLdapGroupRoleMap;
+  groupDepartmentMap?: UpdateSettingsInputLdapGroupDepartmentMap;
 };
 
 export type UpdateSettingsInputSmtp = {

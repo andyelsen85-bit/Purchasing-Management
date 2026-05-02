@@ -145,6 +145,7 @@ router.get("/gt-invest/export", requireAuth, async (req, res): Promise<void> => 
       `GT Invest pack — ${nextDate ? String(nextDate.date) : "next meeting"}`,
       `Attached: GT Invest pack with ${wfs.length} workflows.`,
     );
+    // (No NotificationContext — this is an admin export, not a workflow event.)
   }
 
   res.setHeader("Content-Type", "application/pdf");

@@ -4,10 +4,16 @@ import { db, usersTable, userDepartmentsTable } from "@workspace/db";
 import { LoginBody } from "@workspace/api-zod";
 import { verifyPassword } from "../lib/auth";
 import type { Role, SessionUser } from "../lib/auth";
-import { ldapAuthenticate } from "../lib/ldap";
+import { ldapAuthenticate, lookupLdapGroups } from "../lib/ldap";
 import { getSettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { requireAuth } from "../middlewares/auth";
+import {
+  mapGroupsToRoles,
+  mapGroupsToDepartmentIds,
+  syncUserDepartments,
+  hasMapping,
+} from "../lib/groupMapping";
 
 const router: IRouter = Router();
 
@@ -50,7 +56,22 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       res.status(401).json({ error: result.error ?? "Authentication failed" });
       return;
     }
-    // Find or create user
+    // Re-derive roles + departments from AD groups every sign-in so the
+    // directory remains authoritative — removing a user from a mapped AD
+    // group must revoke the corresponding role/department. The mapping is
+    // only authoritative when the operator has actually configured it; if
+    // groupRoleMap/groupDepartmentMap are empty we fall back to existing
+    // values (or DEPT_USER for brand-new users) and leave department
+    // memberships alone so manual assignments survive.
+    const groups = result.groups ?? [];
+    const roleMap = settings.ldap?.groupRoleMap;
+    const deptMap = settings.ldap?.groupDepartmentMap;
+    const useRoleMap = hasMapping(roleMap);
+    const useDeptMap = hasMapping(deptMap);
+    const derivedRoles = useRoleMap ? mapGroupsToRoles(groups, roleMap) : null;
+    const derivedDeptIds = useDeptMap
+      ? await mapGroupsToDepartmentIds(groups, deptMap)
+      : null;
     const [existing] = await db
       .select()
       .from(usersTable)
@@ -62,8 +83,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
           source: "LDAP",
           displayName: result.displayName ?? existing.displayName,
           email: result.email ?? existing.email,
+          ...(derivedRoles ? { roles: derivedRoles } : {}),
         })
         .where(eq(usersTable.id, existing.id));
+      if (derivedDeptIds !== null)
+        await syncUserDepartments(existing.id, derivedDeptIds);
       user = await buildSessionUser(existing.id);
     } else {
       const [created] = await db
@@ -73,9 +97,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
           displayName: result.displayName ?? username,
           email: result.email ?? null,
           source: "LDAP",
-          roles: ["DEPT_USER"],
+          roles: derivedRoles ?? ["DEPT_USER"],
         })
         .returning();
+      if (created && derivedDeptIds !== null)
+        await syncUserDepartments(created.id, derivedDeptIds);
       user = created ? await buildSessionUser(created.id) : null;
     }
   } else {
@@ -185,6 +211,30 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
       .select()
       .from(usersTable)
       .where(eq(usersTable.username, username));
+    // Apply AD group → role/department mapping. Kerberos doesn't expose
+    // group memberships, so we have to do a follow-up bind-only LDAP
+    // search. If LDAP isn't configured at all (no host/bind creds) we
+    // can't apply mapping and we leave existing roles/departments alone;
+    // when LDAP *is* configured the mapping becomes authoritative just
+    // like the LDAP login path — empty groups means "user is in nothing
+    // mapped" and we revoke accordingly.
+    const ldapCfg = settings.ldap ?? {};
+    const ldapAvailable =
+      !!ldapCfg.host && !!ldapCfg.bindDn && !!ldapCfg.bindPassword;
+    const kerbRoleMap = ldapCfg.groupRoleMap;
+    const kerbDeptMap = ldapCfg.groupDepartmentMap;
+    const useKerbRoleMap = ldapAvailable && hasMapping(kerbRoleMap);
+    const useKerbDeptMap = ldapAvailable && hasMapping(kerbDeptMap);
+    const kerbGroups =
+      useKerbRoleMap || useKerbDeptMap
+        ? await lookupLdapGroups(ldapCfg, username)
+        : [];
+    const kerbRoles = useKerbRoleMap
+      ? mapGroupsToRoles(kerbGroups, kerbRoleMap)
+      : null;
+    const kerbDeptIds = useKerbDeptMap
+      ? await mapGroupsToDepartmentIds(kerbGroups, kerbDeptMap)
+      : null;
     let userRow = existing;
     if (!userRow) {
       const [created] = await db
@@ -193,15 +243,21 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
           username,
           displayName: username,
           source: "KERBEROS",
-          roles: ["DEPT_USER"],
+          roles: kerbRoles ?? ["DEPT_USER"],
         })
         .returning();
       userRow = created;
-    } else if (existing.source !== "KERBEROS") {
-      await db
-        .update(usersTable)
-        .set({ source: "KERBEROS" })
-        .where(eq(usersTable.id, existing.id));
+      if (created && kerbDeptIds !== null)
+        await syncUserDepartments(created.id, kerbDeptIds);
+    } else {
+      const update: Record<string, unknown> = {};
+      if (existing.source !== "KERBEROS") update.source = "KERBEROS";
+      if (kerbRoles !== null) update.roles = kerbRoles;
+      if (Object.keys(update).length > 0) {
+        await db.update(usersTable).set(update).where(eq(usersTable.id, existing.id));
+      }
+      if (kerbDeptIds !== null)
+        await syncUserDepartments(existing.id, kerbDeptIds);
     }
     if (!userRow) {
       res.status(500).json({ error: "Failed to provision user" });

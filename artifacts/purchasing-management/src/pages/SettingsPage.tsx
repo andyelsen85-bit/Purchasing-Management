@@ -13,7 +13,19 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { useGetSettings, useUpdateSettings } from "@/lib/api";
+import {
+  useGetSettings,
+  useUpdateSettings,
+  useListDepartments,
+  useCreateDepartment,
+  useDeleteDepartment,
+  useListGtInvestDates,
+  useCreateGtInvestDate,
+  useDeleteGtInvestDate,
+  useListGtInvestResults,
+  useCreateGtInvestResult,
+  useDeleteGtInvestResult,
+} from "@/lib/api";
 
 export function SettingsPage() {
   return (
@@ -31,6 +43,9 @@ export function SettingsPage() {
           <TabsTrigger value="app" data-testid="tab-app">
             Application
           </TabsTrigger>
+          <TabsTrigger value="departments" data-testid="tab-departments">
+            Departments
+          </TabsTrigger>
           <TabsTrigger value="ldap" data-testid="tab-ldap">
             LDAP
           </TabsTrigger>
@@ -44,14 +59,24 @@ export function SettingsPage() {
         <TabsContent value="app">
           <AppSettingsPanel />
         </TabsContent>
+        <TabsContent value="departments">
+          <DepartmentsPanel />
+        </TabsContent>
         <TabsContent value="ldap">
-          <LdapSettingsPanel />
+          <div className="space-y-4">
+            <LdapSettingsPanel />
+            <GroupMappingPanel />
+          </div>
         </TabsContent>
         <TabsContent value="smtp">
           <SmtpSettingsPanel />
         </TabsContent>
         <TabsContent value="gt">
-          <GtRecipientsPanel />
+          <div className="space-y-4">
+            <GtRecipientsPanel />
+            <GtDatesPanel />
+            <GtResultsPanel />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
@@ -491,6 +516,404 @@ function SmtpSettingsPanel() {
             <Save className="mr-2 h-4 w-4" /> Save
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DepartmentsPanel() {
+  const qc = useQueryClient();
+  const { data: depts } = useListDepartments();
+  const create = useCreateDepartment({
+    mutation: { onSuccess: () => qc.invalidateQueries() },
+  });
+  const del = useDeleteDepartment({
+    mutation: { onSuccess: () => qc.invalidateQueries() },
+  });
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Departments</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr_auto]">
+          <Input
+            placeholder="Code (e.g. IT)"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            data-testid="input-dept-code"
+          />
+          <Input
+            placeholder="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            data-testid="input-dept-name"
+          />
+          <Button
+            onClick={() => {
+              if (!code.trim() || !name.trim()) return;
+              create.mutate(
+                { data: { code: code.trim(), name: name.trim() } },
+                {
+                  onSuccess: () => {
+                    setCode("");
+                    setName("");
+                  },
+                },
+              );
+            }}
+            disabled={create.isPending}
+            data-testid="button-add-dept"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <Separator />
+        {(depts ?? []).length === 0 ? (
+          <p className="py-3 text-sm text-muted-foreground">
+            No departments yet.
+          </p>
+        ) : (
+          <div className="divide-y">
+            {(depts ?? []).map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center gap-3 py-2"
+                data-testid={`dept-row-${d.id}`}
+              >
+                <code className="rounded bg-muted px-2 py-0.5 text-xs">
+                  {d.code}
+                </code>
+                <span className="flex-1 text-sm">{d.name}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => del.mutate({ id: d.id })}
+                  disabled={del.isPending}
+                  data-testid={`button-delete-dept-${d.id}`}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function GroupMappingPanel() {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const [roleMap, setRoleMap] = useState<Record<string, string>>({});
+  const [deptMap, setDeptMap] = useState<Record<string, string>>({});
+  const [rk, setRk] = useState("");
+  const [rv, setRv] = useState("");
+  const [dk, setDk] = useState("");
+  const [dv, setDv] = useState("");
+
+  useEffect(() => {
+    if (!s) return;
+    setRoleMap((s.ldap.groupRoleMap ?? {}) as Record<string, string>);
+    setDeptMap((s.ldap.groupDepartmentMap ?? {}) as Record<string, string>);
+  }, [s]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>AD group mapping</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Map LDAP / Kerberos group names (substring or CN) to app roles
+          and department codes. Applied on every sign-in.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Group → Role</Label>
+          <div className="grid grid-cols-[1fr_180px_auto] gap-2">
+            <Input
+              placeholder="Group key (e.g. PurchasingAdmins)"
+              value={rk}
+              onChange={(e) => setRk(e.target.value)}
+              data-testid="input-grm-key"
+            />
+            <Input
+              placeholder="ADMIN | FINANCIAL_ALL | …"
+              value={rv}
+              onChange={(e) => setRv(e.target.value)}
+              data-testid="input-grm-val"
+            />
+            <Button
+              onClick={() => {
+                if (!rk.trim() || !rv.trim()) return;
+                setRoleMap((m) => ({ ...m, [rk.trim()]: rv.trim() }));
+                setRk("");
+                setRv("");
+              }}
+              data-testid="button-grm-add"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="space-y-1">
+            {Object.entries(roleMap).map(([k, v]) => (
+              <div
+                key={k}
+                className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
+              >
+                <span>
+                  <code className="text-xs">{k}</code> → <strong>{v}</strong>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    setRoleMap((m) => {
+                      const n = { ...m };
+                      delete n[k];
+                      return n;
+                    })
+                  }
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <Separator />
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Group → Department code</Label>
+          <div className="grid grid-cols-[1fr_180px_auto] gap-2">
+            <Input
+              placeholder="Group key"
+              value={dk}
+              onChange={(e) => setDk(e.target.value)}
+              data-testid="input-gdm-key"
+            />
+            <Input
+              placeholder="Department code"
+              value={dv}
+              onChange={(e) => setDv(e.target.value)}
+              data-testid="input-gdm-val"
+            />
+            <Button
+              onClick={() => {
+                if (!dk.trim() || !dv.trim()) return;
+                setDeptMap((m) => ({ ...m, [dk.trim()]: dv.trim() }));
+                setDk("");
+                setDv("");
+              }}
+              data-testid="button-gdm-add"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="space-y-1">
+            {Object.entries(deptMap).map(([k, v]) => (
+              <div
+                key={k}
+                className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
+              >
+                <span>
+                  <code className="text-xs">{k}</code> → <strong>{v}</strong>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    setDeptMap((m) => {
+                      const n = { ...m };
+                      delete n[k];
+                      return n;
+                    })
+                  }
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() =>
+              save.mutate({
+                data: {
+                  ldap: {
+                    groupRoleMap: roleMap,
+                    groupDepartmentMap: deptMap,
+                  },
+                },
+              })
+            }
+            disabled={save.isPending}
+            data-testid="button-save-mapping"
+          >
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Save className="mr-2 h-4 w-4" /> Save mapping
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GtDatesPanel() {
+  const qc = useQueryClient();
+  const { data: dates } = useListGtInvestDates();
+  const create = useCreateGtInvestDate({
+    mutation: { onSuccess: () => qc.invalidateQueries() },
+  });
+  const del = useDeleteGtInvestDate({
+    mutation: { onSuccess: () => qc.invalidateQueries() },
+  });
+  const [date, setDate] = useState("");
+  const [label, setLabel] = useState("");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>GT Invest meeting dates</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-[180px_1fr_auto] gap-2">
+          <Input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            data-testid="input-gt-date"
+          />
+          <Input
+            placeholder="Label (optional)"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            data-testid="input-gt-date-label"
+          />
+          <Button
+            onClick={() => {
+              if (!date) return;
+              create.mutate(
+                { data: { date, label: label || undefined } },
+                {
+                  onSuccess: () => {
+                    setDate("");
+                    setLabel("");
+                  },
+                },
+              );
+            }}
+            disabled={create.isPending}
+            data-testid="button-add-gt-date"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <Separator />
+        {(dates ?? []).length === 0 ? (
+          <p className="py-3 text-sm text-muted-foreground">
+            No meeting dates configured.
+          </p>
+        ) : (
+          <div className="divide-y">
+            {(dates ?? []).map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center gap-3 py-2 text-sm"
+                data-testid={`gt-date-row-${d.id}`}
+              >
+                <strong>{String(d.date)}</strong>
+                <span className="flex-1 text-muted-foreground">
+                  {d.label ?? ""}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => del.mutate({ id: d.id })}
+                  disabled={del.isPending}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function GtResultsPanel() {
+  const qc = useQueryClient();
+  const { data: results } = useListGtInvestResults();
+  const create = useCreateGtInvestResult({
+    mutation: { onSuccess: () => qc.invalidateQueries() },
+  });
+  const del = useDeleteGtInvestResult({
+    mutation: { onSuccess: () => qc.invalidateQueries() },
+  });
+  const [label, setLabel] = useState("");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>GT Invest result options</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Outcomes the GT Invest committee can record on a workflow.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <Input
+            placeholder="Label (e.g. Approved)"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            data-testid="input-gt-result-label"
+          />
+          <Button
+            onClick={() => {
+              if (!label.trim()) return;
+              create.mutate(
+                { data: { label: label.trim() } },
+                { onSuccess: () => setLabel("") },
+              );
+            }}
+            disabled={create.isPending}
+            data-testid="button-add-gt-result"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <Separator />
+        {(results ?? []).length === 0 ? (
+          <p className="py-3 text-sm text-muted-foreground">
+            No result options configured.
+          </p>
+        ) : (
+          <div className="divide-y">
+            {(results ?? []).map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-3 py-2 text-sm"
+                data-testid={`gt-result-row-${r.id}`}
+              >
+                <span className="flex-1">{r.label}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => del.mutate({ id: r.id })}
+                  disabled={del.isPending}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

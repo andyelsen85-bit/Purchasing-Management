@@ -215,3 +215,64 @@ export async function ldapAuthenticate(
     }
   });
 }
+
+/**
+ * Look up an LDAP user's groups *without* authenticating them. Used after
+ * a successful Kerberos handshake so we can apply the same AD group →
+ * role/department mapping that LDAP sign-in uses. Requires bind
+ * credentials (Kerberos doesn't expose the user's password). Returns an
+ * empty list if LDAP isn't configured or the lookup fails — callers must
+ * treat that as "no mapping changes".
+ */
+export async function lookupLdapGroups(
+  cfg: LdapConfig,
+  username: string,
+): Promise<string[]> {
+  if (!cfg.enabled || !cfg.host || !cfg.baseDn || !cfg.bindDn || !cfg.bindPassword) {
+    return [];
+  }
+  const port = cfg.port ?? 636;
+  const url = `ldaps://${cfg.host}:${port}`;
+  const tlsOptions: Record<string, unknown> = {};
+  if (cfg.skipVerify) tlsOptions.rejectUnauthorized = false;
+  if (cfg.caCert) tlsOptions.ca = [cfg.caCert];
+
+  return new Promise<string[]>((resolve) => {
+    const client = ldap.createClient({ url, tlsOptions });
+    client.on("error", () => resolve([]));
+    const finish = (v: string[]) => {
+      try {
+        client.unbind();
+      } catch {
+        /* ignore */
+      }
+      resolve(v);
+    };
+    const safe = username.replace(/[\\*()\u0000]/g, (c) =>
+      ({ "\\": "\\5c", "*": "\\2a", "(": "\\28", ")": "\\29", "\u0000": "\\00" }[c] ?? c),
+    );
+    const filter = (cfg.userFilter || "(sAMAccountName={username})").replace(
+      /{username}/g,
+      safe,
+    );
+    client.bind(cfg.bindDn!, cfg.bindPassword!, (err) => {
+      if (err) return finish([]);
+      const groups: string[] = [];
+      client.search(
+        cfg.baseDn!,
+        { filter, scope: "sub", attributes: ["memberOf", "dn"] },
+        (sErr, search) => {
+          if (sErr) return finish([]);
+          search.on("searchEntry", (entry) => {
+            for (const a of entry.pojo.attributes ?? []) {
+              if (a.type === "memberOf")
+                for (const v of a.values ?? []) groups.push(String(v));
+            }
+          });
+          search.on("error", () => finish(groups));
+          search.on("end", () => finish(groups));
+        },
+      );
+    });
+  });
+}

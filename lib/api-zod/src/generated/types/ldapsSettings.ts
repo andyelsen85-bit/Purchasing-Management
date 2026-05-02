@@ -5,6 +5,8 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { LdapsSettingsGroupDepartmentMap } from "./ldapsSettingsGroupDepartmentMap";
+import type { LdapsSettingsGroupRoleMap } from "./ldapsSettingsGroupRoleMap";
 
 export interface LdapsSettings {
   enabled: boolean;
@@ -22,4 +24,6 @@ export interface LdapsSettings {
   kerberosEnabled: boolean;
   /** @nullable */
   servicePrincipalName?: string | null;
+  groupRoleMap?: LdapsSettingsGroupRoleMap;
+  groupDepartmentMap?: LdapsSettingsGroupDepartmentMap;
 }

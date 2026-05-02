@@ -1027,13 +1027,44 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
           </p>
         ) : (
           <div className="divide-y">
-            {(docs ?? []).map((d) => (
+            {(docs ?? []).map((d) => {
+              const isImage = d.mimeType?.startsWith("image/");
+              const thumbUrl = `/api/documents/${d.id}/download`;
+              return (
               <div
                 key={d.id}
                 className="flex items-center gap-3 py-2"
                 data-testid={`doc-row-${d.id}`}
               >
-                <FileText className="h-5 w-5 text-muted-foreground" />
+                {isImage ? (
+                  // Hover-to-preview: small thumbnail expands to a 320px
+                  // floating preview on hover. Pure CSS with `group` so we
+                  // don't need extra state and the preview pinned to the
+                  // thumbnail naturally follows scroll.
+                  <a
+                    href={thumbUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group relative block h-10 w-10 shrink-0 overflow-hidden rounded border bg-muted"
+                    data-testid={`doc-thumb-${d.id}`}
+                  >
+                    <img
+                      src={thumbUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                    <span className="pointer-events-none invisible absolute left-12 top-0 z-30 w-80 rounded border bg-background p-1 opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100">
+                      <img
+                        src={thumbUrl}
+                        alt=""
+                        className="block w-full rounded object-contain"
+                      />
+                    </span>
+                  </a>
+                ) : (
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">
                     {d.filename}
@@ -1045,7 +1076,7 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
                 </div>
                 <Button asChild variant="ghost" size="icon">
                   <a
-                    href={`/api/documents/${d.id}/download`}
+                    href={thumbUrl}
                     target="_blank"
                     rel="noreferrer"
                     data-testid={`button-download-${d.id}`}
@@ -1070,7 +1101,8 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>

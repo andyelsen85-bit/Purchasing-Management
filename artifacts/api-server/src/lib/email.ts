@@ -4,6 +4,7 @@ import {
   db,
   usersTable,
   userDepartmentsTable,
+  notificationsTable,
   type DbWorkflow,
 } from "@workspace/db";
 import { logger } from "./logger";
@@ -77,12 +78,45 @@ export interface SmtpConfig {
   from?: string | null;
 }
 
+export interface NotificationContext {
+  workflowId: number;
+  step: string;
+}
+
 export async function sendNotification(
   cfg: SmtpConfig,
   to: string | string[],
   subject: string,
   text: string,
+  ctx?: NotificationContext,
 ): Promise<boolean> {
+  const recipients = Array.isArray(to) ? to : [to];
+
+  // Always persist the fan-out attempt — the /notifications feed and the
+  // audit story should reflect what we tried to send, not just successes.
+  // Skips if no workflow context (e.g. ad-hoc admin email).
+  let notifId: number | null = null;
+  if (ctx) {
+    try {
+      const [row] = await db
+        .insert(notificationsTable)
+        .values({
+          workflowId: ctx.workflowId,
+          step: ctx.step,
+          channel: "email",
+          recipients,
+          subject,
+          body: text,
+          status: cfg.enabled && cfg.host ? "PENDING" : "FAILED",
+          error: cfg.enabled && cfg.host ? null : "SMTP disabled",
+        })
+        .returning({ id: notificationsTable.id });
+      notifId = row?.id ?? null;
+    } catch (err) {
+      logger.warn({ err: String(err) }, "Failed to persist notification row");
+    }
+  }
+
   if (!cfg.enabled || !cfg.host) {
     logger.debug({ subject, to }, "SMTP disabled — notification skipped");
     return false;
@@ -99,13 +133,25 @@ export async function sendNotification(
     });
     await transport.sendMail({
       from: cfg.from ?? cfg.username ?? "noreply@example.com",
-      to: Array.isArray(to) ? to.join(",") : to,
+      to: recipients.join(","),
       subject,
       text,
     });
+    if (notifId != null) {
+      await db
+        .update(notificationsTable)
+        .set({ status: "SENT", sentAt: new Date() })
+        .where(eq(notificationsTable.id, notifId));
+    }
     return true;
   } catch (err) {
     logger.warn({ err: String(err) }, "Failed to send notification email");
+    if (notifId != null) {
+      await db
+        .update(notificationsTable)
+        .set({ status: "FAILED", error: String(err) })
+        .where(eq(notificationsTable.id, notifId));
+    }
     return false;
   }
 }

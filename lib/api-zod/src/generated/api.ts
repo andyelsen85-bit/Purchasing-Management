@@ -1155,6 +1155,8 @@ export const GetSettingsResponse = zod.object({
     caCertSet: zod.boolean(),
     kerberosEnabled: zod.boolean(),
     servicePrincipalName: zod.string().nullish(),
+    groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
+    groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),
   smtp: zod.object({
     enabled: zod.boolean(),
@@ -1187,6 +1189,8 @@ export const UpdateSettingsBody = zod.object({
       caCert: zod.string().nullish(),
       kerberosEnabled: zod.boolean().nullish(),
       servicePrincipalName: zod.string().nullish(),
+      groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
+      groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
     })
     .optional(),
   smtp: zod
@@ -1221,6 +1225,8 @@ export const UpdateSettingsResponse = zod.object({
     caCertSet: zod.boolean(),
     kerberosEnabled: zod.boolean(),
     servicePrincipalName: zod.string().nullish(),
+    groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
+    groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),
   smtp: zod.object({
     enabled: zod.boolean(),
