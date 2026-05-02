@@ -974,6 +974,12 @@ components:
         currency: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         winning: { type: boolean }
+        # Optional: ids of documents (kind=QUOTE) attached to this
+        # specific quote line. Documents themselves live in the
+        # workflow's documents collection; this is just the linkage.
+        documentIds:
+          type: array
+          items: { type: integer }
       required: [winning]
 
     Workflow:

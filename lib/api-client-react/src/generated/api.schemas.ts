@@ -178,6 +178,7 @@ export interface QuoteEntry {
   /** @nullable */
   notes?: string | null;
   winning: boolean;
+  documentIds?: number[];
 }
 
 /**

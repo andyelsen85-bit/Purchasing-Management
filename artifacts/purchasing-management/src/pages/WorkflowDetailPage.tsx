@@ -52,6 +52,7 @@ import {
   useUploadWorkflowDocument,
   useDeleteDocument,
   useCreateWorkflowNote,
+  useGetSettings,
   AdvanceWorkflowInputBranch,
   UploadDocumentInputKind,
   type Workflow,
@@ -311,12 +312,21 @@ function QuotationPanel({
   onChange: () => void;
 }) {
   const { data: companies } = useListCompanies();
+  const { data: settings } = useGetSettings();
+  const { data: allDocs } = useListWorkflowDocuments(wf.id);
+  const upload = useUploadWorkflowDocument();
+  const del = useDeleteDocument();
+  const qc = useQueryClient();
   const [quotes, setQuotes] = useState<QuoteEntry[]>(
     wf.quotes && wf.quotes.length > 0
       ? wf.quotes
-      : [{ winning: false, currency: wf.currency || "EUR" }],
+      : [{ winning: false, currency: wf.currency || "EUR", documentIds: [] }],
   );
   const save = useSaveWorkflow(wf, onChange);
+  // Track which row is currently uploading so we can show a spinner
+  // and disable the file input. Using a per-row id avoids one global
+  // pending flag blocking other rows.
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
 
   function update(idx: number, patch: Partial<QuoteEntry>) {
     setQuotes((q) => q.map((e, i) => (i === idx ? { ...e, ...patch } : e)));
@@ -324,7 +334,7 @@ function QuotationPanel({
   function addRow() {
     setQuotes((q) => [
       ...q,
-      { winning: false, currency: wf.currency || "EUR" },
+      { winning: false, currency: wf.currency || "EUR", documentIds: [] },
     ]);
   }
   function removeRow(idx: number) {
@@ -334,18 +344,109 @@ function QuotationPanel({
     setQuotes((q) => q.map((e, i) => ({ ...e, winning: i === idx })));
   }
 
+  // Dynamic "3 quotes required" check: derive from the first quote's
+  // amount and the configured limit, so the warning appears as soon
+  // as the user types it (before saving). Falls back to the persisted
+  // server flag if settings aren't loaded yet.
+  const limitX = settings?.limitX ?? null;
+  const firstAmount = quotes.find((q) => q.amount != null)?.amount ?? null;
+  const threeQuotesRequired =
+    limitX != null && firstAmount != null
+      ? firstAmount > limitX
+      : wf.threeQuoteRequired;
+  const filledCount = quotes.filter(
+    (q) => q.amount != null && q.companyId,
+  ).length;
+
+  async function onPickQuoteFile(
+    idx: number,
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploadingIdx(idx);
+    try {
+      const base64 = await fileToBase64(f);
+      const doc = await upload.mutateAsync({
+        id: wf.id,
+        data: {
+          step: "QUOTATION",
+          filename: f.name,
+          mimeType: f.type || "application/octet-stream",
+          kind: "QUOTE",
+          contentBase64: base64,
+          replacesDocumentId: null,
+        },
+      });
+      // Persist the linkage immediately so a refresh doesn't lose it
+      // (the file already exists in the documents collection at this
+      // point, so even if save fails the file isn't orphaned UI-wise).
+      const updated = quotes.map((q, i) =>
+        i === idx
+          ? { ...q, documentIds: [...(q.documentIds ?? []), doc.id] }
+          : q,
+      );
+      setQuotes(updated);
+      save.mutate({ id: wf.id, data: { quotes: updated } });
+    } finally {
+      setUploadingIdx(null);
+      e.target.value = "";
+      qc.invalidateQueries();
+    }
+  }
+
+  function detachDoc(idx: number, docId: number) {
+    const updated = quotes.map((q, i) =>
+      i === idx
+        ? {
+            ...q,
+            documentIds: (q.documentIds ?? []).filter((id) => id !== docId),
+          }
+        : q,
+    );
+    setQuotes(updated);
+    // Detach in DB first, then delete the file. The document record
+    // is shared between the quotes JSON and the documents table, so
+    // deleting the file is the cleanest way to fully remove it.
+    save.mutate(
+      { id: wf.id, data: { quotes: updated } },
+      {
+        onSuccess: () =>
+          del.mutate(
+            { id: docId },
+            { onSettled: () => qc.invalidateQueries() },
+          ),
+      },
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Quotations</CardTitle>
         <p className="text-sm text-muted-foreground">
           Collect quotes from suppliers. Mark one as winning before advancing.
-          {wf.threeQuoteRequired && (
-            <span className="ml-1 text-amber-600 dark:text-amber-400">
-              Three quotes are required (amount above limit).
-            </span>
-          )}
         </p>
+        {threeQuotesRequired && (
+          <Alert className="mt-2 border-amber-500/50 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              The first quote
+              {limitX != null ? (
+                <>
+                  {" "}exceeds the configured limit of{" "}
+                  <strong>
+                    {limitX} {wf.currency ?? "EUR"}
+                  </strong>
+                </>
+              ) : (
+                <> exceeds the configured limit</>
+              )}
+              . Please collect <strong>three quotes</strong> from different
+              suppliers before advancing ({filledCount}/3 entered).
+            </AlertDescription>
+          </Alert>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {quotes.map((q, idx) => (
@@ -434,6 +535,82 @@ function QuotationPanel({
                 onChange={(e) => update(idx, { notes: e.target.value })}
                 data-testid={`input-notes-${idx}`}
               />
+            </div>
+            <div className="col-span-12 space-y-2 border-t pt-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Quote documents</Label>
+                <div className="flex items-center gap-2">
+                  {uploadingIdx === idx && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+                    </span>
+                  )}
+                  <Label
+                    htmlFor={`quote-file-${idx}`}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded border bg-background px-2 py-1 text-xs hover:bg-muted"
+                    data-testid={`button-upload-quote-${idx}`}
+                  >
+                    <Upload className="h-3 w-3" /> Attach file
+                  </Label>
+                  <input
+                    id={`quote-file-${idx}`}
+                    type="file"
+                    className="hidden"
+                    disabled={uploadingIdx === idx}
+                    onChange={(e) => onPickQuoteFile(idx, e)}
+                    data-testid={`input-file-quote-${idx}`}
+                  />
+                </div>
+              </div>
+              {(() => {
+                const ids = q.documentIds ?? [];
+                if (ids.length === 0)
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      No file attached yet.
+                    </p>
+                  );
+                return (
+                  <ul className="space-y-1">
+                    {ids.map((docId) => {
+                      const d = (allDocs ?? []).find((x) => x.id === docId);
+                      const href = `/api/documents/${docId}/download`;
+                      return (
+                        <li
+                          key={docId}
+                          className="flex items-center gap-2 rounded border bg-muted/30 px-2 py-1 text-xs"
+                          data-testid={`quote-doc-${idx}-${docId}`}
+                        >
+                          <FileText className="h-3 w-3 text-muted-foreground" />
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex-1 truncate hover:underline"
+                          >
+                            {d?.filename ?? `Document #${docId}`}
+                          </a>
+                          {d && (
+                            <span className="text-muted-foreground">
+                              {formatBytes(d.sizeBytes)}
+                            </span>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => detachDoc(idx, docId)}
+                            data-testid={`button-detach-quote-${idx}-${docId}`}
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
             </div>
           </div>
         ))}
