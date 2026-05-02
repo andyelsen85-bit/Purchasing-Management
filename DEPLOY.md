@@ -1,27 +1,28 @@
 # Deploying with Docker Compose
 
-## 1. Create your `.env`
+## 1. (Optional) Provide your own `SESSION_SECRET`
 
-`docker-compose.yml` requires `SESSION_SECRET` to be set externally. The
-easiest way is to run the included setup script — it writes a `.env` with
-a freshly generated 64-character random secret, and refuses to overwrite
-an existing `.env`:
+You can skip this step. By default the container's entrypoint generates a
+cryptographically strong 64-character `SESSION_SECRET` on first boot and
+persists it inside the `app-state` Docker volume
+(`/app/state/session_secret`), so it survives restarts and rebuilds.
 
-**Linux / macOS / WSL:**
+If you'd rather manage the secret yourself (e.g. to share it across
+multiple replicas or store it in a secrets manager), create a `.env` file
+next to `docker-compose.yml`:
+
+**Using the helper scripts:**
+
 ```bash
-bash scripts/setup-env.sh
+bash scripts/setup-env.sh                                          # Linux / macOS / WSL
+powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1     # Windows
 ```
 
-**Windows PowerShell:**
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1
-```
-
-If you'd rather do it by hand, copy the template and fill in a real secret:
+**Or by hand:**
 
 ```bash
 cp .env.example .env
-# Then edit .env and replace SESSION_SECRET with a long random value, e.g.:
+# Then edit .env and replace SESSION_SECRET with a long random value:
 #   SESSION_SECRET=$(openssl rand -hex 32)
 ```
 

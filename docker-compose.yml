@@ -33,9 +33,13 @@ services:
       # through the HTTPS Management page, the app serves it here.
       HTTPS_PORT: 443
       DATABASE_URL: postgres://purchasing:purchasing@db:5432/purchasing
-      # SESSION_SECRET MUST be set externally (e.g. .env file or shell export).
-      # The app refuses to start in production if it is missing or weak (<32 chars / known placeholder).
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (>=32 chars).}
+      # SESSION_SECRET is OPTIONAL here. If you set it (e.g. via a .env
+      # file alongside this compose file), the app uses your value. If
+      # you leave it empty, the container's entrypoint generates a strong
+      # 64-char random secret on first boot and persists it inside the
+      # `app-state` volume (at /app/state/session_secret), so the same
+      # secret survives restarts and image rebuilds.
+      SESSION_SECRET: ${SESSION_SECRET:-}
       WEB_DIST: /app/web/dist
     ports:
       - "80:80"

@@ -68,4 +68,10 @@ ENV CERTS_DIR=/app/state/certs
 
 EXPOSE 80 443
 
+# Entrypoint auto-generates SESSION_SECRET into the state volume if the
+# operator didn't provide one via the environment.
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--enable-source-maps", "/app/api/dist/index.mjs"]
