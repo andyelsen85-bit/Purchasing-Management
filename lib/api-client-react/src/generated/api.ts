@@ -45,6 +45,8 @@ import type {
   HealthStatus,
   HistoryEntry,
   ImportCertInput,
+  LdapTestInput,
+  LdapTestResult,
   ListAuditLogParams,
   ListNotificationsParams,
   ListWorkflowsParams,
@@ -3960,6 +3962,97 @@ export const useDeleteGtInvestResult = <
   TContext
 > => {
   return useMutation(getDeleteGtInvestResultMutationOptions(options));
+};
+
+/**
+ * Runs a real LDAP search (and optional user bind) against the
+currently saved LDAP settings so the operator can confirm
+connectivity, credentials, and the AD group → role/department
+mapping before relying on it for sign-in. Admin-only.
+
+ * @summary Validate LDAP / AD configuration
+ */
+export const getTestLdapUrl = () => {
+  return `/api/admin/ldap-test`;
+};
+
+export const testLdap = async (
+  ldapTestInput: LdapTestInput,
+  options?: RequestInit,
+): Promise<LdapTestResult> => {
+  return customFetch<LdapTestResult>(getTestLdapUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(ldapTestInput),
+  });
+};
+
+export const getTestLdapMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testLdap>>,
+    TError,
+    { data: BodyType<LdapTestInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof testLdap>>,
+  TError,
+  { data: BodyType<LdapTestInput> },
+  TContext
+> => {
+  const mutationKey = ["testLdap"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof testLdap>>,
+    { data: BodyType<LdapTestInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return testLdap(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TestLdapMutationResult = NonNullable<
+  Awaited<ReturnType<typeof testLdap>>
+>;
+export type TestLdapMutationBody = BodyType<LdapTestInput>;
+export type TestLdapMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Validate LDAP / AD configuration
+ */
+export const useTestLdap = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testLdap>>,
+    TError,
+    { data: BodyType<LdapTestInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testLdap>>,
+  TError,
+  { data: BodyType<LdapTestInput> },
+  TContext
+> => {
+  return useMutation(getTestLdapMutationOptions(options));
 };
 
 export const getGenerateCsrUrl = () => {

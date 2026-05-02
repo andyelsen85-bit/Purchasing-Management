@@ -1278,6 +1278,48 @@ export const DeleteGtInvestResultParams = zod.object({
   id: zod.coerce.number(),
 });
 
+/**
+ * Runs a real LDAP search (and optional user bind) against the
+currently saved LDAP settings so the operator can confirm
+connectivity, credentials, and the AD group → role/department
+mapping before relying on it for sign-in. Admin-only.
+
+ * @summary Validate LDAP / AD configuration
+ */
+export const TestLdapBody = zod
+  .object({
+    username: zod.string().nullish(),
+    password: zod.string().nullish(),
+  })
+  .describe(
+    "Optional username\/password to fully exercise the user-bind path.\nWhen omitted, the test only validates the bind-DN credentials and\nthe search\/CA chain — useful when the operator wants to confirm\nthe server is reachable without typing a real user password.\n",
+  );
+
+export const TestLdapResponse = zod.object({
+  ok: zod.boolean(),
+  stage: zod
+    .enum(["bind", "search", "user_bind", "mapping", "complete"])
+    .describe("Which phase of the test the outcome reports on"),
+  error: zod.string().nullish(),
+  displayName: zod.string().nullish(),
+  email: zod.string().nullish(),
+  groups: zod.array(zod.string()),
+  derivedRoles: zod.array(
+    zod.enum([
+      "ADMIN",
+      "FINANCIAL_ALL",
+      "FINANCIAL_INVOICE",
+      "FINANCIAL_PAYMENT",
+      "DEPT_MANAGER",
+      "DEPT_USER",
+      "GT_INVEST",
+      "READ_ONLY_DEPT",
+      "READ_ONLY_ALL",
+    ]),
+  ),
+  derivedDepartmentCodes: zod.array(zod.string()),
+});
+
 export const GenerateCsrBody = zod.object({
   commonName: zod.string(),
   organization: zod.string().nullish(),

@@ -8,6 +8,9 @@ import {
   Download,
   Upload,
   ShieldAlert,
+  PlugZap,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,6 +21,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Tabs,
   TabsContent,
@@ -36,7 +46,72 @@ import {
   useListGtInvestResults,
   useCreateGtInvestResult,
   useDeleteGtInvestResult,
+  useTestLdap,
 } from "@/lib/api";
+
+/**
+ * Canonical list of app roles + a one-line description of what each role
+ * can do. Mirrors `artifacts/api-server/src/lib/permissions.ts` — keep
+ * the two in sync. Surfaced verbatim in the Roles tab and used to
+ * populate the Group → Role mapping dropdown so admins never have to
+ * remember the exact role identifier.
+ */
+const ROLE_DEFS: Array<{ role: string; label: string; description: string }> = [
+  {
+    role: "ADMIN",
+    label: "Administrator",
+    description:
+      "Full access to every workflow, every step, every setting. Manages users, departments, LDAP, SMTP, GT Invest, certificates, backup/restore. Can undo any step.",
+  },
+  {
+    role: "FINANCIAL_ALL",
+    label: "Financial — full",
+    description:
+      "Can act on every step of every workflow regardless of department: quotation, financial validation (K-Order/GT-Invest routing), ordering, delivery, invoice, payment. Can undo. Can edit master data (companies, contacts).",
+  },
+  {
+    role: "FINANCIAL_INVOICE",
+    label: "Financial — invoicing",
+    description:
+      "Reads every workflow. Can record the supplier invoice (step 7) and validate the invoice (step 8). Cannot create workflows or place orders.",
+  },
+  {
+    role: "FINANCIAL_PAYMENT",
+    label: "Financial — payment",
+    description:
+      "Reads every workflow. Can mark workflows as paid (step 9). Cannot create workflows or place orders.",
+  },
+  {
+    role: "DEPT_MANAGER",
+    label: "Department manager",
+    description:
+      "Acts on workflows belonging to their department: create, quote, manager validation (step 3), record delivery. Cannot perform financial validation, ordering, invoicing or payment.",
+  },
+  {
+    role: "DEPT_USER",
+    label: "Department user",
+    description:
+      "Acts on workflows belonging to their department: create new requests, attach quotes (step 2), record delivery (step 6). Cannot validate or order.",
+  },
+  {
+    role: "GT_INVEST",
+    label: "GT Invest committee",
+    description:
+      "Acts on the GT Invest review step (step 4b) when a workflow is routed to GT Invest by financial validation.",
+  },
+  {
+    role: "READ_ONLY_DEPT",
+    label: "Read-only — department",
+    description:
+      "Sees workflows belonging to their department but cannot mutate anything (no notes, no documents, no advance, no undo).",
+  },
+  {
+    role: "READ_ONLY_ALL",
+    label: "Read-only — all",
+    description:
+      "Sees every workflow but cannot mutate anything. Useful for auditors and observers.",
+  },
+];
 
 export function SettingsPage() {
   return (
@@ -57,6 +132,9 @@ export function SettingsPage() {
           <TabsTrigger value="departments" data-testid="tab-departments">
             Departments
           </TabsTrigger>
+          <TabsTrigger value="roles" data-testid="tab-roles">
+            Roles
+          </TabsTrigger>
           <TabsTrigger value="ldap" data-testid="tab-ldap">
             LDAP
           </TabsTrigger>
@@ -76,9 +154,13 @@ export function SettingsPage() {
         <TabsContent value="departments">
           <DepartmentsPanel />
         </TabsContent>
+        <TabsContent value="roles">
+          <RolesReferencePanel />
+        </TabsContent>
         <TabsContent value="ldap">
           <div className="space-y-4">
             <LdapSettingsPanel />
+            <LdapTestPanel />
             <GroupMappingPanel />
           </div>
         </TabsContent>
@@ -844,8 +926,232 @@ function DepartmentsPanel() {
   );
 }
 
+function RolesReferencePanel() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Role definitions</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Reference for what each app role is allowed to do. Use these
+          identifiers when mapping AD groups to roles in the LDAP tab.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                <th className="py-2 pr-4 font-medium">Role</th>
+                <th className="py-2 pr-4 font-medium">Name</th>
+                <th className="py-2 font-medium">What this role can do</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ROLE_DEFS.map((r) => (
+                <tr
+                  key={r.role}
+                  className="border-b align-top last:border-0"
+                  data-testid={`role-row-${r.role}`}
+                >
+                  <td className="py-2 pr-4">
+                    <code className="rounded bg-muted px-2 py-0.5 text-xs">
+                      {r.role}
+                    </code>
+                  </td>
+                  <td className="py-2 pr-4 font-medium">{r.label}</td>
+                  <td className="py-2 text-muted-foreground">{r.description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LdapTestPanel() {
+  const { data: s } = useGetSettings();
+  const test = useTestLdap();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  // The mutation result is typed as `unknown` because the OpenAPI
+  // response is generic JSON; narrow it here for the UI.
+  type TestResult = {
+    ok: boolean;
+    stage: string;
+    error?: string | null;
+    displayName?: string | null;
+    email?: string | null;
+    groups?: string[];
+    derivedRoles?: string[];
+    derivedDepartmentCodes?: string[];
+  };
+  const result = test.data as TestResult | undefined;
+  const enabled = Boolean(s?.ldap.enabled);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <PlugZap className="h-4 w-4" /> Test LDAP connection
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Save your LDAP configuration first, then run this test to
+          confirm the server is reachable, the bind credentials work,
+          and the AD group mapping resolves the expected roles and
+          departments. Leave the password empty to do a search-only
+          probe with the bind account; supply both username + password
+          to perform the exact same flow as a real LDAP sign-in.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!enabled && (
+          <Alert>
+            <AlertDescription>
+              LDAP is currently disabled — turn it on and save above
+              before testing, otherwise the test will report
+              &quot;not configured&quot;.
+            </AlertDescription>
+          </Alert>
+        )}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label>Test username (sAMAccountName)</Label>
+            <Input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. jdoe"
+              data-testid="input-ldap-test-username"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Test password (optional)</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="(leave empty for search-only)"
+              data-testid="input-ldap-test-password"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() =>
+              test.mutate({
+                data: {
+                  username: username || null,
+                  password: password || null,
+                },
+              })
+            }
+            disabled={test.isPending}
+            data-testid="button-ldap-test"
+          >
+            {test.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <PlugZap className="mr-2 h-4 w-4" />
+            )}
+            Run test
+          </Button>
+          {result && (
+            <span
+              className={`flex items-center gap-1 text-sm ${
+                result.ok ? "text-emerald-700" : "text-destructive"
+              }`}
+              data-testid="ldap-test-status"
+            >
+              {result.ok ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                <XCircle className="h-4 w-4" />
+              )}
+              {result.ok ? "Success" : "Failed"}
+              <span className="text-muted-foreground">({result.stage})</span>
+            </span>
+          )}
+        </div>
+        {result && (
+          <div
+            className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm"
+            data-testid="ldap-test-result"
+          >
+            {result.error && (
+              <p className="text-destructive">
+                <strong>Error:</strong> {result.error}
+              </p>
+            )}
+            {result.displayName && (
+              <p>
+                <strong>Display name:</strong> {result.displayName}
+              </p>
+            )}
+            {result.email && (
+              <p>
+                <strong>Email:</strong> {result.email}
+              </p>
+            )}
+            {result.groups && result.groups.length > 0 && (
+              <div>
+                <strong>AD group memberships ({result.groups.length}):</strong>
+                <ul className="mt-1 max-h-40 overflow-auto space-y-0.5 font-mono text-xs">
+                  {result.groups.map((g) => (
+                    <li key={g} className="break-all">
+                      {g}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <strong>Derived roles:</strong>{" "}
+                {result.derivedRoles && result.derivedRoles.length > 0 ? (
+                  result.derivedRoles.map((r) => (
+                    <code
+                      key={r}
+                      className="mr-1 rounded bg-background px-1.5 py-0.5 text-xs"
+                    >
+                      {r}
+                    </code>
+                  ))
+                ) : (
+                  <span className="text-muted-foreground">
+                    (none — check Group → Role mapping)
+                  </span>
+                )}
+              </div>
+              <div>
+                <strong>Derived departments:</strong>{" "}
+                {result.derivedDepartmentCodes &&
+                result.derivedDepartmentCodes.length > 0 ? (
+                  result.derivedDepartmentCodes.map((c) => (
+                    <code
+                      key={c}
+                      className="mr-1 rounded bg-background px-1.5 py-0.5 text-xs"
+                    >
+                      {c}
+                    </code>
+                  ))
+                ) : (
+                  <span className="text-muted-foreground">
+                    (none — check Group → Department mapping)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function GroupMappingPanel() {
   const { data: s } = useGetSettings();
+  const { data: depts } = useListDepartments();
   const save = useSaveSettings();
   const [roleMap, setRoleMap] = useState<Record<string, string>>({});
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
@@ -860,31 +1166,56 @@ function GroupMappingPanel() {
     setDeptMap((s.ldap.groupDepartmentMap ?? {}) as Record<string, string>);
   }, [s]);
 
+  function roleLabel(role: string): string {
+    return ROLE_DEFS.find((r) => r.role === role)?.label ?? role;
+  }
+  function deptLabel(code: string): string {
+    return depts?.find((d) => d.code === code)?.name ?? code;
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>AD group mapping</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Map LDAP / Kerberos group names (substring or CN) to app roles
-          and department codes. Applied on every sign-in.
+        <CardTitle>AD groups → roles &amp; departments</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Map LDAP / Active Directory group names (substring or CN) to
+          the app roles and departments listed below. The mapping is
+          applied on every sign-in, so removing a user from an AD group
+          revokes the corresponding role or department on their next
+          login. See the <strong>Roles</strong> tab for what each role
+          can do.
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Group → Role</Label>
-          <div className="grid grid-cols-[1fr_180px_auto] gap-2">
+          <Label className="text-sm font-medium">Map an AD group to a role</Label>
+          <p className="text-xs text-muted-foreground">
+            The group key matches case-insensitively against the full DN
+            or the CN (e.g. <code>Purchasing-Admins</code> matches{" "}
+            <code>CN=Purchasing-Admins,OU=Groups,DC=corp,DC=lan</code>).
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_240px_auto]">
             <Input
-              placeholder="Group key (e.g. PurchasingAdmins)"
+              placeholder="AD group key (substring or CN)"
               value={rk}
               onChange={(e) => setRk(e.target.value)}
               data-testid="input-grm-key"
             />
-            <Input
-              placeholder="ADMIN | FINANCIAL_ALL | …"
-              value={rv}
-              onChange={(e) => setRv(e.target.value)}
-              data-testid="input-grm-val"
-            />
+            <Select value={rv} onValueChange={setRv}>
+              <SelectTrigger data-testid="select-grm-role">
+                <SelectValue placeholder="Choose role…" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_DEFS.map((r) => (
+                  <SelectItem key={r.role} value={r.role}>
+                    {r.label}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({r.role})
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               onClick={() => {
                 if (!rk.trim() || !rv.trim()) return;
@@ -898,47 +1229,74 @@ function GroupMappingPanel() {
             </Button>
           </div>
           <div className="space-y-1">
-            {Object.entries(roleMap).map(([k, v]) => (
-              <div
-                key={k}
-                className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
-              >
-                <span>
-                  <code className="text-xs">{k}</code> → <strong>{v}</strong>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    setRoleMap((m) => {
-                      const n = { ...m };
-                      delete n[k];
-                      return n;
-                    })
-                  }
+            {Object.entries(roleMap).length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No mappings yet. Without any role mapping, every signing-in
+                LDAP user receives only the <code>DEPT_USER</code> role.
+              </p>
+            ) : (
+              Object.entries(roleMap).map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
+                  data-testid={`grm-row-${k}`}
                 >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            ))}
+                  <span>
+                    <code className="text-xs">{k}</code> →{" "}
+                    <strong>{roleLabel(v)}</strong>{" "}
+                    <span className="text-xs text-muted-foreground">({v})</span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setRoleMap((m) => {
+                        const n = { ...m };
+                        delete n[k];
+                        return n;
+                      })
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))
+            )}
           </div>
         </div>
         <Separator />
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Group → Department code</Label>
-          <div className="grid grid-cols-[1fr_180px_auto] gap-2">
+          <Label className="text-sm font-medium">
+            Map an AD group to a department
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Department membership controls which workflows a user sees
+            (unless the role grants global visibility). Add departments
+            in the <strong>Departments</strong> tab if your choice isn&apos;t
+            in the list.
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_240px_auto]">
             <Input
-              placeholder="Group key"
+              placeholder="AD group key (substring or CN)"
               value={dk}
               onChange={(e) => setDk(e.target.value)}
               data-testid="input-gdm-key"
             />
-            <Input
-              placeholder="Department code"
-              value={dv}
-              onChange={(e) => setDv(e.target.value)}
-              data-testid="input-gdm-val"
-            />
+            <Select value={dv} onValueChange={setDv}>
+              <SelectTrigger data-testid="select-gdm-dept">
+                <SelectValue placeholder="Choose department…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(depts ?? []).map((d) => (
+                  <SelectItem key={d.id} value={d.code}>
+                    {d.name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({d.code})
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               onClick={() => {
                 if (!dk.trim() || !dv.trim()) return;
@@ -952,29 +1310,40 @@ function GroupMappingPanel() {
             </Button>
           </div>
           <div className="space-y-1">
-            {Object.entries(deptMap).map(([k, v]) => (
-              <div
-                key={k}
-                className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
-              >
-                <span>
-                  <code className="text-xs">{k}</code> → <strong>{v}</strong>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    setDeptMap((m) => {
-                      const n = { ...m };
-                      delete n[k];
-                      return n;
-                    })
-                  }
+            {Object.entries(deptMap).length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No mappings yet. Without department mapping, manually
+                assigned department memberships are preserved on each
+                login.
+              </p>
+            ) : (
+              Object.entries(deptMap).map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
+                  data-testid={`gdm-row-${k}`}
                 >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            ))}
+                  <span>
+                    <code className="text-xs">{k}</code> →{" "}
+                    <strong>{deptLabel(v)}</strong>{" "}
+                    <span className="text-xs text-muted-foreground">({v})</span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setDeptMap((m) => {
+                        const n = { ...m };
+                        delete n[k];
+                        return n;
+                      })
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))
+            )}
           </div>
         </div>
         <div className="flex justify-end">

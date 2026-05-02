@@ -710,6 +710,49 @@ export interface ImportCertInput {
   chainPem?: string | null;
 }
 
+/**
+ * Optional username/password to fully exercise the user-bind path.
+When omitted, the test only validates the bind-DN credentials and
+the search/CA chain — useful when the operator wants to confirm
+the server is reachable without typing a real user password.
+
+ */
+export interface LdapTestInput {
+  /** @nullable */
+  username?: string | null;
+  /** @nullable */
+  password?: string | null;
+}
+
+/**
+ * Which phase of the test the outcome reports on
+ */
+export type LdapTestResultStage =
+  (typeof LdapTestResultStage)[keyof typeof LdapTestResultStage];
+
+export const LdapTestResultStage = {
+  bind: "bind",
+  search: "search",
+  user_bind: "user_bind",
+  mapping: "mapping",
+  complete: "complete",
+} as const;
+
+export interface LdapTestResult {
+  ok: boolean;
+  /** Which phase of the test the outcome reports on */
+  stage: LdapTestResultStage;
+  /** @nullable */
+  error?: string | null;
+  /** @nullable */
+  displayName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  groups: string[];
+  derivedRoles: Role[];
+  derivedDepartmentCodes: string[];
+}
+
 export type NotificationEntryStatus =
   (typeof NotificationEntryStatus)[keyof typeof NotificationEntryStatus];
 

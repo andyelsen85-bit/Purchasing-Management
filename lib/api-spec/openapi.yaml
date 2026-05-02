@@ -740,6 +740,29 @@ paths:
       responses:
         "204": { description: Deleted }
 
+  # ---------------- ADMIN / LDAP TEST ----------------
+  /admin/ldap-test:
+    post:
+      operationId: testLdap
+      tags: [admin]
+      summary: Validate LDAP / AD configuration
+      description: |
+        Runs a real LDAP search (and optional user bind) against the
+        currently saved LDAP settings so the operator can confirm
+        connectivity, credentials, and the AD group → role/department
+        mapping before relying on it for sign-in. Admin-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LdapTestInput" }
+      responses:
+        "200":
+          description: Test result (ok or error explained in body)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LdapTestResult" }
+
   # ---------------- ADMIN / TLS ----------------
   /admin/csr:
     post:
@@ -1452,6 +1475,39 @@ components:
         certPem: { type: string }
         chainPem: { type: ["string", "null"] }
       required: [certPem]
+
+    LdapTestInput:
+      type: object
+      description: |
+        Optional username/password to fully exercise the user-bind path.
+        When omitted, the test only validates the bind-DN credentials and
+        the search/CA chain — useful when the operator wants to confirm
+        the server is reachable without typing a real user password.
+      properties:
+        username: { type: ["string", "null"] }
+        password: { type: ["string", "null"] }
+
+    LdapTestResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        stage:
+          type: string
+          description: Which phase of the test the outcome reports on
+          enum: [bind, search, user_bind, mapping, complete]
+        error: { type: ["string", "null"] }
+        displayName: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        groups:
+          type: array
+          items: { type: string }
+        derivedRoles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+        derivedDepartmentCodes:
+          type: array
+          items: { type: string }
+      required: [ok, stage, groups, derivedRoles, derivedDepartmentCodes]
 
     NotificationEntry:
       type: object

@@ -16,6 +16,7 @@ import tlsRouter from "./tls";
 import exportsRouter from "./exports";
 import notificationsRouter from "./notifications";
 import backupRouter from "./backup";
+import ldapTestRouter from "./ldapTest";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(settingsRouter);
 router.use(tlsRouter);
 router.use(notificationsRouter);
 router.use(backupRouter);
+router.use(ldapTestRouter);
 
 export default router;
