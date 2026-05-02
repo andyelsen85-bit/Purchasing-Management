@@ -1,11 +1,19 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Builder ----------------------------------------------------------------
-FROM node:20-alpine AS builder
+# We use Debian-based images (node:20-slim) instead of alpine because the
+# repo's pnpm-workspace.yaml `overrides` block excludes every
+# `*-linux-x64-musl` native binary (rollup, esbuild, lightningcss,
+# @tailwindcss/oxide). On alpine that means vite/rollup cannot load their
+# native bindings at build time and the frontend build fails. glibc-based
+# slim has the linux-x64-gnu binaries available.
+FROM node:20-slim AS builder
 
 ENV PNPM_HOME=/root/.local/share/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN apk add --no-cache python3 make g++ \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
  && corepack enable && corepack prepare pnpm@10.26.1 --activate
 
 WORKDIR /app
@@ -43,10 +51,17 @@ RUN pnpm run typecheck:libs \
 RUN pnpm --filter @workspace/api-server deploy --prod /deploy/api
 
 # ---- Runtime ----------------------------------------------------------------
-FROM node:20-alpine AS runtime
+# Same base family as the builder (glibc) so native deps that were resolved
+# at install time (pg, sharp, ldapjs's bundled deps, etc.) load correctly.
+FROM node:20-slim AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /app
+
+# CA certs are needed for outbound TLS (LDAPS, SMTP STARTTLS, etc.).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 # Mount points for operator-managed state (uploads + TLS material).
 # These are exposed as Docker volumes in docker-compose.yml.
