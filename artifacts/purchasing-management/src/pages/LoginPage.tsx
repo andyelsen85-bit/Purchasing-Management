@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Lock, Package } from "lucide-react";
@@ -18,6 +18,39 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [useLdap, setUseLdap] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tryingSso, setTryingSso] = useState(true);
+  const ssoTried = useRef(false);
+
+  // Silent Kerberos / SPNEGO attempt: when the browser is on a domain-joined
+  // machine and configured to send Negotiate tokens for this host, the call
+  // succeeds without any user interaction. Any other outcome (401, network
+  // error, browser refusing the prompt) just reveals the form fallback below.
+  useEffect(() => {
+    if (ssoTried.current) return;
+    ssoTried.current = true;
+    const ctrl = new AbortController();
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/auth/negotiate`, {
+      method: "GET",
+      credentials: "include",
+      signal: ctrl.signal,
+      headers: { Accept: "application/json" },
+    })
+      .then(async (r) => {
+        if (!r.ok) return;
+        const user = (await r.json()) as { id: number; roles: string[] };
+        qc.setQueryData(getGetSessionQueryKey(), {
+          authenticated: true,
+          user,
+        });
+        setLocation("/");
+      })
+      .catch(() => {
+        /* fall through to form */
+      })
+      .finally(() => setTryingSso(false));
+    return () => ctrl.abort();
+  }, [qc, setLocation]);
 
   const login = useLogin({
     mutation: {
@@ -67,6 +100,15 @@ export function LoginPage() {
           </p>
         </CardHeader>
         <CardContent>
+          {tryingSso ? (
+            <div
+              className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
+              data-testid="sso-attempt"
+            >
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Trying single sign-on…
+            </div>
+          ) : (
           <form className="space-y-4" onSubmit={onSubmit}>
             {error && (
               <Alert variant="destructive" data-testid="alert-login-error">
@@ -130,6 +172,7 @@ export function LoginPage() {
               Tip: <code>admin / admin</code> for the seeded administrator.
             </p>
           </form>
+          )}
         </CardContent>
       </Card>
     </div>

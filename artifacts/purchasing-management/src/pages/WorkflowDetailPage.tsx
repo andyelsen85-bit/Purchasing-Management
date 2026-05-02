@@ -204,7 +204,8 @@ function ActionBar({
     },
   });
 
-  const isAdmin = user.roles.includes("ADMIN");
+  const canUndo =
+    user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
   const showBranchPicker = wf.currentStep === "VALIDATING_BY_FINANCIAL";
 
   return (
@@ -250,7 +251,7 @@ function ActionBar({
         )}
         Advance
       </Button>
-      {isAdmin && (
+      {canUndo && (
         <Button
           variant="outline"
           onClick={() => undo.mutate({ id: wf.id })}
