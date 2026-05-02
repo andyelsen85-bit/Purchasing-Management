@@ -33,7 +33,41 @@ router.patch(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
-    const merged = await updateSettingsRecord(parsed.data as never);
+    // Map the OpenAPI input shape to the stored shape: zod nullish() turns
+    // missing values into `null`, but the persisted record uses `undefined`
+    // for "not set" (so the merge in updateSettingsRecord skips the key).
+    // We also rename `smtp.fromAddress` → `smtp.from` (legacy column name).
+    const dropNulls = <T extends Record<string, unknown>>(
+      o: T | undefined,
+    ): Partial<{ [K in keyof T]: NonNullable<T[K]> }> => {
+      if (!o) return {};
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(o))
+        if (v !== null && v !== undefined) out[k] = v;
+      return out as Partial<{ [K in keyof T]: NonNullable<T[K]> }>;
+    };
+    const { smtp, ldap, gtInvestRecipients, ...top } = parsed.data;
+    const patch: Parameters<typeof updateSettingsRecord>[0] = {
+      ...dropNulls(top),
+      ...(gtInvestRecipients ? { gtInvestRecipients } : {}),
+      ...(ldap ? { ldap: dropNulls(ldap) } : {}),
+      ...(smtp
+        ? {
+            smtp: {
+              ...dropNulls({
+                enabled: smtp.enabled,
+                host: smtp.host,
+                port: smtp.port,
+                username: smtp.username,
+                password: smtp.password,
+                secure: smtp.secure,
+              }),
+              ...(smtp.fromAddress != null ? { from: smtp.fromAddress } : {}),
+            },
+          }
+        : {}),
+    };
+    const merged = await updateSettingsRecord(patch);
     await audit(getUser(req).id, "SETTINGS_UPDATE", "settings");
     res.json(toPublicSettings(merged));
   },

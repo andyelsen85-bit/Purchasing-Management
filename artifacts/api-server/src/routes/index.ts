@@ -14,6 +14,7 @@ import gtInvestRouter from "./gtInvest";
 import settingsRouter from "./settings";
 import tlsRouter from "./tls";
 import exportsRouter from "./exports";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(auditRouter);
 router.use(gtInvestRouter);
 router.use(settingsRouter);
 router.use(tlsRouter);
+router.use(notificationsRouter);
 
 export default router;

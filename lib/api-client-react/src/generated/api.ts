@@ -38,21 +38,26 @@ import type {
   DashboardSummary,
   Department,
   Document,
+  ExportGtInvestPackageParams,
+  ExportWorkflowsParams,
   GtInvestDate,
   GtInvestResult,
   HealthStatus,
   HistoryEntry,
   ImportCertInput,
   ListAuditLogParams,
+  ListNotificationsParams,
   ListWorkflowsParams,
   LoginRequest,
   Note,
+  NotificationEntry,
   SessionResponse,
   SessionUser,
   UpdateSettingsInput,
   UpdateUserInput,
   UpdateWorkflowInput,
   UploadDocumentInput,
+  UploadWorkflowDocumentBodyTwo,
   User,
   Workflow,
   WorkflowSummary,
@@ -375,6 +380,88 @@ export function useGetSession<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSessionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Browsers send the user's Kerberos ticket via the
+`Authorization: Negotiate <base64-token>` header. When no header
+is present we reply with `401 WWW-Authenticate: Negotiate` to
+trigger the browser's automatic retry. When a token is present
+and the server has been provisioned with a keytab + SPN, we step
+through SPNEGO and create/upgrade the matching local user.
+
+ * @summary Kerberos / SPNEGO single-sign-on handshake
+ */
+export const getKerberosNegotiateUrl = () => {
+  return `/api/auth/negotiate`;
+};
+
+export const kerberosNegotiate = async (
+  options?: RequestInit,
+): Promise<SessionUser> => {
+  return customFetch<SessionUser>(getKerberosNegotiateUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getKerberosNegotiateQueryKey = () => {
+  return [`/api/auth/negotiate`] as const;
+};
+
+export const getKerberosNegotiateQueryOptions = <
+  TData = Awaited<ReturnType<typeof kerberosNegotiate>>,
+  TError = ErrorType<ApiError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof kerberosNegotiate>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getKerberosNegotiateQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof kerberosNegotiate>>
+  > = ({ signal }) => kerberosNegotiate({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof kerberosNegotiate>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type KerberosNegotiateQueryResult = NonNullable<
+  Awaited<ReturnType<typeof kerberosNegotiate>>
+>;
+export type KerberosNegotiateQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Kerberos / SPNEGO single-sign-on handshake
+ */
+
+export function useKerberosNegotiate<
+  TData = Awaited<ReturnType<typeof kerberosNegotiate>>,
+  TError = ErrorType<ApiError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof kerberosNegotiate>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getKerberosNegotiateQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -2328,20 +2415,30 @@ export function useListWorkflowDocuments<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+/**
+ * Upload a new revision of a document. Two transports are accepted:
+
+  * `application/json` with a base64 payload — convenient for
+    programmatic clients and the codegen-driven React form.
+  * `multipart/form-data` with a `file` part plus `step` and
+    `kind` text fields — the standard browser file-input path.
+
+ */
 export const getUploadWorkflowDocumentUrl = (id: number) => {
   return `/api/workflows/${id}/documents`;
 };
 
 export const uploadWorkflowDocument = async (
   id: number,
-  uploadDocumentInput: UploadDocumentInput,
+  uploadWorkflowDocumentBody:
+    | UploadDocumentInput
+    | UploadWorkflowDocumentBodyTwo,
   options?: RequestInit,
 ): Promise<Document> => {
   return customFetch<Document>(getUploadWorkflowDocumentUrl(id), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(uploadDocumentInput),
+    body: JSON.stringify(uploadWorkflowDocumentBody),
   });
 };
 
@@ -2352,14 +2449,20 @@ export const getUploadWorkflowDocumentMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof uploadWorkflowDocument>>,
     TError,
-    { id: number; data: BodyType<UploadDocumentInput> },
+    {
+      id: number;
+      data: BodyType<UploadDocumentInput | UploadWorkflowDocumentBodyTwo>;
+    },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof uploadWorkflowDocument>>,
   TError,
-  { id: number; data: BodyType<UploadDocumentInput> },
+  {
+    id: number;
+    data: BodyType<UploadDocumentInput | UploadWorkflowDocumentBodyTwo>;
+  },
   TContext
 > => {
   const mutationKey = ["uploadWorkflowDocument"];
@@ -2373,7 +2476,10 @@ export const getUploadWorkflowDocumentMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof uploadWorkflowDocument>>,
-    { id: number; data: BodyType<UploadDocumentInput> }
+    {
+      id: number;
+      data: BodyType<UploadDocumentInput | UploadWorkflowDocumentBodyTwo>;
+    }
   > = (props) => {
     const { id, data } = props ?? {};
 
@@ -2386,7 +2492,9 @@ export const getUploadWorkflowDocumentMutationOptions = <
 export type UploadWorkflowDocumentMutationResult = NonNullable<
   Awaited<ReturnType<typeof uploadWorkflowDocument>>
 >;
-export type UploadWorkflowDocumentMutationBody = BodyType<UploadDocumentInput>;
+export type UploadWorkflowDocumentMutationBody = BodyType<
+  UploadDocumentInput | UploadWorkflowDocumentBodyTwo
+>;
 export type UploadWorkflowDocumentMutationError = ErrorType<unknown>;
 
 export const useUploadWorkflowDocument = <
@@ -2396,14 +2504,20 @@ export const useUploadWorkflowDocument = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof uploadWorkflowDocument>>,
     TError,
-    { id: number; data: BodyType<UploadDocumentInput> },
+    {
+      id: number;
+      data: BodyType<UploadDocumentInput | UploadWorkflowDocumentBodyTwo>;
+    },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof uploadWorkflowDocument>>,
   TError,
-  { id: number; data: BodyType<UploadDocumentInput> },
+  {
+    id: number;
+    data: BodyType<UploadDocumentInput | UploadWorkflowDocumentBodyTwo>;
+  },
   TContext
 > => {
   return useMutation(getUploadWorkflowDocumentMutationOptions(options));
@@ -2856,6 +2970,302 @@ export function useListGtInvestWorkflows<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListGtInvestWorkflowsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns a single PDF concatenating the cover sheet plus every
+attached document (quotes, manager validation, financial
+validation) for the workflows queued for the next GT Invest
+preparation date.
+
+ * @summary Merged GT Invest preparation package
+ */
+export const getExportGtInvestPackageUrl = (
+  params?: ExportGtInvestPackageParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/gt-invest/export?${stringifiedParams}`
+    : `/api/gt-invest/export`;
+};
+
+export const exportGtInvestPackage = async (
+  params?: ExportGtInvestPackageParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getExportGtInvestPackageUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportGtInvestPackageQueryKey = (
+  params?: ExportGtInvestPackageParams,
+) => {
+  return [`/api/gt-invest/export`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportGtInvestPackageQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportGtInvestPackage>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportGtInvestPackageParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportGtInvestPackage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportGtInvestPackageQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportGtInvestPackage>>
+  > = ({ signal }) =>
+    exportGtInvestPackage(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportGtInvestPackage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportGtInvestPackageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportGtInvestPackage>>
+>;
+export type ExportGtInvestPackageQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Merged GT Invest preparation package
+ */
+
+export function useExportGtInvestPackage<
+  TData = Awaited<ReturnType<typeof exportGtInvestPackage>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportGtInvestPackageParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportGtInvestPackage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportGtInvestPackageQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export workflows as Excel or CSV
+ */
+export const getExportWorkflowsUrl = (params: ExportWorkflowsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/workflows/export?${stringifiedParams}`
+    : `/api/workflows/export`;
+};
+
+export const exportWorkflows = async (
+  params: ExportWorkflowsParams,
+  options?: RequestInit,
+): Promise<Blob | string> => {
+  return customFetch<Blob | string>(getExportWorkflowsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportWorkflowsQueryKey = (params?: ExportWorkflowsParams) => {
+  return [`/api/workflows/export`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportWorkflowsQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportWorkflows>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ExportWorkflowsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWorkflows>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportWorkflowsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof exportWorkflows>>> = ({
+    signal,
+  }) => exportWorkflows(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportWorkflows>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportWorkflowsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportWorkflows>>
+>;
+export type ExportWorkflowsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export workflows as Excel or CSV
+ */
+
+export function useExportWorkflows<
+  TData = Awaited<ReturnType<typeof exportWorkflows>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ExportWorkflowsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWorkflows>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportWorkflowsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List recent notification fan-outs (admin)
+ */
+export const getListNotificationsUrl = (params?: ListNotificationsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/notifications?${stringifiedParams}`
+    : `/api/notifications`;
+};
+
+export const listNotifications = async (
+  params?: ListNotificationsParams,
+  options?: RequestInit,
+): Promise<NotificationEntry[]> => {
+  return customFetch<NotificationEntry[]>(getListNotificationsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListNotificationsQueryKey = (
+  params?: ListNotificationsParams,
+) => {
+  return [`/api/notifications`, ...(params ? [params] : [])] as const;
+};
+
+export const getListNotificationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listNotifications>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListNotificationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listNotifications>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListNotificationsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listNotifications>>
+  > = ({ signal }) => listNotifications(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listNotifications>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListNotificationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listNotifications>>
+>;
+export type ListNotificationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List recent notification fan-outs (admin)
+ */
+
+export function useListNotifications<
+  TData = Awaited<ReturnType<typeof listNotifications>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListNotificationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listNotifications>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListNotificationsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -3776,4 +4186,87 @@ export const useImportCert = <
   TContext
 > => {
   return useMutation(getImportCertMutationOptions(options));
+};
+
+/**
+ * Tears down and rebinds the HTTPS listener (and the HTTP→HTTPS
+redirector) using the freshly imported cert + key. Returns the
+new certificate metadata that is now serving traffic.
+
+ * @summary Hot-reload TLS material without restarting the process
+ */
+export const getReloadCertUrl = () => {
+  return `/api/admin/cert/reload`;
+};
+
+export const reloadCert = async (options?: RequestInit): Promise<CertInfo> => {
+  return customFetch<CertInfo>(getReloadCertUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReloadCertMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reloadCert>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reloadCert>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["reloadCert"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reloadCert>>,
+    void
+  > = () => {
+    return reloadCert(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReloadCertMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reloadCert>>
+>;
+
+export type ReloadCertMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Hot-reload TLS material without restarting the process
+ */
+export const useReloadCert = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reloadCert>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reloadCert>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getReloadCertMutationOptions(options));
 };

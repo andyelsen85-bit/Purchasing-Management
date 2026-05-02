@@ -21,6 +21,7 @@ tags:
   - name: audit
   - name: settings
   - name: admin
+  - name: notifications
 
 paths:
   /healthz:
@@ -75,6 +76,44 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionResponse" }
+  /auth/negotiate:
+    get:
+      operationId: kerberosNegotiate
+      tags: [auth]
+      summary: Kerberos / SPNEGO single-sign-on handshake
+      description: |
+        Browsers send the user's Kerberos ticket via the
+        `Authorization: Negotiate <base64-token>` header. When no header
+        is present we reply with `401 WWW-Authenticate: Negotiate` to
+        trigger the browser's automatic retry. When a token is present
+        and the server has been provisioned with a keytab + SPN, we step
+        through SPNEGO and create/upgrade the matching local user.
+      parameters:
+        - name: Authorization
+          in: header
+          required: false
+          schema: { type: string }
+          description: Negotiate token from the browser, base64-encoded.
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+        "401":
+          description: Negotiate handshake required or token rejected.
+          headers:
+            WWW-Authenticate:
+              schema: { type: string }
+              description: Always `Negotiate`, optionally followed by the next token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+        "501":
+          description: Kerberos backend not configured on this server.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
 
   # ---------------- USERS ----------------
   /users:
@@ -396,11 +435,28 @@ paths:
     post:
       operationId: uploadWorkflowDocument
       tags: [documents]
+      description: |
+        Upload a new revision of a document. Two transports are accepted:
+
+          * `application/json` with a base64 payload — convenient for
+            programmatic clients and the codegen-driven React form.
+          * `multipart/form-data` with a `file` part plus `step` and
+            `kind` text fields — the standard browser file-input path.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/UploadDocumentInput" }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, step, kind]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                step: { type: string }
+                kind: { type: string }
       responses:
         "201":
           description: Uploaded
@@ -487,6 +543,92 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/WorkflowSummary" }
+  /gt-invest/export:
+    get:
+      operationId: exportGtInvestPackage
+      tags: [gt-invest]
+      summary: Merged GT Invest preparation package
+      description: |
+        Returns a single PDF concatenating the cover sheet plus every
+        attached document (quotes, manager validation, financial
+        validation) for the workflows queued for the next GT Invest
+        preparation date.
+      parameters:
+        - name: dateId
+          in: query
+          required: false
+          schema: { type: integer }
+          description: GT Invest preparation date to package; defaults to next.
+      responses:
+        "200":
+          description: Merged PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+
+  # ---------------- WORKFLOW EXPORT ----------------
+  /workflows/export:
+    get:
+      operationId: exportWorkflows
+      tags: [workflows]
+      summary: Export workflows as Excel or CSV
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema: { type: string, enum: [xlsx, csv] }
+        - name: departmentId
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: step
+          in: query
+          required: false
+          schema: { type: string }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Spreadsheet
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string }
+
+  # ---------------- NOTIFICATIONS ----------------
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List recent notification fan-outs (admin)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 100 }
+        - name: workflowId
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [PENDING, SENT, FAILED] }
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotificationEntry" }
 
   # ---------------- AUDIT (admin only) ----------------
   /audit-log:
@@ -638,6 +780,26 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CertInfo" }
+  /admin/cert/reload:
+    post:
+      operationId: reloadCert
+      tags: [admin]
+      summary: Hot-reload TLS material without restarting the process
+      description: |
+        Tears down and rebinds the HTTPS listener (and the HTTP→HTTPS
+        redirector) using the freshly imported cert + key. Returns the
+        new certificate metadata that is now serving traffic.
+      responses:
+        "200":
+          description: Reloaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CertInfo" }
+        "503":
+          description: HTTPS listener could not be rebound.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
 
 components:
   schemas:
@@ -1272,3 +1434,30 @@ components:
         certPem: { type: string }
         chainPem: { type: ["string", "null"] }
       required: [certPem]
+
+    NotificationEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        workflowId: { type: integer }
+        step: { type: string }
+        channel: { type: string }
+        recipients:
+          type: array
+          items: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        status: { type: string, enum: [PENDING, SENT, FAILED] }
+        error: { type: ["string", "null"] }
+        sentAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required:
+        - id
+        - workflowId
+        - step
+        - channel
+        - recipients
+        - subject
+        - body
+        - status
+        - createdAt

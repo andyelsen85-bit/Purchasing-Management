@@ -75,6 +75,45 @@ export const GetSessionResponse = zod.object({
     .nullish(),
 });
 
+/**
+ * Browsers send the user's Kerberos ticket via the
+`Authorization: Negotiate <base64-token>` header. When no header
+is present we reply with `401 WWW-Authenticate: Negotiate` to
+trigger the browser's automatic retry. When a token is present
+and the server has been provisioned with a keytab + SPN, we step
+through SPNEGO and create/upgrade the matching local user.
+
+ * @summary Kerberos / SPNEGO single-sign-on handshake
+ */
+export const KerberosNegotiateHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Negotiate token from the browser, base64-encoded."),
+});
+
+export const KerberosNegotiateResponse = zod.object({
+  id: zod.number(),
+  username: zod.string(),
+  displayName: zod.string(),
+  email: zod.string().nullish(),
+  roles: zod.array(
+    zod.enum([
+      "ADMIN",
+      "FINANCIAL_ALL",
+      "FINANCIAL_INVOICE",
+      "FINANCIAL_PAYMENT",
+      "DEPT_MANAGER",
+      "DEPT_USER",
+      "GT_INVEST",
+      "READ_ONLY_DEPT",
+      "READ_ONLY_ALL",
+    ]),
+  ),
+  departmentIds: zod.array(zod.number()),
+  source: zod.enum(["LOCAL", "LDAP", "KERBEROS"]),
+});
+
 export const ListUsersResponseItem = zod.object({
   id: zod.number(),
   username: zod.string(),
@@ -835,6 +874,15 @@ export const ListWorkflowDocumentsResponse = zod.array(
   ListWorkflowDocumentsResponseItem,
 );
 
+/**
+ * Upload a new revision of a document. Two transports are accepted:
+
+  * `application/json` with a base64 payload — convenient for
+    programmatic clients and the codegen-driven React form.
+  * `multipart/form-data` with a `file` part plus `step` and
+    `kind` text fields — the standard browser file-input path.
+
+ */
 export const UploadWorkflowDocumentParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -1017,6 +1065,60 @@ export const ListGtInvestWorkflowsResponse = zod.array(
   ListGtInvestWorkflowsResponseItem,
 );
 
+/**
+ * Returns a single PDF concatenating the cover sheet plus every
+attached document (quotes, manager validation, financial
+validation) for the workflows queued for the next GT Invest
+preparation date.
+
+ * @summary Merged GT Invest preparation package
+ */
+export const ExportGtInvestPackageQueryParams = zod.object({
+  dateId: zod.coerce
+    .number()
+    .optional()
+    .describe("GT Invest preparation date to package; defaults to next."),
+});
+
+/**
+ * @summary Export workflows as Excel or CSV
+ */
+export const ExportWorkflowsQueryParams = zod.object({
+  format: zod.enum(["xlsx", "csv"]),
+  departmentId: zod.coerce.number().optional(),
+  step: zod.coerce.string().optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+/**
+ * @summary List recent notification fan-outs (admin)
+ */
+export const listNotificationsQueryLimitDefault = 100;
+
+export const ListNotificationsQueryParams = zod.object({
+  limit: zod.coerce.number().default(listNotificationsQueryLimitDefault),
+  workflowId: zod.coerce.number().optional(),
+  status: zod.enum(["PENDING", "SENT", "FAILED"]).optional(),
+});
+
+export const ListNotificationsResponseItem = zod.object({
+  id: zod.number(),
+  workflowId: zod.number(),
+  step: zod.string(),
+  channel: zod.string(),
+  recipients: zod.array(zod.string()),
+  subject: zod.string(),
+  body: zod.string(),
+  status: zod.enum(["PENDING", "SENT", "FAILED"]),
+  error: zod.string().nullish(),
+  sentAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListNotificationsResponse = zod.array(
+  ListNotificationsResponseItem,
+);
+
 export const ListAuditLogQueryParams = zod.object({
   limit: zod.coerce.number().optional(),
 });
@@ -1195,6 +1297,23 @@ export const ImportCertBody = zod.object({
 });
 
 export const ImportCertResponse = zod.object({
+  present: zod.boolean(),
+  subject: zod.string().nullish(),
+  issuer: zod.string().nullish(),
+  validFrom: zod.coerce.date().nullish(),
+  validTo: zod.coerce.date().nullish(),
+  sans: zod.array(zod.string()),
+  fingerprint: zod.string().nullish(),
+});
+
+/**
+ * Tears down and rebinds the HTTPS listener (and the HTTP→HTTPS
+redirector) using the freshly imported cert + key. Returns the
+new certificate metadata that is now serving traffic.
+
+ * @summary Hot-reload TLS material without restarting the process
+ */
+export const ReloadCertResponse = zod.object({
   present: zod.boolean(),
   subject: zod.string().nullish(),
   issuer: zod.string().nullish(),

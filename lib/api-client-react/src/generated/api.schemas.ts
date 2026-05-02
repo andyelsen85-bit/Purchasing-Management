@@ -695,11 +695,80 @@ export interface ImportCertInput {
   chainPem?: string | null;
 }
 
+export type NotificationEntryStatus =
+  (typeof NotificationEntryStatus)[keyof typeof NotificationEntryStatus];
+
+export const NotificationEntryStatus = {
+  PENDING: "PENDING",
+  SENT: "SENT",
+  FAILED: "FAILED",
+} as const;
+
+export interface NotificationEntry {
+  id: number;
+  workflowId: number;
+  step: string;
+  channel: string;
+  recipients: string[];
+  subject: string;
+  body: string;
+  status: NotificationEntryStatus;
+  /** @nullable */
+  error?: string | null;
+  /** @nullable */
+  sentAt?: string | null;
+  createdAt: string;
+}
+
 export type ListWorkflowsParams = {
   departmentId?: number;
   step?: WorkflowStep;
   q?: string;
 };
+
+export type UploadWorkflowDocumentBodyTwo = {
+  file: Blob;
+  step: string;
+  kind: string;
+};
+
+export type ExportGtInvestPackageParams = {
+  /**
+   * GT Invest preparation date to package; defaults to next.
+   */
+  dateId?: number;
+};
+
+export type ExportWorkflowsParams = {
+  format: ExportWorkflowsFormat;
+  departmentId?: number;
+  step?: string;
+  from?: string;
+  to?: string;
+};
+
+export type ExportWorkflowsFormat =
+  (typeof ExportWorkflowsFormat)[keyof typeof ExportWorkflowsFormat];
+
+export const ExportWorkflowsFormat = {
+  xlsx: "xlsx",
+  csv: "csv",
+} as const;
+
+export type ListNotificationsParams = {
+  limit?: number;
+  workflowId?: number;
+  status?: ListNotificationsStatus;
+};
+
+export type ListNotificationsStatus =
+  (typeof ListNotificationsStatus)[keyof typeof ListNotificationsStatus];
+
+export const ListNotificationsStatus = {
+  PENDING: "PENDING",
+  SENT: "SENT",
+  FAILED: "FAILED",
+} as const;
 
 export type ListAuditLogParams = {
   limit?: number;

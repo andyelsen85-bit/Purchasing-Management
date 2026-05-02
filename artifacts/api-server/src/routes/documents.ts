@@ -1,5 +1,6 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { eq, and, desc } from "drizzle-orm";
+import multer from "multer";
 import { db, documentsTable, workflowsTable, usersTable } from "@workspace/db";
 import {
   ListWorkflowDocumentsParams,
@@ -12,6 +13,48 @@ import { canSeeWorkflow, canEditWorkflow } from "../lib/permissions";
 import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
+
+// Multipart upload buffer (50 MB cap matches the per-document size budget
+// in the front-end). The file lives in memory just long enough to be
+// transcoded to base64 and persisted alongside the JSON metadata.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+interface NormalizedUpload {
+  step: string;
+  kind: string;
+  filename: string;
+  mimeType: string;
+  contentBase64: string;
+}
+
+/**
+ * Accept either:
+ *   • application/json with a base64 payload (`UploadDocumentInput`), or
+ *   • multipart/form-data with a `file` field plus `step`/`kind` text fields
+ *     (the standard browser <input type="file"> path).
+ */
+function normalizeUpload(req: Request): NormalizedUpload | { error: string } {
+  if (req.file) {
+    const stepRaw = (req.body?.step ?? "").toString();
+    const kindRaw = (req.body?.kind ?? "").toString();
+    if (!stepRaw || !kindRaw) {
+      return { error: "step and kind are required form fields" };
+    }
+    return {
+      step: stepRaw,
+      kind: kindRaw,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype || "application/octet-stream",
+      contentBase64: req.file.buffer.toString("base64"),
+    };
+  }
+  const parsed = UploadWorkflowDocumentBody.safeParse(req.body);
+  if (!parsed.success) return { error: parsed.error.message };
+  return parsed.data;
+}
 
 router.get(
   "/workflows/:id/documents",
@@ -66,11 +109,16 @@ router.get(
 router.post(
   "/workflows/:id/documents",
   requireAuth,
+  upload.single("file"),
   async (req, res): Promise<void> => {
     const params = UploadWorkflowDocumentParams.safeParse(req.params);
-    const body = UploadWorkflowDocumentBody.safeParse(req.body);
-    if (!params.success || !body.success) {
-      res.status(400).json({ error: "Invalid request" });
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const normalized = normalizeUpload(req);
+    if ("error" in normalized) {
+      res.status(400).json({ error: normalized.error });
       return;
     }
     const [wf] = await db
@@ -101,7 +149,7 @@ router.post(
       .where(
         and(
           eq(documentsTable.workflowId, wf.id),
-          eq(documentsTable.kind, body.data.kind),
+          eq(documentsTable.kind, normalized.kind),
           eq(documentsTable.isCurrent, true),
         ),
       );
@@ -116,24 +164,30 @@ router.post(
         .set({ isCurrent: false })
         .where(eq(documentsTable.id, prev.id));
     }
-    const sizeBytes = Math.floor((body.data.contentBase64.length * 3) / 4);
+    const sizeBytes = Math.floor((normalized.contentBase64.length * 3) / 4);
     const [created] = await db
       .insert(documentsTable)
       .values({
         workflowId: wf.id,
-        step: body.data.step,
-        filename: body.data.filename,
-        mimeType: body.data.mimeType,
+        step: normalized.step,
+        filename: normalized.filename,
+        mimeType: normalized.mimeType,
         sizeBytes,
-        kind: body.data.kind,
+        kind: normalized.kind,
         version,
         previousVersionId,
-        contentBase64: body.data.contentBase64,
+        contentBase64: normalized.contentBase64,
         uploadedById: user.id,
         isCurrent: true,
       })
       .returning();
-    await audit(user.id, "DOCUMENT_UPLOAD", "document", created!.id, body.data.filename);
+    await audit(
+      user.id,
+      "DOCUMENT_UPLOAD",
+      "document",
+      created!.id,
+      normalized.filename,
+    );
     res.status(201).json({
       id: created!.id,
       workflowId: created!.workflowId,
