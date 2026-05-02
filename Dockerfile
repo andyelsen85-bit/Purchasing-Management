@@ -28,10 +28,19 @@ COPY lib/ lib/
 COPY artifacts/api-server/ artifacts/api-server/
 COPY artifacts/purchasing-management/ artifacts/purchasing-management/
 
-# Build libs (composite) then API + frontend
+# Build libs (composite) then API + frontend.
+# Vite reads PORT and BASE_PATH at build time (validated in vite.config.ts).
+# In production the SPA is mounted at root so BASE_PATH=/, and PORT is only
+# needed by the dev server but the config still requires it to parse, so
+# we pass a placeholder.
 RUN pnpm run typecheck:libs \
  && pnpm --filter @workspace/api-server run build \
- && pnpm --filter @workspace/purchasing-management run build
+ && PORT=80 BASE_PATH=/ pnpm --filter @workspace/purchasing-management run build
+
+# Produce a self-contained runtime tree for the api-server with only its
+# production dependencies (nodemailer, pg, drizzle-orm, etc. are externalized
+# by the esbuild bundle and need to resolve at runtime).
+RUN pnpm --filter @workspace/api-server deploy --prod /deploy/api
 
 # ---- Runtime ----------------------------------------------------------------
 FROM node:20-alpine AS runtime
@@ -43,10 +52,12 @@ WORKDIR /app
 # These are exposed as Docker volumes in docker-compose.yml.
 RUN mkdir -p /app/state/uploads /app/state/certs
 
-# Copy server bundle + frontend dist
+# Self-contained API tree: bundle output + node_modules + manifests.
+COPY --from=builder /deploy/api ./api
 COPY --from=builder /app/artifacts/api-server/dist ./api/dist
-COPY --from=builder /app/artifacts/api-server/package.json ./api/package.json
-COPY --from=builder /app/artifacts/purchasing-management/dist ./web/dist
+# Vite emits to dist/public — copy that subdirectory so /app/web/dist
+# directly contains index.html and the assets/ folder.
+COPY --from=builder /app/artifacts/purchasing-management/dist/public ./web/dist
 
 # The API server also serves the SPA when WEB_DIST is set.
 ENV PORT=80

@@ -45,11 +45,21 @@ async function loadUserWithDepts(id: number) {
   };
 }
 
-router.get("/users", requireAuth, async (_req, res): Promise<void> => {
-  const rows = await db.select().from(usersTable).orderBy(usersTable.username);
-  const enriched = await Promise.all(rows.map((r) => loadUserWithDepts(r.id)));
-  res.json(enriched.filter(Boolean));
-});
+router.get(
+  "/users",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (_req, res): Promise<void> => {
+    const rows = await db
+      .select()
+      .from(usersTable)
+      .orderBy(usersTable.username);
+    const enriched = await Promise.all(
+      rows.map((r) => loadUserWithDepts(r.id)),
+    );
+    res.json(enriched.filter(Boolean));
+  },
+);
 
 router.post(
   "/users",

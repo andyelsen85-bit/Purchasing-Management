@@ -131,8 +131,11 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
   const settings = await getSettings();
   const spn =
     process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
-  const keytab = process.env.KRB5_KEYTAB ?? "";
-  if (!settings.ldap?.kerberosEnabled || !spn || !keytab) {
+  // Presence of a keytab on disk is required for the Kerberos library to
+  // accept service tickets. We don't read its contents here — MIT-Kerberos
+  // does that — but we refuse to start the SPNEGO exchange without it.
+  const hasKeytab = Boolean(process.env.KRB5_KEYTAB);
+  if (!settings.ldap?.kerberosEnabled || !spn || !hasKeytab) {
     res.status(501).json({
       error:
         "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, or use the LDAP/local form login.",
@@ -143,17 +146,21 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
   // Try to dynamically load the optional `kerberos` native module. It is
   // only present on hosts that have built it against libkrb5 — so we
   // gracefully degrade when it is missing rather than blowing up at boot.
-  let kerberosMod: {
-    initializeServer: (
-      spn: string,
-    ) => Promise<{
-      step: (token: string) => Promise<string | null | undefined>;
-      username: string;
-    }>;
-  } | null = null;
+  type KerberosCtx = {
+    step: (token: string) => Promise<string | null | undefined>;
+    username: string;
+  };
+  type KerberosModule = {
+    initializeServer: (spn: string) => Promise<KerberosCtx>;
+  };
+  let kerberosMod: KerberosModule | null = null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    kerberosMod = (await import(/* @vite-ignore */ "kerberos" as string)) as any;
+    // The `kerberos` package has no bundled types and is intentionally
+    // optional, so we resolve it via a runtime-only specifier and then
+    // narrow it through our local interface.
+    const specifier = "kerberos";
+    const loaded: unknown = await import(/* @vite-ignore */ specifier);
+    kerberosMod = loaded as KerberosModule;
   } catch {
     res.status(501).json({
       error:
