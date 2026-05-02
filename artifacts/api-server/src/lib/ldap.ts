@@ -130,10 +130,26 @@ export async function ldapAuthenticate(
       }
     };
 
+    // RFC 4515 §3 escaping for LDAP search filter assertion values.
+    // Without this, characters like `*`, `(`, `)`, `\`, NUL would let an
+    // attacker break out of the filter and craft an injection.
+    const ldapEscape = (raw: string): string =>
+      raw.replace(/[\\*()\u0000]/g, (ch) => {
+        const map: Record<string, string> = {
+          "\\": "\\5c",
+          "*": "\\2a",
+          "(": "\\28",
+          ")": "\\29",
+          "\u0000": "\\00",
+        };
+        return map[ch] ?? ch;
+      });
+
     const doSearch = () => {
+      const safeUsername = ldapEscape(username);
       const filter = (cfg.userFilter || "(sAMAccountName={username})").replace(
         /{username}/g,
-        username,
+        safeUsername,
       );
       client.search(
         cfg.baseDn!,

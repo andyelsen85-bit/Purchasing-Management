@@ -42,7 +42,11 @@ services:
       - "443:443"
     volumes:
       - app-state:/app/state
+      - app-uploads:/app/state/uploads
+      - app-certs:/app/state/certs
 
 volumes:
   db-data:
   app-state:
+  app-uploads:
+  app-certs:

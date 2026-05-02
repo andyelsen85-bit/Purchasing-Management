@@ -257,6 +257,88 @@ export const sessionsTable = pgTable("sessions", {
   expire: timestamp("expire", { withTimezone: true }).notNull(),
 });
 
+// ---------------- DOCUMENT VERSIONS ----------------
+// `documentsTable` carries the current/latest revision of each document
+// kind on a workflow. `documentVersionsTable` is the immutable archive of
+// every uploaded revision (including the current one) so the audit trail
+// and "see previous version" UI is always backed by real rows.
+export const documentVersionsTable = pgTable(
+  "document_versions",
+  {
+    id: serial("id").primaryKey(),
+    documentId: integer("document_id").notNull(),
+    workflowId: integer("workflow_id").notNull(),
+    version: integer("version").notNull(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    contentBase64: text("content_base64").notNull(),
+    uploadedById: integer("uploaded_by_id").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("doc_versions_doc_idx").on(t.documentId),
+    index("doc_versions_workflow_idx").on(t.workflowId),
+  ],
+);
+export type DbDocumentVersion = typeof documentVersionsTable.$inferSelect;
+
+// ---------------- WORKFLOW STEPS ----------------
+// Per-step ledger: one row each time a workflow enters a step. Records who
+// completed it and when, what action was taken, and any free-form payload
+// (e.g. the manager comment, the chosen branch). Used by the dashboard
+// "average age per step" and the by-step kanban.
+export const workflowStepsTable = pgTable(
+  "workflow_steps",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: integer("workflow_id").notNull(),
+    step: text("step").notNull(),
+    enteredAt: timestamp("entered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    leftAt: timestamp("left_at", { withTimezone: true }),
+    completedById: integer("completed_by_id"),
+    action: text("action"),
+    payload: jsonb("payload").notNull().default({}),
+  },
+  (t) => [
+    index("wf_steps_workflow_idx").on(t.workflowId),
+    index("wf_steps_step_idx").on(t.step),
+  ],
+);
+export type DbWorkflowStep = typeof workflowStepsTable.$inferSelect;
+
+// ---------------- NOTIFICATIONS ----------------
+// Log of every notification fan-out. Captures the workflow + step that
+// triggered it, the recipient list, the channel (email today, SMS/Teams
+// later), and the delivery status so operators can audit failures.
+export const notificationsTable = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: integer("workflow_id").notNull(),
+    step: text("step").notNull(),
+    channel: text("channel").notNull().default("email"),
+    recipients: text("recipients").array().notNull().default([]),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    status: text("status").notNull().default("PENDING"),
+    error: text("error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("notif_workflow_idx").on(t.workflowId),
+    index("notif_status_idx").on(t.status),
+  ],
+);
+export type DbNotification = typeof notificationsTable.$inferSelect;
+
 // ---------------- TLS / CERT (single row) ----------------
 export const tlsTable = pgTable("tls_state", {
   id: serial("id").primaryKey(),
