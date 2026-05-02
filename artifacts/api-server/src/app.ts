@@ -90,8 +90,15 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      // Secure in production so the cookie is only sent over HTTPS.
-      secure: process.env.NODE_ENV === "production",
+      // `secure: "auto"` lets express-session set the cookie as Secure
+      // only when the request was actually served over HTTPS (or when
+      // a trusted reverse proxy says it was via X-Forwarded-Proto).
+      // Marking it unconditionally Secure in production deadlocks the
+      // first-boot HTTPS bootstrap: the server starts on plain HTTP
+      // until an admin imports a certificate via the cert UI, but the
+      // browser would never send the session cookie back over HTTP, so
+      // the admin couldn't sign in to do that import.
+      secure: "auto",
       maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   }),
