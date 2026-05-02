@@ -64,6 +64,9 @@ const TLS_CERT_PATH =
   process.env.TLS_CERT_PATH || cfg.tlsCertPath || "./agent.crt";
 const TLS_KEY_PATH =
   process.env.TLS_KEY_PATH || cfg.tlsKeyPath || "./agent.key";
+const TLS_PFX_PATH = process.env.TLS_PFX_PATH || cfg.tlsPfxPath || "";
+const TLS_PFX_PASSPHRASE =
+  process.env.TLS_PFX_PASSPHRASE || cfg.tlsPfxPassphrase || "";
 const SHARED_TOKEN = process.env.SHARED_TOKEN || cfg.sharedToken || "";
 const CERT_TEMPLATE =
   process.env.CERT_TEMPLATE || cfg.certTemplate || "WebServer";
@@ -82,9 +85,30 @@ if (!SHARED_TOKEN || SHARED_TOKEN === "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARS") {
   );
   process.exit(1);
 }
-if (!fs.existsSync(TLS_CERT_PATH) || !fs.existsSync(TLS_KEY_PATH)) {
+
+// TLS material may be supplied as either a PFX (PKCS#12) bundle or as a
+// separate cert+key PEM pair. PFX is what the Windows installer generates
+// when no operator-supplied cert/key is available, because exporting RSA
+// private keys to PEM requires .NET Core 3+ APIs that PowerShell 5.1 on
+// Windows Server LTSC editions still lacks.
+let tlsOpts;
+if (TLS_PFX_PATH) {
+  if (!fs.existsSync(TLS_PFX_PATH)) {
+    console.error(`FATAL: TLS_PFX_PATH set but file not found: ${TLS_PFX_PATH}`);
+    process.exit(1);
+  }
+  tlsOpts = {
+    pfx: fs.readFileSync(TLS_PFX_PATH),
+    ...(TLS_PFX_PASSPHRASE ? { passphrase: TLS_PFX_PASSPHRASE } : {}),
+  };
+} else if (fs.existsSync(TLS_CERT_PATH) && fs.existsSync(TLS_KEY_PATH)) {
+  tlsOpts = {
+    cert: fs.readFileSync(TLS_CERT_PATH),
+    key: fs.readFileSync(TLS_KEY_PATH),
+  };
+} else {
   console.error(
-    `FATAL: TLS files not found. Provide ${TLS_CERT_PATH} and ${TLS_KEY_PATH}.`,
+    `FATAL: TLS material not found. Provide a PFX via TLS_PFX_PATH or both ${TLS_CERT_PATH} and ${TLS_KEY_PATH}.`,
   );
   process.exit(1);
 }
@@ -255,11 +279,6 @@ async function submitCsr(csrPem, template) {
 }
 
 // -------- HTTPS server (REST + WS upgrade) -------------------------------
-const tlsOpts = {
-  cert: fs.readFileSync(TLS_CERT_PATH),
-  key: fs.readFileSync(TLS_KEY_PATH),
-};
-
 const httpsServer = https.createServer(tlsOpts, async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const u = url.parse(req.url, true);

@@ -1,0 +1,26 @@
+Purchasing Signing Agent
+========================
+
+This installer ships:
+
+  * The Purchasing Signing Agent source (Node.js).
+  * Node.js for Windows (https://nodejs.org/), used unmodified under its
+    upstream MIT-style license. See the Node.js project for full terms.
+  * NSSM, the Non-Sucking Service Manager (https://nssm.cc/), used
+    unmodified under its public-domain license.
+
+The Purchasing Signing Agent itself is internal software for Purchasing
+Management deployments.
+
+By installing this software you agree to:
+
+  * Use the agent only on Windows hosts you administer.
+  * Keep the shared bearer token confidential. The installer either accepts
+    one via /TOKEN= or generates a fresh 32-byte random token; either way it
+    is written to %ProgramData%\PurchasingSigningAgent\config.json, which
+    the installer locks down to Administrators and SYSTEM.
+  * Replace the placeholder TLS certificate/key with material trusted by
+    the Purchasing Management server before exposing the agent on a routable
+    network.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
