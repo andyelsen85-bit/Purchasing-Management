@@ -10,20 +10,32 @@ import {
 import { logger } from "./logger";
 import type { WorkflowStep } from "./permissions";
 
-// Map each step to the role(s) that should receive an alert when a workflow
-// reaches that step. Source: spec sections 4–9.
+// Map each step to the role(s) that should receive an alert when a
+// workflow reaches that step. The workflow creator is always added on
+// top of these by recipientsForStep().
+//
+// Step numbering (per spec):
+//   1 NEW                          — creator only
+//   2 QUOTATION                    — submitter's department gathers quotes
+//   3 VALIDATING_QUOTE_FINANCIAL   — Department Manager approves the quote
+//   4 VALIDATING_BY_FINANCIAL      — Financial team reviews
+//   4a GT_INVEST                   — GT Invest committee (only when triggered)
+//   5 ORDERING                     — Financial places the order
+//   6 DELIVERY                     — Department receives the goods
+//   7 INVOICE                      — Financial-Invoice records the invoice
+//   8 VALIDATING_INVOICE           — Financial-Invoice + Financial-All sign-off
+//   9 PAYMENT                      — Financial-Payment executes the transfer
 const STEP_NOTIFY_ROLES: Record<WorkflowStep, string[]> = {
   NEW: [],
-  QUOTATION: ["DEPT_USER", "DEPT_MANAGER"],
+  QUOTATION: ["DEPT_USER"],
   VALIDATING_QUOTE_FINANCIAL: ["DEPT_MANAGER"],
   VALIDATING_BY_FINANCIAL: ["FINANCIAL_ALL"],
-  GT_INVEST: ["GT_INVEST", "FINANCIAL_ALL"],
-  ORDERING: ["DEPT_USER", "DEPT_MANAGER"],
+  GT_INVEST: ["GT_INVEST"],
+  ORDERING: ["FINANCIAL_ALL"],
   DELIVERY: ["DEPT_USER", "DEPT_MANAGER"],
-  INVOICE: ["FINANCIAL_INVOICE", "FINANCIAL_ALL"],
-  // Step 8 — Department Manager is also notified per spec (sec. 8.b).
-  VALIDATING_INVOICE: ["FINANCIAL_INVOICE", "FINANCIAL_ALL", "DEPT_MANAGER"],
-  PAYMENT: ["FINANCIAL_PAYMENT", "FINANCIAL_ALL"],
+  INVOICE: ["FINANCIAL_INVOICE"],
+  VALIDATING_INVOICE: ["FINANCIAL_INVOICE", "FINANCIAL_ALL"],
+  PAYMENT: ["FINANCIAL_PAYMENT"],
   DONE: [],
 };
 
