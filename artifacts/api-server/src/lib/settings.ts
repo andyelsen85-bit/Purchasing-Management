@@ -1,10 +1,22 @@
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
+export type LdapEncryption = "ldaps" | "starttls" | "plain";
+
 export interface LdapConfigStored {
   enabled?: boolean;
   host?: string | null;
   port?: number | null;
+  /**
+   * Transport security mode.
+   *  - `ldaps`    — implicit TLS (default, port 636).
+   *  - `starttls` — plain LDAP connect on port 389 then upgrade with
+   *    the StartTLS extended op.
+   *  - `plain`    — no encryption. Lab/diagnostic only.
+   * Older saved configs without this field are treated as `ldaps` for
+   * backward compatibility.
+   */
+  encryption?: LdapEncryption | null;
   baseDn?: string | null;
   bindDn?: string | null;
   bindPassword?: string | null;
@@ -62,6 +74,7 @@ const DEFAULT: AppSettings = {
     enabled: false,
     host: null,
     port: 636,
+    encryption: "ldaps",
     baseDn: null,
     bindDn: null,
     bindPassword: null,
@@ -105,6 +118,7 @@ export function toPublicSettings(s: AppSettings) {
       enabled: !!s.ldap?.enabled,
       host: s.ldap?.host ?? null,
       port: s.ldap?.port ?? null,
+      encryption: (s.ldap?.encryption ?? "ldaps") as LdapEncryption,
       baseDn: s.ldap?.baseDn ?? null,
       bindDn: s.ldap?.bindDn ?? null,
       bindPasswordSet: !!s.ldap?.bindPassword,

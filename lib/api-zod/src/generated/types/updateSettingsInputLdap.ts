@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateSettingsInputLdapEncryption } from "./updateSettingsInputLdapEncryption";
 import type { UpdateSettingsInputLdapGroupDepartmentMap } from "./updateSettingsInputLdapGroupDepartmentMap";
 import type { UpdateSettingsInputLdapGroupRoleMap } from "./updateSettingsInputLdapGroupRoleMap";
 
@@ -15,6 +16,8 @@ export type UpdateSettingsInputLdap = {
   host?: string | null;
   /** @nullable */
   port?: number | null;
+  /** @nullable */
+  encryption?: UpdateSettingsInputLdapEncryption;
   /** @nullable */
   baseDn?: string | null;
   /** @nullable */

@@ -1328,6 +1328,11 @@ export const GetSettingsResponse = zod.object({
     enabled: zod.boolean(),
     host: zod.string().nullish(),
     port: zod.number().nullish(),
+    encryption: zod
+      .enum(["ldaps", "starttls", "plain"])
+      .describe(
+        "Transport security: `ldaps` (implicit TLS, default port 636),\n`starttls` (plain connect on 389 then upgrade), or `plain`\n(no encryption — diagnostic only).\n",
+      ),
     baseDn: zod.string().nullish(),
     bindDn: zod.string().nullish(),
     bindPasswordSet: zod.boolean(),
@@ -1362,6 +1367,14 @@ export const UpdateSettingsBody = zod.object({
       enabled: zod.boolean().nullish(),
       host: zod.string().nullish(),
       port: zod.number().nullish(),
+      encryption: zod
+        .union([
+          zod.literal("ldaps"),
+          zod.literal("starttls"),
+          zod.literal("plain"),
+          zod.literal(null),
+        ])
+        .nullish(),
       baseDn: zod.string().nullish(),
       bindDn: zod.string().nullish(),
       bindPassword: zod.string().nullish(),
@@ -1398,6 +1411,11 @@ export const UpdateSettingsResponse = zod.object({
     enabled: zod.boolean(),
     host: zod.string().nullish(),
     port: zod.number().nullish(),
+    encryption: zod
+      .enum(["ldaps", "starttls", "plain"])
+      .describe(
+        "Transport security: `ldaps` (implicit TLS, default port 636),\n`starttls` (plain connect on 389 then upgrade), or `plain`\n(no encryption — diagnostic only).\n",
+      ),
     baseDn: zod.string().nullish(),
     bindDn: zod.string().nullish(),
     bindPasswordSet: zod.boolean(),

@@ -537,6 +537,21 @@ export interface SessionResponse {
   user?: SessionUser | null;
 }
 
+/**
+ * Transport security: `ldaps` (implicit TLS, default port 636),
+`starttls` (plain connect on 389 then upgrade), or `plain`
+(no encryption — diagnostic only).
+
+ */
+export type LdapsSettingsEncryption =
+  (typeof LdapsSettingsEncryption)[keyof typeof LdapsSettingsEncryption];
+
+export const LdapsSettingsEncryption = {
+  ldaps: "ldaps",
+  starttls: "starttls",
+  plain: "plain",
+} as const;
+
 export type LdapsSettingsGroupRoleMap = { [key: string]: string };
 
 export type LdapsSettingsGroupDepartmentMap = { [key: string]: string };
@@ -547,6 +562,11 @@ export interface LdapsSettings {
   host?: string | null;
   /** @nullable */
   port?: number | null;
+  /** Transport security: `ldaps` (implicit TLS, default port 636),
+`starttls` (plain connect on 389 then upgrade), or `plain`
+(no encryption — diagnostic only).
+ */
+  encryption: LdapsSettingsEncryption;
   /** @nullable */
   baseDn?: string | null;
   /** @nullable */
@@ -589,6 +609,19 @@ export interface AppSettings {
   smtp: SmtpSettings;
 }
 
+/**
+ * @nullable
+ */
+export type UpdateSettingsInputLdapEncryption =
+  | (typeof UpdateSettingsInputLdapEncryption)[keyof typeof UpdateSettingsInputLdapEncryption]
+  | null;
+
+export const UpdateSettingsInputLdapEncryption = {
+  ldaps: "ldaps",
+  starttls: "starttls",
+  plain: "plain",
+} as const;
+
 export type UpdateSettingsInputLdapGroupRoleMap = { [key: string]: string };
 
 export type UpdateSettingsInputLdapGroupDepartmentMap = {
@@ -602,6 +635,8 @@ export type UpdateSettingsInputLdap = {
   host?: string | null;
   /** @nullable */
   port?: number | null;
+  /** @nullable */
+  encryption?: UpdateSettingsInputLdapEncryption;
   /** @nullable */
   baseDn?: string | null;
   /** @nullable */

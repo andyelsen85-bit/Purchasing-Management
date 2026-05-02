@@ -1,10 +1,13 @@
 import ldap from "ldapjs";
 import { logger } from "./logger";
 
+export type LdapEncryption = "ldaps" | "starttls" | "plain";
+
 export interface LdapConfig {
   enabled?: boolean | null;
   host?: string | null;
   port?: number | null;
+  encryption?: LdapEncryption | null;
   baseDn?: string | null;
   bindDn?: string | null;
   bindPassword?: string | null;
@@ -23,6 +26,110 @@ export interface LdapAuthResult {
   error?: string;
 }
 
+interface ResolvedTransport {
+  url: string;
+  encryption: LdapEncryption;
+  tlsOptions: Record<string, unknown>;
+}
+
+/**
+ * Pick the URL scheme + TLS options from the saved config.
+ *
+ * `encryption` is the operator's explicit choice; when missing (older
+ * saved configs) we infer from the port (389 → starttls, anything else
+ * → ldaps). The TLS object always sets `servername` for SNI — many
+ * load-balanced AD setups reset the connection without it, which surfaces
+ * as a useless `read ECONNRESET` from Node's TLS layer.
+ */
+function resolveTransport(cfg: LdapConfig): ResolvedTransport {
+  const port = cfg.port ?? (cfg.encryption === "ldaps" ? 636 : 389);
+  const enc: LdapEncryption =
+    cfg.encryption ?? (port === 389 ? "starttls" : "ldaps");
+  const scheme = enc === "ldaps" ? "ldaps" : "ldap";
+  const url = `${scheme}://${cfg.host}:${port}`;
+  const tlsOptions: Record<string, unknown> = {};
+  if (cfg.host) tlsOptions.servername = cfg.host;
+  if (cfg.skipVerify) tlsOptions.rejectUnauthorized = false;
+  if (cfg.caCert) tlsOptions.ca = [cfg.caCert];
+  return { url, encryption: enc, tlsOptions };
+}
+
+/**
+ * Create a connected LDAP client, performing a StartTLS upgrade when
+ * configured. Resolves with `{ client }` on success or `{ error }` with
+ * the underlying message on failure (including TLS handshake resets).
+ */
+type ConnectResult =
+  | { ok: true; client: ldap.Client }
+  | { ok: false; error: string };
+
+function connect(transport: ResolvedTransport): Promise<ConnectResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const client = ldap.createClient({
+      url: transport.url,
+      tlsOptions: transport.tlsOptions,
+      // Don't reconnect on a hard handshake failure — we want the error
+      // to bubble up immediately, not silently retry forever.
+      reconnect: false,
+    });
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      const msg = friendlyError(err);
+      logger.warn({ err: String(err), url: transport.url }, "LDAP client error");
+      try {
+        client.destroy();
+      } catch {
+        /* ignore */
+      }
+      resolve({ ok: false, error: msg });
+    };
+    client.on("error", fail);
+    client.on("connectError", fail);
+    client.on("connectTimeout", () => fail(new Error("connect timeout")));
+
+    const onReady = () => {
+      if (settled) return;
+      if (transport.encryption === "starttls") {
+        client.starttls(transport.tlsOptions, [], (err) => {
+          if (err) return fail(err);
+          if (settled) return;
+          settled = true;
+          resolve({ ok: true, client });
+        });
+        return;
+      }
+      settled = true;
+      resolve({ ok: true, client });
+    };
+    // ldapjs emits `connect` after the socket (and TLS, for ldaps://) is
+    // ready. Some versions also expose `setupSocket`; `connect` is the
+    // documented one.
+    client.on("connect", onReady);
+  });
+}
+
+function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/ECONNRESET/i.test(raw)) {
+    return "LDAP connection was reset by the server. This usually means the encryption mode does not match the port (e.g. LDAPS to a plain 389 port, or StartTLS to 636).";
+  }
+  if (/ECONNREFUSED/i.test(raw)) {
+    return "LDAP connection refused. Check the host and port, and that the directory server is reachable from this machine.";
+  }
+  if (/ETIMEDOUT|ENETUNREACH|EHOSTUNREACH/i.test(raw)) {
+    return "Could not reach the LDAP server (timeout). Check host, port, and firewall rules.";
+  }
+  if (/ENOTFOUND|EAI_AGAIN/i.test(raw)) {
+    return "LDAP host could not be resolved by DNS.";
+  }
+  if (/CERT|self.signed|unable to verify|altnames|hostname|TLSV1|SSL|wrong version/i.test(raw)) {
+    return `LDAP TLS error: ${raw}. Verify the CA certificate, the host name in the certificate, or enable "Skip TLS verification" temporarily.`;
+  }
+  return `LDAP error: ${raw}`;
+}
+
 export async function ldapAuthenticate(
   cfg: LdapConfig,
   username: string,
@@ -31,20 +138,12 @@ export async function ldapAuthenticate(
   if (!cfg.enabled || !cfg.host || !cfg.baseDn) {
     return { ok: false, error: "LDAP not configured" };
   }
-  const port = cfg.port ?? 636;
-  const url = `ldaps://${cfg.host}:${port}`;
-
-  const tlsOptions: Record<string, unknown> = {};
-  if (cfg.skipVerify) tlsOptions.rejectUnauthorized = false;
-  if (cfg.caCert) tlsOptions.ca = [cfg.caCert];
+  const transport = resolveTransport(cfg);
+  const conn = await connect(transport);
+  if (!conn.ok) return { ok: false, error: conn.error };
+  const client = conn.client;
 
   return new Promise<LdapAuthResult>((resolve) => {
-    const client = ldap.createClient({ url, tlsOptions });
-    client.on("error", (err) => {
-      logger.warn({ err: String(err) }, "LDAP client error");
-      resolve({ ok: false, error: "LDAP connection error" });
-    });
-
     const finish = (r: LdapAuthResult) => {
       try {
         client.unbind();
@@ -75,7 +174,6 @@ export async function ldapAuthenticate(
           { filter, scope: "sub", attributes: ["dn"] },
           (err, search) => {
             if (err) {
-              // Fallback: client-side BFS up the memberOf chain.
               fallbackBfs(directGroups, all).then(() =>
                 resolveOuter(Array.from(all)),
               );
@@ -131,8 +229,6 @@ export async function ldapAuthenticate(
     };
 
     // RFC 4515 §3 escaping for LDAP search filter assertion values.
-    // Without this, characters like `*`, `(`, `)`, `\`, NUL would let an
-    // attacker break out of the filter and craft an injection.
     const ldapEscape = (raw: string): string =>
       raw.replace(/[\\*()\u0000]/g, (ch) => {
         const map: Record<string, string> = {
@@ -181,14 +277,15 @@ export async function ldapAuthenticate(
           search.on("error", () =>
             finish({ ok: false, error: "LDAP search failed" }),
           );
-          search.on("end", () => {
+          search.on("end", async () => {
             if (!foundDn)
               return finish({ ok: false, error: "User not found" });
-            // Bind as the user
-            const userClient = ldap.createClient({ url, tlsOptions });
-            userClient.on("error", () =>
-              finish({ ok: false, error: "LDAP user bind error" }),
-            );
+            // Bind as the user using a fresh connection so we don't
+            // disturb the bind-DN session.
+            const userConn = await connect(transport);
+            if (!userConn.ok)
+              return finish({ ok: false, error: userConn.error });
+            const userClient = userConn.client;
             userClient.bind(foundDn, password, async (bErr) => {
               try {
                 userClient.unbind();
@@ -207,7 +304,11 @@ export async function ldapAuthenticate(
 
     if (cfg.bindDn && cfg.bindPassword) {
       client.bind(cfg.bindDn, cfg.bindPassword, (err) => {
-        if (err) return finish({ ok: false, error: "LDAP bind error" });
+        if (err)
+          return finish({
+            ok: false,
+            error: `LDAP bind error: ${err.message ?? String(err)}`,
+          });
         doSearch();
       });
     } else {
@@ -228,18 +329,21 @@ export async function lookupLdapGroups(
   cfg: LdapConfig,
   username: string,
 ): Promise<string[]> {
-  if (!cfg.enabled || !cfg.host || !cfg.baseDn || !cfg.bindDn || !cfg.bindPassword) {
+  if (
+    !cfg.enabled ||
+    !cfg.host ||
+    !cfg.baseDn ||
+    !cfg.bindDn ||
+    !cfg.bindPassword
+  ) {
     return [];
   }
-  const port = cfg.port ?? 636;
-  const url = `ldaps://${cfg.host}:${port}`;
-  const tlsOptions: Record<string, unknown> = {};
-  if (cfg.skipVerify) tlsOptions.rejectUnauthorized = false;
-  if (cfg.caCert) tlsOptions.ca = [cfg.caCert];
+  const transport = resolveTransport(cfg);
+  const conn = await connect(transport);
+  if (!conn.ok) return [];
+  const client = conn.client;
 
   return new Promise<string[]>((resolve) => {
-    const client = ldap.createClient({ url, tlsOptions });
-    client.on("error", () => resolve([]));
     const finish = (v: string[]) => {
       try {
         client.unbind();
@@ -249,7 +353,8 @@ export async function lookupLdapGroups(
       resolve(v);
     };
     const safe = username.replace(/[\\*()\u0000]/g, (c) =>
-      ({ "\\": "\\5c", "*": "\\2a", "(": "\\28", ")": "\\29", "\u0000": "\\00" }[c] ?? c),
+      ({ "\\": "\\5c", "*": "\\2a", "(": "\\28", ")": "\\29", "\u0000": "\\00" })[c] ??
+      c,
     );
     const filter = (cfg.userFilter || "(sAMAccountName={username})").replace(
       /{username}/g,

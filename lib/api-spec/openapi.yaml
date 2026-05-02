@@ -1339,6 +1339,13 @@ components:
         enabled: { type: boolean }
         host: { type: ["string", "null"] }
         port: { type: ["integer", "null"] }
+        encryption:
+          type: string
+          enum: [ldaps, starttls, plain]
+          description: |
+            Transport security: `ldaps` (implicit TLS, default port 636),
+            `starttls` (plain connect on 389 then upgrade), or `plain`
+            (no encryption — diagnostic only).
         baseDn: { type: ["string", "null"] }
         bindDn: { type: ["string", "null"] }
         bindPasswordSet: { type: boolean }
@@ -1352,7 +1359,7 @@ components:
         groupDepartmentMap:
           type: object
           additionalProperties: { type: string }
-      required: [enabled, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
+      required: [enabled, encryption, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
 
     SmtpSettings:
       type: object
@@ -1407,6 +1414,9 @@ components:
             enabled: { type: ["boolean", "null"] }
             host: { type: ["string", "null"] }
             port: { type: ["integer", "null"] }
+            encryption:
+              type: ["string", "null"]
+              enum: [ldaps, starttls, plain, null]
             baseDn: { type: ["string", "null"] }
             bindDn: { type: ["string", "null"] }
             bindPassword: { type: ["string", "null"] }

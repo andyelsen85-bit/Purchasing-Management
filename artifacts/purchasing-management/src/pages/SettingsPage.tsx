@@ -557,6 +557,9 @@ function LdapSettingsPanel() {
   const [host, setHost] = useState("");
   const [port, setPort] = useState(636);
   const [baseDn, setBaseDn] = useState("");
+  const [encryption, setEncryption] = useState<"ldaps" | "starttls" | "plain">(
+    "ldaps",
+  );
   const [bindDn, setBindDn] = useState("");
   const [bindPassword, setBindPassword] = useState("");
   const [skipVerify, setSkipVerify] = useState(false);
@@ -570,6 +573,10 @@ function LdapSettingsPanel() {
     setEnabled(s.ldap.enabled);
     setHost(s.ldap.host ?? "");
     setPort(s.ldap.port ?? 636);
+    setEncryption(
+      (s.ldap as { encryption?: "ldaps" | "starttls" | "plain" }).encryption ??
+        "ldaps",
+    );
     setBaseDn(s.ldap.baseDn ?? "");
     setBindDn(s.ldap.bindDn ?? "");
     setBindPassword("");
@@ -611,6 +618,39 @@ function LdapSettingsPanel() {
               onChange={(e) => setPort(Number(e.target.value))}
               data-testid="input-ldap-port"
             />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label>Encryption</Label>
+            <Select
+              value={encryption}
+              onValueChange={(v) => {
+                const next = v as "ldaps" | "starttls" | "plain";
+                setEncryption(next);
+                // Auto-suggest the standard port for the new mode if the
+                // operator hasn't customised it.
+                if (next === "ldaps" && (port === 389 || !port)) setPort(636);
+                if (next !== "ldaps" && (port === 636 || !port)) setPort(389);
+              }}
+            >
+              <SelectTrigger data-testid="select-ldap-encryption">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ldaps">
+                  LDAPS — implicit TLS (port 636)
+                </SelectItem>
+                <SelectItem value="starttls">
+                  StartTLS — upgrade plain 389 to TLS
+                </SelectItem>
+                <SelectItem value="plain">
+                  Plain LDAP — no encryption (diagnostic only)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              If you see <code>ECONNRESET</code> when testing, the encryption
+              mode usually doesn&apos;t match the server&apos;s port.
+            </p>
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label>Base DN</Label>
@@ -703,6 +743,7 @@ function LdapSettingsPanel() {
                     enabled,
                     host: host || null,
                     port,
+                    encryption,
                     baseDn: baseDn || null,
                     bindDn: bindDn || null,
                     ...(bindPassword ? { bindPassword } : {}),
