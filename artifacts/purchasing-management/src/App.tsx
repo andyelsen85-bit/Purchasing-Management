@@ -2,36 +2,71 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthGate } from "@/components/AuthGate";
+import { AppShell } from "@/components/AppShell";
+import { LoginPage } from "@/pages/LoginPage";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { WorkflowsPage } from "@/pages/WorkflowsPage";
+import { NewWorkflowPage } from "@/pages/NewWorkflowPage";
+import { WorkflowDetailPage } from "@/pages/WorkflowDetailPage";
+import { WorkflowsByStepPage } from "@/pages/WorkflowsByStepPage";
+import { GtInvestPage } from "@/pages/GtInvestPage";
+import { CompaniesPage } from "@/pages/CompaniesPage";
+import { AuditLogPage } from "@/pages/AuditLogPage";
+import { SettingsPage } from "@/pages/SettingsPage";
+import { HttpsPage } from "@/pages/HttpsPage";
 import NotFound from "@/pages/not-found";
 
-const queryClient = new QueryClient();
-
-function Home() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">Replit Agent is building...</h1>
-        <p className="mt-2 text-sm text-gray-600">Your app will appear here once it's ready.</p>
-      </div>
-    </div>
-  );
-}
-
-function Router() {
-  return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 5_000, refetchOnWindowFocus: false, retry: false },
+  },
+});
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AuthGate>
+            {(user) => (
+              <Switch>
+                <Route path="/login" component={LoginPage} />
+                <Route>
+                  {() => (
+                    <AppShell user={user}>
+                      <Switch>
+                        <Route path="/" component={DashboardPage} />
+                        <Route path="/workflows" component={WorkflowsPage} />
+                        <Route
+                          path="/workflows/new"
+                          component={NewWorkflowPage}
+                        />
+                        <Route path="/workflows/:id">
+                          {(params) => (
+                            <WorkflowDetailPage
+                              id={Number(params.id)}
+                              user={user}
+                            />
+                          )}
+                        </Route>
+                        <Route
+                          path="/workflows-by-step"
+                          component={WorkflowsByStepPage}
+                        />
+                        <Route path="/gt-invest" component={GtInvestPage} />
+                        <Route path="/companies" component={CompaniesPage} />
+                        <Route path="/audit-log" component={AuditLogPage} />
+                        <Route path="/settings" component={SettingsPage} />
+                        <Route path="/admin/https" component={HttpsPage} />
+                        <Route component={NotFound} />
+                      </Switch>
+                    </AppShell>
+                  )}
+                </Route>
+              </Switch>
+            )}
+          </AuthGate>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

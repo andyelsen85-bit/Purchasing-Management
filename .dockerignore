@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/build
+**/.next
+**/.cache
+**/.replit-artifact
+.git
+.local
+artifacts/mockup-sandbox
+tools/signing-agent
+*.log
+*.tar.gz
+.DS_Store

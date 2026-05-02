@@ -1,0 +1,206 @@
+import { useState, useEffect } from "react";
+import { Link, useLocation } from "wouter";
+import {
+  LayoutDashboard,
+  ListChecks,
+  Columns3,
+  Banknote,
+  Building2,
+  Settings,
+  ScrollText,
+  ShieldCheck,
+  LogOut,
+  Moon,
+  Sun,
+  Package,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useGetSettings, useLogout, getGetSessionQueryKey } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import type { SessionUser } from "@/components/AuthGate";
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles?: string[];
+}
+
+const NAV: NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/workflows", label: "Workflows", icon: ListChecks },
+  { to: "/workflows-by-step", label: "By Step", icon: Columns3 },
+  { to: "/gt-invest", label: "GT Invest", icon: Banknote },
+  { to: "/companies", label: "Companies", icon: Building2 },
+  { to: "/audit-log", label: "Audit Log", icon: ScrollText, roles: ["ADMIN"] },
+  { to: "/settings", label: "Settings", icon: Settings },
+  {
+    to: "/admin/https",
+    label: "HTTPS / TLS",
+    icon: ShieldCheck,
+    roles: ["ADMIN"],
+  },
+];
+
+interface Props {
+  user: SessionUser;
+  children: React.ReactNode;
+}
+
+export function AppShell({ user, children }: Props) {
+  const [location, setLocation] = useLocation();
+  const { data: settings } = useGetSettings();
+  const logout = useLogout();
+  const qc = useQueryClient();
+  const [dark, setDark] = useState<boolean>(() => {
+    return (
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark")
+    );
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem("theme");
+    const isDark = saved === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    setDark(isDark);
+  }, []);
+
+  function toggleTheme() {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  }
+
+  function doLogout() {
+    logout.mutate(undefined, {
+      onSuccess: () => {
+        qc.setQueryData(getGetSessionQueryKey(), null);
+        qc.clear();
+        setLocation("/login");
+      },
+    });
+  }
+
+  const visibleNav = NAV.filter(
+    (n) => !n.roles || n.roles.some((r) => user.roles.includes(r)),
+  );
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      <aside
+        className="flex w-64 flex-col bg-sidebar text-sidebar-foreground"
+        data-testid="sidebar-main"
+      >
+        <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
+          {settings?.logoDataUrl ? (
+            <img
+              src={settings.logoDataUrl}
+              alt="Logo"
+              className="h-8 w-8 rounded object-cover"
+              data-testid="img-app-logo"
+            />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded bg-sidebar-primary text-sidebar-primary-foreground">
+              <Package className="h-4 w-4" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <div
+              className="truncate text-sm font-semibold"
+              data-testid="text-app-name"
+            >
+              {settings?.appName ?? "Purchasing Management"}
+            </div>
+            <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
+              Procurement Suite
+            </div>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1 px-2 py-4">
+          <nav className="space-y-1">
+            {visibleNav.map((item) => {
+              const active =
+                item.to === "/"
+                  ? location === "/"
+                  : location.startsWith(item.to);
+              return (
+                <Link
+                  key={item.to}
+                  href={item.to}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover-elevate ${
+                    active
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      : "text-sidebar-foreground/80"
+                  }`}
+                  data-testid={`link-nav-${item.to.replace(/\//g, "-").replace(/^-/, "") || "home"}`}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </ScrollArea>
+
+        <div className="border-t border-sidebar-border p-3">
+          <div className="rounded-md bg-sidebar-accent/40 p-3">
+            <div
+              className="text-sm font-medium text-sidebar-accent-foreground"
+              data-testid="text-user-name"
+            >
+              {user.displayName}
+            </div>
+            <div className="text-xs text-sidebar-foreground/70">
+              {user.username} · {user.source}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {user.roles.slice(0, 3).map((r) => (
+                <span
+                  key={r}
+                  className="rounded bg-sidebar/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/80"
+                >
+                  {r}
+                </span>
+              ))}
+            </div>
+          </div>
+          <Separator className="my-3 bg-sidebar-border" />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              onClick={toggleTheme}
+              data-testid="button-toggle-theme"
+            >
+              {dark ? (
+                <Sun className="mr-2 h-4 w-4" />
+              ) : (
+                <Moon className="mr-2 h-4 w-4" />
+              )}
+              {dark ? "Light" : "Dark"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              onClick={doLogout}
+              data-testid="button-logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex-1 overflow-auto" data-testid="main-content">
+        {children}
+      </main>
+    </div>
+  );
+}

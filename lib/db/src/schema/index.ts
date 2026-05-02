@@ -1,20 +1,271 @@
-// Export your models here. Add one export per file
-// export * from "./posts";
-//
-// Each model/table should ideally be split into different files.
-// Each model/table should define a Drizzle table, insert schema, and types:
-//
-//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
-//   import { createInsertSchema } from "drizzle-zod";
-//   import { z } from "zod/v4";
-//
-//   export const postsTable = pgTable("posts", {
-//     id: serial("id").primaryKey(),
-//     title: text("title").notNull(),
-//   });
-//
-//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
-//   export type InsertPost = z.infer<typeof insertPostSchema>;
-//   export type Post = typeof postsTable.$inferSelect;
+import {
+  pgTable,
+  serial,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  jsonb,
+  numeric,
+  date,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/pg-core";
 
-export {}
+// ---------------- USERS ----------------
+export const usersTable = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    username: text("username").notNull(),
+    displayName: text("display_name").notNull(),
+    email: text("email"),
+    passwordHash: text("password_hash"),
+    source: text("source").notNull().default("LOCAL"),
+    roles: text("roles").array().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("users_username_uniq").on(t.username)],
+);
+export type DbUser = typeof usersTable.$inferSelect;
+
+// ---------------- DEPARTMENTS ----------------
+export const departmentsTable = pgTable(
+  "departments",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    code: text("code").notNull(),
+    adGroupName: text("ad_group_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("departments_code_uniq").on(t.code)],
+);
+export type DbDepartment = typeof departmentsTable.$inferSelect;
+
+export const userDepartmentsTable = pgTable(
+  "user_departments",
+  {
+    userId: integer("user_id").notNull(),
+    departmentId: integer("department_id").notNull(),
+  },
+  (t) => [uniqueIndex("user_dept_uniq").on(t.userId, t.departmentId)],
+);
+
+// ---------------- COMPANIES ----------------
+export const companiesTable = pgTable("companies", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  address: text("address"),
+  taxId: text("tax_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type DbCompany = typeof companiesTable.$inferSelect;
+
+export const contactsTable = pgTable(
+  "contacts",
+  {
+    id: serial("id").primaryKey(),
+    companyId: integer("company_id").notNull(),
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    role: text("role"),
+  },
+  (t) => [index("contacts_company_idx").on(t.companyId)],
+);
+export type DbContact = typeof contactsTable.$inferSelect;
+
+// ---------------- WORKFLOWS ----------------
+export const workflowsTable = pgTable(
+  "workflows",
+  {
+    id: serial("id").primaryKey(),
+    reference: text("reference").notNull(),
+    title: text("title").notNull(),
+    departmentId: integer("department_id").notNull(),
+    createdById: integer("created_by_id").notNull(),
+    priority: text("priority").notNull().default("NORMAL"),
+    currentStep: text("current_step").notNull().default("NEW"),
+    branch: text("branch"),
+
+    // Step 1
+    description: text("description"),
+    category: text("category"),
+    estimatedAmount: numeric("estimated_amount"),
+    currency: text("currency").default("EUR"),
+    neededBy: date("needed_by"),
+
+    // Step 2 - quotes
+    quotes: jsonb("quotes").notNull().default([]),
+    threeQuoteRequired: boolean("three_quote_required").notNull().default(false),
+
+    // Step 3 - manager
+    managerApproved: boolean("manager_approved"),
+    managerComment: text("manager_comment"),
+
+    // Step 4 - financial
+    financialApproved: boolean("financial_approved"),
+    financialComment: text("financial_comment"),
+
+    // GT Invest
+    gtInvestDateId: integer("gt_invest_date_id"),
+    gtInvestResultId: integer("gt_invest_result_id"),
+    gtInvestComment: text("gt_invest_comment"),
+
+    // Step 5 - ordering
+    orderNumber: text("order_number"),
+    orderDate: date("order_date"),
+
+    // Step 6 - delivery
+    deliveredOn: date("delivered_on"),
+    deliveryNotes: text("delivery_notes"),
+
+    // Step 7 - invoice
+    invoiceNumber: text("invoice_number"),
+    invoiceAmount: numeric("invoice_amount"),
+    invoiceDate: date("invoice_date"),
+
+    // Step 8 - validating invoice
+    invoiceValidated: boolean("invoice_validated"),
+    invoiceSignedBy: text("invoice_signed_by"),
+    invoiceSignedAt: timestamp("invoice_signed_at", { withTimezone: true }),
+
+    // Step 9 - payment
+    paymentDate: date("payment_date"),
+    paymentReference: text("payment_reference"),
+
+    // For undo
+    previousStep: text("previous_step"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    lastStepChangeAt: timestamp("last_step_change_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("workflows_reference_uniq").on(t.reference),
+    index("workflows_dept_idx").on(t.departmentId),
+    index("workflows_step_idx").on(t.currentStep),
+  ],
+);
+export type DbWorkflow = typeof workflowsTable.$inferSelect;
+
+// ---------------- DOCUMENTS ----------------
+export const documentsTable = pgTable(
+  "documents",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: integer("workflow_id").notNull(),
+    step: text("step").notNull(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    kind: text("kind").notNull(),
+    version: integer("version").notNull().default(1),
+    previousVersionId: integer("previous_version_id"),
+    contentBase64: text("content_base64").notNull(),
+    uploadedById: integer("uploaded_by_id").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
+    isCurrent: boolean("is_current").notNull().default(true),
+  },
+  (t) => [index("documents_workflow_idx").on(t.workflowId)],
+);
+export type DbDocument = typeof documentsTable.$inferSelect;
+
+// ---------------- NOTES ----------------
+export const notesTable = pgTable(
+  "notes",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: integer("workflow_id").notNull(),
+    step: text("step").notNull(),
+    body: text("body").notNull(),
+    authorId: integer("author_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("notes_workflow_idx").on(t.workflowId)],
+);
+export type DbNote = typeof notesTable.$inferSelect;
+
+// ---------------- HISTORY ----------------
+export const historyTable = pgTable(
+  "history",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: integer("workflow_id").notNull(),
+    action: text("action").notNull(),
+    fromStep: text("from_step"),
+    toStep: text("to_step"),
+    actorId: integer("actor_id").notNull(),
+    details: text("details"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("history_workflow_idx").on(t.workflowId)],
+);
+export type DbHistory = typeof historyTable.$inferSelect;
+
+// ---------------- AUDIT LOG ----------------
+export const auditLogTable = pgTable("audit_log", {
+  id: serial("id").primaryKey(),
+  actorId: integer("actor_id"),
+  action: text("action").notNull(),
+  target: text("target"),
+  targetId: integer("target_id"),
+  ip: text("ip"),
+  details: text("details"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type DbAudit = typeof auditLogTable.$inferSelect;
+
+// ---------------- SETTINGS (single row, key-value-ish) ----------------
+export const settingsTable = pgTable("settings", {
+  id: serial("id").primaryKey(),
+  data: jsonb("data").notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export const gtInvestDatesTable = pgTable("gt_invest_dates", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull(),
+  label: text("label"),
+});
+export type DbGtInvestDate = typeof gtInvestDatesTable.$inferSelect;
+
+export const gtInvestResultsTable = pgTable("gt_invest_results", {
+  id: serial("id").primaryKey(),
+  label: text("label").notNull(),
+});
+export type DbGtInvestResult = typeof gtInvestResultsTable.$inferSelect;
+
+// ---------------- SESSIONS (express-session compatible) ----------------
+export const sessionsTable = pgTable("sessions", {
+  sid: text("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire", { withTimezone: true }).notNull(),
+});
+
+// ---------------- TLS / CERT (single row) ----------------
+export const tlsTable = pgTable("tls_state", {
+  id: serial("id").primaryKey(),
+  privateKeyPem: text("private_key_pem"),
+  csrPem: text("csr_pem"),
+  certPem: text("cert_pem"),
+  chainPem: text("chain_pem"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});

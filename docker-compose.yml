@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: purchasing
+      POSTGRES_PASSWORD: purchasing
+      POSTGRES_DB: purchasing
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U purchasing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://purchasing:purchasing@db:5432/purchasing
+      # SESSION_SECRET MUST be set externally (e.g. .env file or shell export).
+      # The app refuses to start in production if it is missing or weak (<32 chars / known placeholder).
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (>=32 chars).}
+      WEB_DIST: /app/web/dist
+    ports:
+      - "8080:8080"
+    volumes:
+      - app-state:/app/state
+
+volumes:
+  db-data:
+  app-state:

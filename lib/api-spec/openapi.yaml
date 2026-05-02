@@ -1,36 +1,1274 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Purchasing Management API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: users
+  - name: departments
+  - name: companies
+  - name: workflows
+  - name: documents
+  - name: notes
+  - name: history
+  - name: dashboard
+  - name: gt-invest
+  - name: audit
+  - name: settings
+  - name: admin
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
           content:
             application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  # ---------------- AUTH ----------------
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login (local or LDAP fallback)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionUser" }
+        "401":
+          description: Bad credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Log out
+      responses:
+        "204": { description: Logged out }
+  /auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Get current session user
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+
+  # ---------------- USERS ----------------
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+    post:
+      operationId: createUser
+      tags: [users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      operationId: updateUser
+      tags: [users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      responses:
+        "204": { description: Deleted }
+
+  # ---------------- DEPARTMENTS ----------------
+  /departments:
+    get:
+      operationId: listDepartments
+      tags: [departments]
+      responses:
+        "200":
+          description: Departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Department" }
+    post:
+      operationId: createDepartment
+      tags: [departments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDepartmentInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Department" }
+  /departments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      operationId: updateDepartment
+      tags: [departments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDepartmentInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Department" }
+    delete:
+      operationId: deleteDepartment
+      tags: [departments]
+      responses:
+        "204": { description: Deleted }
+
+  # ---------------- COMPANIES ----------------
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [companies]
+      responses:
+        "200":
+          description: Companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Company" }
+    post:
+      operationId: createCompany
+      tags: [companies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCompanyInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Company" }
+  /companies/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getCompany
+      tags: [companies]
+      responses:
+        "200":
+          description: Company
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyWithContacts" }
+    patch:
+      operationId: updateCompany
+      tags: [companies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCompanyInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Company" }
+    delete:
+      operationId: deleteCompany
+      tags: [companies]
+      responses:
+        "204": { description: Deleted }
+  /companies/{id}/contacts:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: createContact
+      tags: [companies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateContactInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+  /contacts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      operationId: updateContact
+      tags: [companies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateContactInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+    delete:
+      operationId: deleteContact
+      tags: [companies]
+      responses:
+        "204": { description: Deleted }
+
+  # ---------------- WORKFLOWS ----------------
+  /workflows:
+    get:
+      operationId: listWorkflows
+      tags: [workflows]
+      parameters:
+        - { name: departmentId, in: query, required: false, schema: { type: integer } }
+        - { name: step, in: query, required: false, schema: { $ref: "#/components/schemas/WorkflowStep" } }
+        - { name: q, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Workflows
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkflowSummary" }
+    post:
+      operationId: createWorkflow
+      tags: [workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWorkflowInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+  /workflows/by-step:
+    get:
+      operationId: listWorkflowsByStep
+      tags: [workflows]
+      responses:
+        "200":
+          description: Grouped by step
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkflowsByStepGroup" }
+  /workflows/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getWorkflow
+      tags: [workflows]
+      responses:
+        "200":
+          description: Workflow
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+    patch:
+      operationId: updateWorkflow
+      tags: [workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWorkflowInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+    delete:
+      operationId: deleteWorkflow
+      tags: [workflows]
+      responses:
+        "204": { description: Deleted }
+  /workflows/{id}/advance:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: advanceWorkflow
+      tags: [workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdvanceWorkflowInput" }
+      responses:
+        "200":
+          description: Advanced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+  /workflows/{id}/undo:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: undoWorkflow
+      tags: [workflows]
+      responses:
+        "200":
+          description: Reverted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+
+  # ---------------- DOCUMENTS ----------------
+  /workflows/{id}/documents:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: listWorkflowDocuments
+      tags: [documents]
+      responses:
+        "200":
+          description: Docs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Document" }
+    post:
+      operationId: uploadWorkflowDocument
+      tags: [documents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadDocumentInput" }
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+  /documents/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      operationId: deleteDocument
+      tags: [documents]
+      responses:
+        "204": { description: Deleted }
+
+  # ---------------- NOTES ----------------
+  /workflows/{id}/notes:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: listWorkflowNotes
+      tags: [notes]
+      responses:
+        "200":
+          description: Notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Note" }
+    post:
+      operationId: createWorkflowNote
+      tags: [notes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateNoteInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+
+  # ---------------- HISTORY ----------------
+  /workflows/{id}/history:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: listWorkflowHistory
+      tags: [history]
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/HistoryEntry" }
+
+  # ---------------- DASHBOARD ----------------
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardSummary" }
+
+  # ---------------- GT-INVEST ----------------
+  /gt-invest/workflows:
+    get:
+      operationId: listGtInvestWorkflows
+      tags: [gt-invest]
+      responses:
+        "200":
+          description: GT Invest workflows ready for the next preparation
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkflowSummary" }
+
+  # ---------------- AUDIT (admin only) ----------------
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [audit]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEntry" }
+
+  # ---------------- SETTINGS ----------------
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSettingsInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+  /settings/gt-invest-dates:
+    get:
+      operationId: listGtInvestDates
+      tags: [settings]
+      responses:
+        "200":
+          description: Dates
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GtInvestDate" }
+    post:
+      operationId: createGtInvestDate
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGtInvestDateInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GtInvestDate" }
+  /settings/gt-invest-dates/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      operationId: deleteGtInvestDate
+      tags: [settings]
+      responses:
+        "204": { description: Deleted }
+  /settings/gt-invest-results:
+    get:
+      operationId: listGtInvestResults
+      tags: [settings]
+      responses:
+        "200":
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GtInvestResult" }
+    post:
+      operationId: createGtInvestResult
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGtInvestResultInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GtInvestResult" }
+  /settings/gt-invest-results/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      operationId: deleteGtInvestResult
+      tags: [settings]
+      responses:
+        "204": { description: Deleted }
+
+  # ---------------- ADMIN / TLS ----------------
+  /admin/csr:
+    post:
+      operationId: generateCsr
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CsrRequest" }
+      responses:
+        "200":
+          description: CSR
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CsrResponse" }
+  /admin/cert:
+    get:
+      operationId: getCertInfo
+      tags: [admin]
+      responses:
+        "200":
+          description: Cert info
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CertInfo" }
+    post:
+      operationId: importCert
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportCertInput" }
+      responses:
+        "200":
+          description: Imported
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CertInfo" }
+
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
+      required: [status]
 
+    ApiError:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    Role:
+      type: string
+      enum:
+        - ADMIN
+        - FINANCIAL_ALL
+        - FINANCIAL_INVOICE
+        - FINANCIAL_PAYMENT
+        - DEPT_MANAGER
+        - DEPT_USER
+        - GT_INVEST
+        - READ_ONLY_DEPT
+        - READ_ONLY_ALL
+
+    WorkflowStep:
+      type: string
+      enum:
+        - NEW
+        - QUOTATION
+        - VALIDATING_QUOTE_FINANCIAL
+        - VALIDATING_BY_FINANCIAL
+        - GT_INVEST
+        - ORDERING
+        - DELIVERY
+        - INVOICE
+        - VALIDATING_INVOICE
+        - PAYMENT
+        - DONE
+
+    Priority:
+      type: string
+      enum: [LOW, NORMAL, HIGH, URGENT]
+
+    Branch:
+      type: string
+      enum: [K_ORDER, GT_INVEST]
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        displayName: { type: string }
+        email: { type: ["string", "null"] }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+        departmentIds:
+          type: array
+          items: { type: integer }
+        source: { type: string, enum: [LOCAL, LDAP] }
+        createdAt: { type: string, format: date-time }
+      required: [id, username, displayName, roles, departmentIds, source, createdAt]
+
+    CreateUserInput:
+      type: object
+      properties:
+        username: { type: string }
+        displayName: { type: string }
+        email: { type: ["string", "null"] }
+        password: { type: ["string", "null"] }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+        departmentIds:
+          type: array
+          items: { type: integer }
+      required: [username, displayName, roles, departmentIds]
+
+    UpdateUserInput:
+      type: object
+      properties:
+        displayName: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        password: { type: ["string", "null"] }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+        departmentIds:
+          type: array
+          items: { type: integer }
+
+    Department:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        code: { type: string }
+        adGroupName: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, code, createdAt]
+
+    CreateDepartmentInput:
+      type: object
+      properties:
+        name: { type: string }
+        code: { type: string }
+        adGroupName: { type: ["string", "null"] }
+      required: [name, code]
+
+    Company:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        address: { type: ["string", "null"] }
+        taxId: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, createdAt]
+
+    CompanyWithContacts:
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          properties:
+            contacts:
+              type: array
+              items: { $ref: "#/components/schemas/Contact" }
+          required: [contacts]
+
+    CreateCompanyInput:
+      type: object
+      properties:
+        name: { type: string }
+        address: { type: ["string", "null"] }
+        taxId: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+      required: [name]
+
+    Contact:
+      type: object
+      properties:
+        id: { type: integer }
+        companyId: { type: integer }
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        role: { type: ["string", "null"] }
+      required: [id, companyId, name]
+
+    CreateContactInput:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        role: { type: ["string", "null"] }
+      required: [name]
+
+    QuoteEntry:
+      type: object
+      properties:
+        companyId: { type: ["integer", "null"] }
+        companyName: { type: ["string", "null"] }
+        contactId: { type: ["integer", "null"] }
+        amount: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        winning: { type: boolean }
+      required: [winning]
+
+    Workflow:
+      type: object
+      properties:
+        id: { type: integer }
+        reference: { type: string }
+        title: { type: string }
+        departmentId: { type: integer }
+        departmentName: { type: string }
+        createdById: { type: integer }
+        createdByName: { type: string }
+        priority: { $ref: "#/components/schemas/Priority" }
+        currentStep: { $ref: "#/components/schemas/WorkflowStep" }
+        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+        ageDays: { type: integer }
+        isStalled: { type: boolean }
+        # Step 1 - New
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        estimatedAmount: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        neededBy: { type: ["string", "null"], format: date }
+        # Step 2 - Quotation
+        quotes:
+          type: array
+          items: { $ref: "#/components/schemas/QuoteEntry" }
+        threeQuoteRequired: { type: boolean }
+        # Step 3 - Manager validation
+        managerApproved: { type: ["boolean", "null"] }
+        managerComment: { type: ["string", "null"] }
+        # Step 4 - Financial validation
+        financialApproved: { type: ["boolean", "null"] }
+        financialComment: { type: ["string", "null"] }
+        # GT Invest
+        gtInvestDateId: { type: ["integer", "null"] }
+        gtInvestResultId: { type: ["integer", "null"] }
+        gtInvestComment: { type: ["string", "null"] }
+        # Step 5 - Ordering
+        orderNumber: { type: ["string", "null"] }
+        orderDate: { type: ["string", "null"], format: date }
+        # Step 6 - Delivery
+        deliveredOn: { type: ["string", "null"], format: date }
+        deliveryNotes: { type: ["string", "null"] }
+        # Step 7 - Invoice
+        invoiceNumber: { type: ["string", "null"] }
+        invoiceAmount: { type: ["number", "null"] }
+        invoiceDate: { type: ["string", "null"], format: date }
+        # Step 8 - Validating Invoice
+        invoiceValidated: { type: ["boolean", "null"] }
+        invoiceSignedBy: { type: ["string", "null"] }
+        invoiceSignedAt: { type: ["string", "null"], format: date-time }
+        # Step 9 - Payment
+        paymentDate: { type: ["string", "null"], format: date }
+        paymentReference: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required:
+        - id
+        - reference
+        - title
+        - departmentId
+        - departmentName
+        - createdById
+        - createdByName
+        - priority
+        - currentStep
+        - ageDays
+        - isStalled
+        - quotes
+        - threeQuoteRequired
+        - createdAt
+        - updatedAt
+
+    WorkflowSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        reference: { type: string }
+        title: { type: string }
+        departmentId: { type: integer }
+        departmentName: { type: string }
+        priority: { $ref: "#/components/schemas/Priority" }
+        currentStep: { $ref: "#/components/schemas/WorkflowStep" }
+        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+        estimatedAmount: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        ageDays: { type: integer }
+        isStalled: { type: boolean }
+        createdByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required:
+        - id
+        - reference
+        - title
+        - departmentId
+        - departmentName
+        - priority
+        - currentStep
+        - ageDays
+        - isStalled
+        - createdByName
+        - createdAt
+        - updatedAt
+
+    WorkflowsByStepGroup:
+      type: object
+      properties:
+        step: { $ref: "#/components/schemas/WorkflowStep" }
+        workflows:
+          type: array
+          items: { $ref: "#/components/schemas/WorkflowSummary" }
+      required: [step, workflows]
+
+    CreateWorkflowInput:
+      type: object
+      properties:
+        title: { type: string }
+        departmentId: { type: integer }
+        priority: { $ref: "#/components/schemas/Priority" }
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        estimatedAmount: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        neededBy: { type: ["string", "null"], format: date }
+      required: [title, departmentId, priority]
+
+    UpdateWorkflowInput:
+      type: object
+      properties:
+        title: { type: ["string", "null"] }
+        priority: { $ref: "#/components/schemas/Priority" }
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        estimatedAmount: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        neededBy: { type: ["string", "null"], format: date }
+        quotes:
+          type: array
+          items: { $ref: "#/components/schemas/QuoteEntry" }
+        managerApproved: { type: ["boolean", "null"] }
+        managerComment: { type: ["string", "null"] }
+        financialApproved: { type: ["boolean", "null"] }
+        financialComment: { type: ["string", "null"] }
+        gtInvestDateId: { type: ["integer", "null"] }
+        gtInvestResultId: { type: ["integer", "null"] }
+        gtInvestComment: { type: ["string", "null"] }
+        orderNumber: { type: ["string", "null"] }
+        orderDate: { type: ["string", "null"], format: date }
+        deliveredOn: { type: ["string", "null"], format: date }
+        deliveryNotes: { type: ["string", "null"] }
+        invoiceNumber: { type: ["string", "null"] }
+        invoiceAmount: { type: ["number", "null"] }
+        invoiceDate: { type: ["string", "null"], format: date }
+        invoiceValidated: { type: ["boolean", "null"] }
+        invoiceSignedBy: { type: ["string", "null"] }
+        paymentDate: { type: ["string", "null"], format: date }
+        paymentReference: { type: ["string", "null"] }
+
+    AdvanceWorkflowInput:
+      type: object
+      properties:
+        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+
+    Document:
+      type: object
+      properties:
+        id: { type: integer }
+        workflowId: { type: integer }
+        step: { $ref: "#/components/schemas/WorkflowStep" }
+        filename: { type: string }
+        mimeType: { type: string }
+        sizeBytes: { type: integer }
+        kind: { type: string, enum: [QUOTE, ORDER, DELIVERY, INVOICE, OTHER, GT_INVEST_WINNER] }
+        version: { type: integer }
+        previousVersionId: { type: ["integer", "null"] }
+        dataUrl: { type: string }
+        uploadedById: { type: integer }
+        uploadedByName: { type: string }
+        uploadedAt: { type: string, format: date-time }
+      required:
+        - id
+        - workflowId
+        - step
+        - filename
+        - mimeType
+        - sizeBytes
+        - kind
+        - version
+        - dataUrl
+        - uploadedById
+        - uploadedByName
+        - uploadedAt
+
+    UploadDocumentInput:
+      type: object
+      properties:
+        step: { $ref: "#/components/schemas/WorkflowStep" }
+        filename: { type: string }
+        mimeType: { type: string }
+        kind: { type: string, enum: [QUOTE, ORDER, DELIVERY, INVOICE, OTHER, GT_INVEST_WINNER] }
+        contentBase64: { type: string }
+        replacesDocumentId: { type: ["integer", "null"] }
+      required: [step, filename, mimeType, kind, contentBase64]
+
+    Note:
+      type: object
+      properties:
+        id: { type: integer }
+        workflowId: { type: integer }
+        step: { $ref: "#/components/schemas/WorkflowStep" }
+        body: { type: string }
+        authorId: { type: integer }
+        authorName: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, workflowId, step, body, authorId, authorName, createdAt]
+
+    CreateNoteInput:
+      type: object
+      properties:
+        step: { $ref: "#/components/schemas/WorkflowStep" }
+        body: { type: string }
+      required: [step, body]
+
+    HistoryEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        workflowId: { type: integer }
+        action: { type: string }
+        fromStep: { type: ["string", "null"] }
+        toStep: { type: ["string", "null"] }
+        actorId: { type: integer }
+        actorName: { type: string }
+        details: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, workflowId, action, actorId, actorName, createdAt]
+
+    StepCount:
+      type: object
+      properties:
+        step: { $ref: "#/components/schemas/WorkflowStep" }
+        count: { type: integer }
+      required: [step, count]
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalActive: { type: integer }
+        totalDone: { type: integer }
+        stalledCount: { type: integer }
+        averageAgeDays: { type: number }
+        countsByStep:
+          type: array
+          items: { $ref: "#/components/schemas/StepCount" }
+        recent:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryEntry" }
+      required: [totalActive, totalDone, stalledCount, averageAgeDays, countsByStep, recent]
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        actorId: { type: ["integer", "null"] }
+        actorName: { type: ["string", "null"] }
+        action: { type: string }
+        target: { type: ["string", "null"] }
+        targetId: { type: ["integer", "null"] }
+        ip: { type: ["string", "null"] }
+        details: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, action, createdAt]
+
+    LoginRequest:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string }
+        useLdap: { type: ["boolean", "null"] }
+      required: [username, password]
+
+    SessionUser:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        displayName: { type: string }
+        email: { type: ["string", "null"] }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+        departmentIds:
+          type: array
+          items: { type: integer }
+        source: { type: string, enum: [LOCAL, LDAP, KERBEROS] }
+      required: [id, username, displayName, roles, departmentIds, source]
+
+    SessionResponse:
+      type: object
+      properties:
+        authenticated: { type: boolean }
+        user: { type: ["object", "null"], $ref: "#/components/schemas/SessionUser" }
+      required: [authenticated]
+
+    LdapsSettings:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        host: { type: ["string", "null"] }
+        port: { type: ["integer", "null"] }
+        baseDn: { type: ["string", "null"] }
+        bindDn: { type: ["string", "null"] }
+        bindPasswordSet: { type: boolean }
+        skipVerify: { type: boolean }
+        caCertSet: { type: boolean }
+        kerberosEnabled: { type: boolean }
+        servicePrincipalName: { type: ["string", "null"] }
+      required: [enabled, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
+
+    SmtpSettings:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        host: { type: ["string", "null"] }
+        port: { type: ["integer", "null"] }
+        username: { type: ["string", "null"] }
+        passwordSet: { type: boolean }
+        secure: { type: boolean }
+        fromAddress: { type: ["string", "null"] }
+      required: [enabled, passwordSet, secure]
+
+    AppSettings:
+      type: object
+      properties:
+        appName: { type: string }
+        logoDataUrl: { type: ["string", "null"] }
+        limitX: { type: number }
+        currency: { type: string }
+        certSigningEnabled: { type: boolean }
+        signingAgentUrl: { type: ["string", "null"] }
+        gtInvestRecipients:
+          type: array
+          items: { type: string }
+        ldap: { $ref: "#/components/schemas/LdapsSettings" }
+        smtp: { $ref: "#/components/schemas/SmtpSettings" }
+      required:
+        - appName
+        - limitX
+        - currency
+        - certSigningEnabled
+        - gtInvestRecipients
+        - ldap
+        - smtp
+
+    UpdateSettingsInput:
+      type: object
+      properties:
+        appName: { type: ["string", "null"] }
+        logoDataUrl: { type: ["string", "null"] }
+        limitX: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        certSigningEnabled: { type: ["boolean", "null"] }
+        signingAgentUrl: { type: ["string", "null"] }
+        gtInvestRecipients:
+          type: array
+          items: { type: string }
+        ldap:
+          type: object
+          properties:
+            enabled: { type: ["boolean", "null"] }
+            host: { type: ["string", "null"] }
+            port: { type: ["integer", "null"] }
+            baseDn: { type: ["string", "null"] }
+            bindDn: { type: ["string", "null"] }
+            bindPassword: { type: ["string", "null"] }
+            skipVerify: { type: ["boolean", "null"] }
+            caCert: { type: ["string", "null"] }
+            kerberosEnabled: { type: ["boolean", "null"] }
+            servicePrincipalName: { type: ["string", "null"] }
+        smtp:
+          type: object
+          properties:
+            enabled: { type: ["boolean", "null"] }
+            host: { type: ["string", "null"] }
+            port: { type: ["integer", "null"] }
+            username: { type: ["string", "null"] }
+            password: { type: ["string", "null"] }
+            secure: { type: ["boolean", "null"] }
+            fromAddress: { type: ["string", "null"] }
+
+    GtInvestDate:
+      type: object
+      properties:
+        id: { type: integer }
+        date: { type: string, format: date }
+        label: { type: ["string", "null"] }
+      required: [id, date]
+
+    CreateGtInvestDateInput:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        label: { type: ["string", "null"] }
+      required: [date]
+
+    GtInvestResult:
+      type: object
+      properties:
+        id: { type: integer }
+        label: { type: string }
+      required: [id, label]
+
+    CreateGtInvestResultInput:
+      type: object
+      properties:
+        label: { type: string }
+      required: [label]
+
+    CsrRequest:
+      type: object
+      properties:
+        commonName: { type: string }
+        organization: { type: ["string", "null"] }
+        organizationalUnit: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        locality: { type: ["string", "null"] }
+        sans:
+          type: array
+          items: { type: string }
+      required: [commonName]
+
+    CsrResponse:
+      type: object
+      properties:
+        csrPem: { type: string }
+      required: [csrPem]
+
+    CertInfo:
+      type: object
+      properties:
+        present: { type: boolean }
+        subject: { type: ["string", "null"] }
+        issuer: { type: ["string", "null"] }
+        validFrom: { type: ["string", "null"], format: date-time }
+        validTo: { type: ["string", "null"], format: date-time }
+        sans:
+          type: array
+          items: { type: string }
+        fingerprint: { type: ["string", "null"] }
+      required: [present, sans]
+
+    ImportCertInput:
+      type: object
+      properties:
+        certPem: { type: string }
+        chainPem: { type: ["string", "null"] }
+      required: [certPem]
