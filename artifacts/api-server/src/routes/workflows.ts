@@ -325,6 +325,107 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(await loadWorkflowFull(wf.id));
 });
 
+// Server-side gating: each step has a set of fields/documents that
+// must be filled in before the workflow may move forward. This is
+// enforced HERE so the rule cannot be bypassed by anyone — even the
+// admins are protected from accidentally skipping required data.
+// Returns a human-readable error message when the prereqs are not
+// met, or null when the workflow may advance.
+async function validateAdvancePrereqs(
+  wf: NonNullable<Awaited<ReturnType<typeof loadWorkflowFull>>>,
+  branch: string | null,
+): Promise<string | null> {
+  const docs = await db
+    .select({
+      kind: documentsTable.kind,
+      isCurrent: documentsTable.isCurrent,
+    })
+    .from(documentsTable)
+    .where(eq(documentsTable.workflowId, wf.id));
+  const hasDoc = (kind: string) =>
+    docs.some((d) => d.kind === kind && d.isCurrent);
+  type Q = {
+    companyId?: number | null;
+    companyName?: string | null;
+    amount?: number | null;
+    winning?: boolean;
+  };
+  switch (wf.currentStep) {
+    case "NEW":
+      return null;
+    case "QUOTATION": {
+      const quotes = (wf.quotes ?? []) as Q[];
+      if (quotes.length === 0)
+        return "Add at least one quote before advancing.";
+      if (wf.threeQuoteRequired) {
+        const filled = quotes.filter(
+          (q) => q.amount != null && (q.companyId || q.companyName),
+        );
+        if (filled.length < 3)
+          return "Three quotes are required. Please add at least three suppliers with an amount.";
+        const winners = filled.filter((q) => q.winning);
+        if (winners.length === 0)
+          return "Mark one quote as winning before advancing.";
+      } else {
+        const first = quotes[0];
+        if (
+          !first ||
+          first.amount == null ||
+          !(first.companyId || first.companyName)
+        )
+          return "Fill in the supplier and amount of the quote before advancing.";
+      }
+      if (!hasDoc("QUOTE"))
+        return "Attach the quote document before advancing.";
+      return null;
+    }
+    case "VALIDATING_QUOTE_FINANCIAL":
+      if (!wf.managerApproved)
+        return "The department manager must approve before advancing.";
+      return null;
+    case "VALIDATING_BY_FINANCIAL":
+      if (!wf.financialApproved)
+        return "Financial must approve before advancing.";
+      if (!branch)
+        return "Pick a routing branch (K-Order or GT Invest) before advancing.";
+      return null;
+    case "GT_INVEST":
+      if (!wf.gtInvestDateId || !wf.gtInvestResultId)
+        return "Pick a meeting date and a decision before advancing.";
+      return null;
+    case "ORDERING":
+      if (!wf.orderNumber || !wf.orderDate)
+        return "Enter the order number and date before advancing.";
+      if (!hasDoc("ORDER"))
+        return "Attach the order document before advancing.";
+      return null;
+    case "DELIVERY":
+      if (!wf.deliveredOn)
+        return "Enter the delivery date before advancing.";
+      if (!hasDoc("DELIVERY"))
+        return "Attach the delivery note before advancing.";
+      return null;
+    case "INVOICE":
+      if (
+        !wf.invoiceNumber ||
+        wf.invoiceAmount == null ||
+        !wf.invoiceDate
+      )
+        return "Enter the invoice number, amount, and date before advancing.";
+      if (!hasDoc("INVOICE"))
+        return "Attach the invoice document before advancing.";
+      return null;
+    case "VALIDATING_INVOICE":
+      if (!wf.invoiceValidated)
+        return "Validate the invoice before advancing.";
+      return null;
+    case "PAYMENT":
+      return null;
+    default:
+      return null;
+  }
+}
+
 router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<void> => {
   const params = AdvanceWorkflowParams.safeParse(req.params);
   const body = AdvanceWorkflowBody.safeParse(req.body ?? {});
@@ -343,6 +444,14 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
     return;
   }
   const branch = body.data.branch ?? wf.branch ?? null;
+  // Block bypassing steps when the required data isn't there. The
+  // error message is surfaced to the client toast so the user knows
+  // exactly what's missing instead of a generic 400.
+  const gateError = await validateAdvancePrereqs(wf, branch);
+  if (gateError) {
+    res.status(400).json({ error: gateError, message: gateError });
+    return;
+  }
   const next = nextStep(wf.currentStep as WorkflowStep, branch);
   if (!next) {
     res.status(400).json({ error: "Workflow already complete" });
@@ -407,15 +516,15 @@ router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  const REJECTABLE: WorkflowStep[] = [
-    "VALIDATING_QUOTE_FINANCIAL",
-    "VALIDATING_BY_FINANCIAL",
-    "VALIDATING_INVOICE",
-  ];
-  if (!REJECTABLE.includes(wf.currentStep as WorkflowStep)) {
+  // Closing the workflow is allowed from ANY non-terminal step now —
+  // a user can change their mind at the quotation stage, the order
+  // can be cancelled by the supplier, the delivery may never happen,
+  // etc. Only DONE and an already-REJECTED workflow are off-limits.
+  const TERMINAL: WorkflowStep[] = ["DONE", "REJECTED"];
+  if (TERMINAL.includes(wf.currentStep as WorkflowStep)) {
     res
       .status(400)
-      .json({ error: "Reject is only allowed at an approval step" });
+      .json({ error: "Workflow is already closed" });
     return;
   }
 
@@ -439,6 +548,11 @@ router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void
       break;
     case "VALIDATING_INVOICE":
       update.invoiceValidated = false;
+      break;
+    default:
+      // For non-approval steps, persist the close reason as a generic
+      // financial comment so the RejectedPanel can still surface it.
+      if (comment) update.financialComment = comment;
       break;
   }
 

@@ -206,6 +206,21 @@ function ActionBar({
     },
   });
 
+  // Close the workflow from any non-terminal step. The server enforces
+  // the "any non-terminal" rule so the client mirrors it. Includes the
+  // step-specific approval-panel reject buttons but is also available
+  // here on every step (Quotation, Ordering, Delivery, Invoice, etc.).
+  const reject = useRejectWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot close: ${msg}`);
+      },
+    },
+  });
   const canUndo =
     user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
   // The branch picker AND the advance button are both moved INTO the
@@ -214,6 +229,8 @@ function ActionBar({
   // the global Advance control here to avoid two ways to do the same
   // thing (and to prevent advancing without picking a branch).
   const inlineAdvanceStep = wf.currentStep === "VALIDATING_BY_FINANCIAL";
+  const isTerminal =
+    wf.currentStep === "DONE" || wf.currentStep === "REJECTED";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -225,11 +242,7 @@ function ActionBar({
               data: { branch: branch ? branch : null },
             })
           }
-          disabled={
-            advance.isPending ||
-            wf.currentStep === "DONE" ||
-            wf.currentStep === "REJECTED"
-          }
+          disabled={advance.isPending || isTerminal}
           data-testid="button-advance"
         >
           {advance.isPending ? (
@@ -238,6 +251,32 @@ function ActionBar({
             <ArrowRight className="mr-2 h-4 w-4" />
           )}
           Advance
+        </Button>
+      )}
+      {!isTerminal && (
+        <Button
+          variant="outline"
+          className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => {
+            const reason = window.prompt(
+              "Close this workflow? Optionally enter a reason — it will be saved with the close event.",
+              "",
+            );
+            if (reason === null) return;
+            reject.mutate({
+              id: wf.id,
+              data: { comment: reason.trim() || null },
+            });
+          }}
+          disabled={reject.isPending}
+          data-testid="button-close-workflow"
+        >
+          {reject.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="mr-2 h-4 w-4" />
+          )}
+          Close workflow
         </Button>
       )}
       {canUndo && (
@@ -250,6 +289,141 @@ function ActionBar({
           <Undo2 className="mr-2 h-4 w-4" /> Undo
         </Button>
       )}
+    </div>
+  );
+}
+
+// Inline document uploader used by step panels (Ordering, Delivery,
+// Invoice). Shows the documents already attached to this workflow
+// for the given `kind`, lets the user upload a new one, and lets
+// them delete obsolete ones — all without forcing a trip to the
+// Documents tab. The upload route auto-versions when a document of
+// the same kind already exists, so the previous file is preserved
+// in history.
+function StepDocumentUploader({
+  wf,
+  kind,
+  step,
+  label,
+}: {
+  wf: Workflow;
+  kind: keyof typeof UploadDocumentInputKind;
+  step: Step;
+  label: string;
+}) {
+  const { data: docs } = useListWorkflowDocuments(wf.id);
+  const upload = useUploadWorkflowDocument();
+  const del = useDeleteDocument();
+  const qc = useQueryClient();
+  // The server returns all versions (incl. demoted ones), with an
+  // extra `isCurrent` flag that isn't in the generated OpenAPI type.
+  // Filter to current-only via a runtime cast so old versions don't
+  // clutter the per-step uploader.
+  const matching = (docs ?? [])
+    .filter(
+      (d) =>
+        d.kind === kind &&
+        (d as unknown as { isCurrent?: boolean }).isCurrent !== false,
+    )
+    .sort((a, b) => b.version - a.version);
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const base64 = await fileToBase64(f);
+      await upload.mutateAsync({
+        id: wf.id,
+        data: {
+          step,
+          filename: f.name,
+          mimeType: f.type || "application/octet-stream",
+          kind,
+          contentBase64: base64,
+          replacesDocumentId: null,
+        },
+      });
+    } finally {
+      e.target.value = "";
+      qc.invalidateQueries();
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">{label}</Label>
+        {upload.isPending && (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+          </span>
+        )}
+      </div>
+      {matching.length === 0 ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid={`text-no-doc-${kind}`}
+        >
+          No file attached yet.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {matching.map((d) => {
+            const href = `/api/documents/${d.id}/download`;
+            return (
+              <li
+                key={d.id}
+                className="flex items-center gap-2 text-xs"
+                data-testid={`step-doc-${d.id}`}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 truncate hover:underline"
+                >
+                  {d.filename}
+                </a>
+                <span className="text-muted-foreground">
+                  v{d.version} · {formatBytes(d.sizeBytes)}
+                </span>
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                >
+                  <a href={href} target="_blank" rel="noreferrer">
+                    <Download className="h-3 w-3" />
+                  </a>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => {
+                    if (!confirm(`Delete ${d.filename}?`)) return;
+                    del.mutate(
+                      { id: d.id },
+                      { onSuccess: () => qc.invalidateQueries() },
+                    );
+                  }}
+                  data-testid={`button-step-doc-delete-${d.id}`}
+                >
+                  <Trash2 className="h-3 w-3 text-destructive" />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Input
+        type="file"
+        onChange={onPick}
+        disabled={upload.isPending}
+        data-testid={`input-step-upload-${kind}`}
+      />
     </div>
   );
 }
@@ -292,12 +466,13 @@ function RejectedPanel({ wf }: { wf: Workflow }) {
   // Terminal closed-by-rejection panel. Surfaces which approval step
   // closed the workflow and the rejection comment recorded there.
   const fromStep = (wf.previousStep as Step | null) ?? null;
+  // The close reason is stored on managerComment for the manager
+  // approval step, financialComment for everything else (incl. the
+  // generic "close workflow" action from a non-approval step).
   const reason =
     fromStep === "VALIDATING_QUOTE_FINANCIAL"
       ? wf.managerComment
-      : fromStep === "VALIDATING_BY_FINANCIAL"
-        ? wf.financialComment
-        : null;
+      : (wf.financialComment ?? null);
   return (
     <Card className="border-destructive/40">
       <CardHeader>
@@ -1204,6 +1379,12 @@ function OrderingPanel({
         >
           <Save className="mr-2 h-4 w-4" /> Save
         </Button>
+        <StepDocumentUploader
+          wf={wf}
+          kind="ORDER"
+          step="ORDERING"
+          label="Order document"
+        />
       </CardContent>
     </Card>
   );
@@ -1258,6 +1439,12 @@ function DeliveryPanel({
         >
           <Save className="mr-2 h-4 w-4" /> Save
         </Button>
+        <StepDocumentUploader
+          wf={wf}
+          kind="DELIVERY"
+          step="DELIVERY"
+          label="Delivery note"
+        />
       </CardContent>
     </Card>
   );
@@ -1327,6 +1514,12 @@ function InvoicePanel({
         >
           <Save className="mr-2 h-4 w-4" /> Save
         </Button>
+        <StepDocumentUploader
+          wf={wf}
+          kind="INVOICE"
+          step="INVOICE"
+          label="Invoice document"
+        />
       </CardContent>
     </Card>
   );
