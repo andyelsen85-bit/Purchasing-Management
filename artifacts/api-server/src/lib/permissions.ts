@@ -68,18 +68,19 @@ export function canActOnStep(
     case "GT_INVEST":
       return hasRole(user, "GT_INVEST", "FINANCIAL_ALL");
     case "ORDERING":
+      // Step 5 — only Financial-All places the order. Department users
+      // can still *view* the workflow (canSeeWorkflow) but cannot act.
+      return hasRole(user, "FINANCIAL_ALL");
     case "DELIVERY":
+      // Step 6 — the requesting department records receipt of goods.
       return (
         (hasRole(user, "DEPT_USER", "DEPT_MANAGER") &&
           user.departmentIds.includes(workflowDeptId)) ||
         hasRole(user, "FINANCIAL_ALL")
       );
     case "INVOICE":
-      return (
-        (hasRole(user, "DEPT_USER", "DEPT_MANAGER") &&
-          user.departmentIds.includes(workflowDeptId)) ||
-        hasRole(user, "FINANCIAL_ALL", "FINANCIAL_INVOICE")
-      );
+      // Step 7 — Financial-Invoice records the supplier invoice.
+      return hasRole(user, "FINANCIAL_ALL", "FINANCIAL_INVOICE");
     case "VALIDATING_INVOICE":
       return hasRole(user, "FINANCIAL_ALL", "FINANCIAL_INVOICE");
     case "PAYMENT":

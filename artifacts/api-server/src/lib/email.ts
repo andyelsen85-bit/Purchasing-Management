@@ -27,14 +27,14 @@ import type { WorkflowStep } from "./permissions";
 //   9 PAYMENT                      — Financial-Payment executes the transfer
 const STEP_NOTIFY_ROLES: Record<WorkflowStep, string[]> = {
   NEW: [],
-  QUOTATION: ["DEPT_USER"],
+  QUOTATION: ["DEPT_MANAGER"],
   VALIDATING_QUOTE_FINANCIAL: ["DEPT_MANAGER"],
   VALIDATING_BY_FINANCIAL: ["FINANCIAL_ALL"],
   GT_INVEST: ["GT_INVEST"],
   ORDERING: ["FINANCIAL_ALL"],
-  DELIVERY: ["DEPT_USER", "DEPT_MANAGER"],
+  DELIVERY: ["DEPT_MANAGER"],
   INVOICE: ["FINANCIAL_INVOICE"],
-  VALIDATING_INVOICE: ["FINANCIAL_INVOICE", "FINANCIAL_ALL"],
+  VALIDATING_INVOICE: ["FINANCIAL_ALL"],
   PAYMENT: ["FINANCIAL_PAYMENT"],
   DONE: [],
 };
