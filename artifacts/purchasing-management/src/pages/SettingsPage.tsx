@@ -48,6 +48,7 @@ import {
   useDeleteGtInvestResult,
   useTestLdap,
 } from "@/lib/api";
+import { HttpsSettingsPanel } from "@/pages/HttpsPage";
 
 /**
  * Canonical list of app roles + a one-line description of what each role
@@ -144,6 +145,9 @@ export function SettingsPage() {
           <TabsTrigger value="gt" data-testid="tab-gt">
             GT Invest
           </TabsTrigger>
+          <TabsTrigger value="https" data-testid="tab-https">
+            HTTPS / TLS
+          </TabsTrigger>
           <TabsTrigger value="backup" data-testid="tab-backup">
             Backup &amp; Restore
           </TabsTrigger>
@@ -173,6 +177,9 @@ export function SettingsPage() {
             <GtDatesPanel />
             <GtResultsPanel />
           </div>
+        </TabsContent>
+        <TabsContent value="https">
+          <HttpsSettingsPanel />
         </TabsContent>
         <TabsContent value="backup">
           <BackupRestorePanel />

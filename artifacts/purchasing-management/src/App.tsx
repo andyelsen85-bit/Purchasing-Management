@@ -14,7 +14,6 @@ import { GtInvestPage } from "@/pages/GtInvestPage";
 import { CompaniesPage } from "@/pages/CompaniesPage";
 import { AuditLogPage } from "@/pages/AuditLogPage";
 import { SettingsPage } from "@/pages/SettingsPage";
-import { HttpsPage } from "@/pages/HttpsPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -58,7 +57,16 @@ function App() {
                         <Route path="/companies" component={CompaniesPage} />
                         <Route path="/audit-log" component={AuditLogPage} />
                         <Route path="/settings" component={SettingsPage} />
-                        <Route path="/admin/https" component={HttpsPage} />
+                        <Route path="/admin/https">
+                          {() => {
+                            window.history.replaceState(
+                              null,
+                              "",
+                              `${import.meta.env.BASE_URL}settings`,
+                            );
+                            return <SettingsPage />;
+                          }}
+                        </Route>
                         <Route component={NotFound} />
                       </Switch>
                     </AppShell>

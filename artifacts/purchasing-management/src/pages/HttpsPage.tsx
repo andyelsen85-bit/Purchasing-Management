@@ -14,7 +14,12 @@ import {
   useImportCert,
 } from "@/lib/api";
 
-export function HttpsPage() {
+/**
+ * HTTPS / TLS settings panel — embedded as a tab inside the Settings page.
+ * Generate a CSR, send it to your internal CA, then import the signed
+ * certificate. The private key never leaves the server.
+ */
+export function HttpsSettingsPanel() {
   const qc = useQueryClient();
   const { data: cert } = useGetCertInfo();
   const [commonName, setCommonName] = useState("");
@@ -58,17 +63,7 @@ export function HttpsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-          HTTPS / TLS Certificate
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Generate a certificate signing request, send it to your internal CA,
-          then upload the signed certificate.
-        </p>
-      </header>
-
+    <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">

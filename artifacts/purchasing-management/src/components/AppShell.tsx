@@ -8,7 +8,6 @@ import {
   Building2,
   Settings,
   ScrollText,
-  ShieldCheck,
   LogOut,
   Moon,
   Sun,
@@ -52,12 +51,6 @@ const NAV: NavItem[] = [
   { to: "/companies", label: "Companies", icon: Building2 },
   { to: "/audit-log", label: "Audit Log", icon: ScrollText, roles: ["ADMIN"] },
   { to: "/settings", label: "Settings", icon: Settings },
-  {
-    to: "/admin/https",
-    label: "HTTPS / TLS",
-    icon: ShieldCheck,
-    roles: ["ADMIN"],
-  },
 ];
 
 interface Props {
