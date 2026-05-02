@@ -8,7 +8,7 @@ import {
   DeleteDocumentParams,
 } from "@workspace/api-zod";
 import { requireAuth, getUser } from "../middlewares/auth";
-import { canSeeWorkflow } from "../lib/permissions";
+import { canSeeWorkflow, canEditWorkflow } from "../lib/permissions";
 import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
@@ -82,8 +82,16 @@ router.post(
       return;
     }
     const user = getUser(req);
-    if (!canSeeWorkflow(user, wf.departmentId)) {
-      res.status(403).json({ error: "Forbidden" });
+    if (
+      !canEditWorkflow(
+        user,
+        wf.departmentId,
+        wf.currentStep as Parameters<typeof canEditWorkflow>[2],
+      )
+    ) {
+      res.status(403).json({
+        error: "Forbidden — your role cannot upload documents on this step",
+      });
       return;
     }
     // Determine version: if a current doc with same kind exists, mark old as not current

@@ -88,4 +88,18 @@ app.use(
 
 app.use("/api", router);
 
+// Optional SPA passthrough: when WEB_DIST is set (Docker / production), the
+// API process also serves the built React app and falls back to index.html
+// for any non-/api GET so client-side routing works on direct URLs.
+const webDist = process.env.WEB_DIST;
+if (webDist) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("node:path") as typeof import("node:path");
+  const indexHtml = path.join(webDist, "index.html");
+  app.use(express.static(webDist, { index: false, maxAge: "1h" }));
+  app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.sendFile(indexHtml);
+  });
+}
+
 export default app;

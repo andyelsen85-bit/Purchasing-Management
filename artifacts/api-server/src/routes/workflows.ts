@@ -25,6 +25,7 @@ import {
   canActOnStep,
   canSeeWorkflow,
   canViewAll,
+  canCreateInDepartment,
   canUndo,
   nextStep,
   type WorkflowStep,
@@ -168,6 +169,13 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const user = getUser(req);
+  if (!canCreateInDepartment(user, parsed.data.departmentId)) {
+    res.status(403).json({
+      error:
+        "Forbidden — your role cannot create workflows in this department",
+    });
+    return;
+  }
   const reference = await generateReference();
   const settings = await getSettings();
   const amount = parsed.data.estimatedAmount ?? null;

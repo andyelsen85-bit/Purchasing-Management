@@ -94,6 +94,46 @@ export function canUndo(user: SessionUser): boolean {
   return hasRole(user, "ADMIN", "FINANCIAL_ALL");
 }
 
+/**
+ * Anyone allowed to act on the workflow's *current* step can edit notes /
+ * upload documents on it. Read-only roles (READ_ONLY_*) and pure
+ * cross-department viewers (FINANCIAL_INVOICE/PAYMENT outside their
+ * step) can see the workflow but cannot mutate it.
+ */
+export function canEditWorkflow(
+  user: SessionUser,
+  workflowDeptId: number,
+  currentStep: WorkflowStep,
+): boolean {
+  if (isAdmin(user)) return true;
+  if (hasRole(user, "READ_ONLY_DEPT", "READ_ONLY_ALL")) return false;
+  return canActOnStep(user, currentStep, workflowDeptId);
+}
+
+/**
+ * Who is allowed to *create* a new workflow in `departmentId`.
+ * - ADMIN / FINANCIAL_ALL: any department
+ * - DEPT_USER / DEPT_MANAGER: only their own department(s)
+ * - everyone else (read-only, GT_INVEST, FINANCIAL_INVOICE/PAYMENT): no
+ */
+export function canCreateInDepartment(
+  user: SessionUser,
+  departmentId: number,
+): boolean {
+  if (isAdmin(user) || hasRole(user, "FINANCIAL_ALL")) return true;
+  if (
+    hasRole(user, "DEPT_USER", "DEPT_MANAGER") &&
+    user.departmentIds.includes(departmentId)
+  )
+    return true;
+  return false;
+}
+
+/** Master-data (companies, contacts) mutations are admin-only by default. */
+export function canEditMasterData(user: SessionUser): boolean {
+  return hasRole(user, "ADMIN", "FINANCIAL_ALL");
+}
+
 export function nextStep(
   current: WorkflowStep,
   branch?: string | null,

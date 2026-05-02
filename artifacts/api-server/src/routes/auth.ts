@@ -127,13 +127,99 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Negotiate required" });
     return;
   }
-  // Token present — would call into Kerberos GSS-API here. Without a
-  // provisioned keytab we cannot complete the exchange, so fall back to
-  // the form login path with a clear error.
-  res.status(501).json({
-    error:
-      "Kerberos backend not configured on this server. Use the LDAP/local form login, or provision a service keytab.",
-  });
+
+  const settings = await getSettings();
+  const spn =
+    process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
+  const keytab = process.env.KRB5_KEYTAB ?? "";
+  if (!settings.ldap?.kerberosEnabled || !spn || !keytab) {
+    res.status(501).json({
+      error:
+        "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, or use the LDAP/local form login.",
+    });
+    return;
+  }
+
+  // Try to dynamically load the optional `kerberos` native module. It is
+  // only present on hosts that have built it against libkrb5 — so we
+  // gracefully degrade when it is missing rather than blowing up at boot.
+  let kerberosMod: {
+    initializeServer: (
+      spn: string,
+    ) => Promise<{
+      step: (token: string) => Promise<string | null | undefined>;
+      username: string;
+    }>;
+  } | null = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    kerberosMod = (await import(/* @vite-ignore */ "kerberos" as string)) as any;
+  } catch {
+    res.status(501).json({
+      error:
+        "Kerberos native module is not installed on this server. Install the `kerberos` npm package (requires libkrb5 / MIT-Kerberos) and restart.",
+    });
+    return;
+  }
+
+  const token = header.replace(/^Negotiate\s+/i, "").trim();
+  try {
+    const ctx = await kerberosMod!.initializeServer(spn);
+    const next = await ctx.step(token);
+    if (next) res.setHeader("WWW-Authenticate", `Negotiate ${next}`);
+    const principal = ctx.username; // user@REALM
+    const username = principal.split("@")[0];
+    if (!username) {
+      res.status(401).json({ error: "Empty principal" });
+      return;
+    }
+    // Find or create the user, mark source as KERBEROS.
+    const [existing] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.username, username));
+    let userRow = existing;
+    if (!userRow) {
+      const [created] = await db
+        .insert(usersTable)
+        .values({
+          username,
+          displayName: username,
+          source: "KERBEROS",
+          roles: ["DEPT_USER"],
+        })
+        .returning();
+      userRow = created;
+    } else if (existing.source !== "KERBEROS") {
+      await db
+        .update(usersTable)
+        .set({ source: "KERBEROS" })
+        .where(eq(usersTable.id, existing.id));
+    }
+    if (!userRow) {
+      res.status(500).json({ error: "Failed to provision user" });
+      return;
+    }
+    const sessionUser = await buildSessionUser(userRow.id);
+    if (!sessionUser) {
+      res.status(500).json({ error: "Failed to load user" });
+      return;
+    }
+    req.session.user = sessionUser;
+    await audit(
+      sessionUser.id,
+      "LOGIN",
+      "user",
+      sessionUser.id,
+      "kerberos",
+      req.ip,
+    );
+    res.json(sessionUser);
+  } catch (err) {
+    res.status(401).json({
+      error: `Kerberos negotiation failed: ${(err as Error).message}`,
+    });
+  }
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {

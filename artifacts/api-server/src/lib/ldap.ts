@@ -54,6 +54,82 @@ export async function ldapAuthenticate(
       resolve(r);
     };
 
+    /**
+     * Recursive AD group resolution.
+     *
+     * Active Directory exposes the magic OID 1.2.840.113556.1.4.1941 —
+     * `LDAP_MATCHING_RULE_IN_CHAIN` — which walks the entire group tree
+     * server-side. A single search with this filter returns every group
+     * the user is a (transitive) member of. We fall back to client-side
+     * BFS over `memberOf` if the server rejects the extended match.
+     */
+    const resolveNestedGroups = (
+      userDn: string,
+      directGroups: string[],
+    ): Promise<string[]> =>
+      new Promise<string[]>((resolveOuter) => {
+        const all = new Set(directGroups);
+        const filter = `(member:1.2.840.113556.1.4.1941:=${userDn})`;
+        client.search(
+          cfg.baseDn!,
+          { filter, scope: "sub", attributes: ["dn"] },
+          (err, search) => {
+            if (err) {
+              // Fallback: client-side BFS up the memberOf chain.
+              fallbackBfs(directGroups, all).then(() =>
+                resolveOuter(Array.from(all)),
+              );
+              return;
+            }
+            search.on("searchEntry", (entry) => {
+              if (entry.pojo.objectName) all.add(entry.pojo.objectName);
+            });
+            search.on("error", () =>
+              fallbackBfs(directGroups, all).then(() =>
+                resolveOuter(Array.from(all)),
+              ),
+            );
+            search.on("end", () => resolveOuter(Array.from(all)));
+          },
+        );
+      });
+
+    const fallbackBfs = async (
+      seed: string[],
+      acc: Set<string>,
+    ): Promise<void> => {
+      const queue = [...seed];
+      const visited = new Set(seed);
+      while (queue.length > 0) {
+        const dn = queue.shift()!;
+        const parents = await new Promise<string[]>((r) => {
+          const out: string[] = [];
+          client.search(
+            dn,
+            { scope: "base", attributes: ["memberOf"] },
+            (err, s) => {
+              if (err) return r([]);
+              s.on("searchEntry", (entry) => {
+                for (const a of entry.pojo.attributes ?? []) {
+                  if (a.type === "memberOf")
+                    for (const v of a.values ?? []) out.push(String(v));
+                }
+              });
+              s.on("error", () => r([]));
+              s.on("end", () => r(out));
+            },
+          );
+        });
+        for (const p of parents) {
+          if (!visited.has(p)) {
+            visited.add(p);
+            acc.add(p);
+            queue.push(p);
+          }
+        }
+      }
+    };
+
     const doSearch = () => {
       const filter = (cfg.userFilter || "(sAMAccountName={username})").replace(
         /{username}/g,
@@ -97,7 +173,7 @@ export async function ldapAuthenticate(
             userClient.on("error", () =>
               finish({ ok: false, error: "LDAP user bind error" }),
             );
-            userClient.bind(foundDn, password, (bErr) => {
+            userClient.bind(foundDn, password, async (bErr) => {
               try {
                 userClient.unbind();
               } catch {
@@ -105,7 +181,8 @@ export async function ldapAuthenticate(
               }
               if (bErr)
                 return finish({ ok: false, error: "Invalid credentials" });
-              finish({ ok: true, displayName, email, groups });
+              const allGroups = await resolveNestedGroups(foundDn!, groups);
+              finish({ ok: true, displayName, email, groups: allGroups });
             });
           });
         },
