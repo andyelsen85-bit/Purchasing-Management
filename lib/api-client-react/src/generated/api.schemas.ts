@@ -552,6 +552,21 @@ export const LdapsSettingsEncryption = {
   plain: "plain",
 } as const;
 
+/**
+ * `ad` for Microsoft Active Directory (sAMAccountName,
+displayName, mail, memberOf); `generic` for RFC 4519
+directories like OpenLDAP. Drives the default user filter
+and attribute names.
+
+ */
+export type LdapsSettingsDirectoryType =
+  (typeof LdapsSettingsDirectoryType)[keyof typeof LdapsSettingsDirectoryType];
+
+export const LdapsSettingsDirectoryType = {
+  ad: "ad",
+  generic: "generic",
+} as const;
+
 export type LdapsSettingsGroupRoleMap = { [key: string]: string };
 
 export type LdapsSettingsGroupDepartmentMap = { [key: string]: string };
@@ -567,6 +582,12 @@ export interface LdapsSettings {
 (no encryption — diagnostic only).
  */
   encryption: LdapsSettingsEncryption;
+  /** `ad` for Microsoft Active Directory (sAMAccountName,
+displayName, mail, memberOf); `generic` for RFC 4519
+directories like OpenLDAP. Drives the default user filter
+and attribute names.
+ */
+  directoryType: LdapsSettingsDirectoryType;
   /** @nullable */
   baseDn?: string | null;
   /** @nullable */
@@ -574,6 +595,16 @@ export interface LdapsSettings {
   bindPasswordSet: boolean;
   skipVerify: boolean;
   caCertSet: boolean;
+  /** @nullable */
+  userFilter?: string | null;
+  /** @nullable */
+  usernameAttribute?: string | null;
+  /** @nullable */
+  displayNameAttribute?: string | null;
+  /** @nullable */
+  emailAttribute?: string | null;
+  /** @nullable */
+  groupMembershipAttribute?: string | null;
   kerberosEnabled: boolean;
   /** @nullable */
   servicePrincipalName?: string | null;
@@ -622,6 +653,18 @@ export const UpdateSettingsInputLdapEncryption = {
   plain: "plain",
 } as const;
 
+/**
+ * @nullable
+ */
+export type UpdateSettingsInputLdapDirectoryType =
+  | (typeof UpdateSettingsInputLdapDirectoryType)[keyof typeof UpdateSettingsInputLdapDirectoryType]
+  | null;
+
+export const UpdateSettingsInputLdapDirectoryType = {
+  ad: "ad",
+  generic: "generic",
+} as const;
+
 export type UpdateSettingsInputLdapGroupRoleMap = { [key: string]: string };
 
 export type UpdateSettingsInputLdapGroupDepartmentMap = {
@@ -638,6 +681,8 @@ export type UpdateSettingsInputLdap = {
   /** @nullable */
   encryption?: UpdateSettingsInputLdapEncryption;
   /** @nullable */
+  directoryType?: UpdateSettingsInputLdapDirectoryType;
+  /** @nullable */
   baseDn?: string | null;
   /** @nullable */
   bindDn?: string | null;
@@ -647,6 +692,16 @@ export type UpdateSettingsInputLdap = {
   skipVerify?: boolean | null;
   /** @nullable */
   caCert?: string | null;
+  /** @nullable */
+  userFilter?: string | null;
+  /** @nullable */
+  usernameAttribute?: string | null;
+  /** @nullable */
+  displayNameAttribute?: string | null;
+  /** @nullable */
+  emailAttribute?: string | null;
+  /** @nullable */
+  groupMembershipAttribute?: string | null;
   /** @nullable */
   kerberosEnabled?: boolean | null;
   /** @nullable */

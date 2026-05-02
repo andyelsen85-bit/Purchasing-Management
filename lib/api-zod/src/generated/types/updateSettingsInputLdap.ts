@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateSettingsInputLdapDirectoryType } from "./updateSettingsInputLdapDirectoryType";
 import type { UpdateSettingsInputLdapEncryption } from "./updateSettingsInputLdapEncryption";
 import type { UpdateSettingsInputLdapGroupDepartmentMap } from "./updateSettingsInputLdapGroupDepartmentMap";
 import type { UpdateSettingsInputLdapGroupRoleMap } from "./updateSettingsInputLdapGroupRoleMap";
@@ -19,6 +20,8 @@ export type UpdateSettingsInputLdap = {
   /** @nullable */
   encryption?: UpdateSettingsInputLdapEncryption;
   /** @nullable */
+  directoryType?: UpdateSettingsInputLdapDirectoryType;
+  /** @nullable */
   baseDn?: string | null;
   /** @nullable */
   bindDn?: string | null;
@@ -28,6 +31,16 @@ export type UpdateSettingsInputLdap = {
   skipVerify?: boolean | null;
   /** @nullable */
   caCert?: string | null;
+  /** @nullable */
+  userFilter?: string | null;
+  /** @nullable */
+  usernameAttribute?: string | null;
+  /** @nullable */
+  displayNameAttribute?: string | null;
+  /** @nullable */
+  emailAttribute?: string | null;
+  /** @nullable */
+  groupMembershipAttribute?: string | null;
   /** @nullable */
   kerberosEnabled?: boolean | null;
   /** @nullable */

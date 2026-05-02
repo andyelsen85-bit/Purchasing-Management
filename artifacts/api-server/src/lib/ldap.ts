@@ -2,20 +2,47 @@ import ldap from "ldapjs";
 import { logger } from "./logger";
 
 export type LdapEncryption = "ldaps" | "starttls" | "plain";
+export type LdapDirectoryType = "ad" | "generic";
 
 export interface LdapConfig {
   enabled?: boolean | null;
   host?: string | null;
   port?: number | null;
   encryption?: LdapEncryption | null;
+  directoryType?: LdapDirectoryType | null;
   baseDn?: string | null;
   bindDn?: string | null;
   bindPassword?: string | null;
   skipVerify?: boolean | null;
   caCert?: string | null;
   userFilter?: string | null;
+  usernameAttribute?: string | null;
+  displayNameAttribute?: string | null;
+  emailAttribute?: string | null;
+  groupMembershipAttribute?: string | null;
   kerberosEnabled?: boolean | null;
   servicePrincipalName?: string | null;
+}
+
+/**
+ * Resolve the per-directory defaults for the search filter and the
+ * attribute names. AD (`directoryType: "ad"`, the default) uses
+ * `sAMAccountName` / `displayName` / `mail` / `memberOf`; generic
+ * directories use the RFC 4519 names. Operators can still override any
+ * field individually in Settings.
+ */
+function attrs(cfg: LdapConfig) {
+  const isAd = (cfg.directoryType ?? "ad") === "ad";
+  const presetFilter = isAd
+    ? "(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))"
+    : "(&(objectClass=inetOrgPerson)(uid={username}))";
+  return {
+    userFilter: cfg.userFilter || presetFilter,
+    usernameAttr: cfg.usernameAttribute || (isAd ? "sAMAccountName" : "uid"),
+    displayAttr: cfg.displayNameAttribute || (isAd ? "displayName" : "cn"),
+    emailAttr: cfg.emailAttribute || "mail",
+    groupAttr: cfg.groupMembershipAttribute || "memberOf",
+  };
 }
 
 export interface LdapAuthResult {
@@ -243,17 +270,15 @@ export async function ldapAuthenticate(
 
     const doSearch = () => {
       const safeUsername = ldapEscape(username);
-      const filter = (cfg.userFilter || "(sAMAccountName={username})").replace(
-        /{username}/g,
-        safeUsername,
+      const a = attrs(cfg);
+      const filter = a.userFilter.replace(/{username}/g, safeUsername);
+      // Always request `cn` as a last-resort display name fallback.
+      const requested = Array.from(
+        new Set(["dn", a.displayAttr, a.emailAttr, a.groupAttr, "cn"]),
       );
       client.search(
         cfg.baseDn!,
-        {
-          filter,
-          scope: "sub",
-          attributes: ["dn", "displayName", "mail", "memberOf", "cn"],
-        },
+        { filter, scope: "sub", attributes: requested },
         (err, search) => {
           if (err) return finish({ ok: false, error: "LDAP search error" });
           let foundDn: string | null = null;
@@ -263,15 +288,19 @@ export async function ldapAuthenticate(
           search.on("searchEntry", (entry) => {
             const obj = entry.pojo;
             foundDn = obj.objectName ?? null;
-            for (const a of obj.attributes ?? []) {
-              if (a.type === "displayName" && a.values?.[0])
-                displayName = String(a.values[0]);
-              if (a.type === "cn" && a.values?.[0] && displayName === username)
-                displayName = String(a.values[0]);
-              if (a.type === "mail" && a.values?.[0])
-                email = String(a.values[0]);
-              if (a.type === "memberOf")
-                for (const v of a.values ?? []) groups.push(String(v));
+            for (const at of obj.attributes ?? []) {
+              if (at.type === a.displayAttr && at.values?.[0])
+                displayName = String(at.values[0]);
+              else if (
+                at.type === "cn" &&
+                at.values?.[0] &&
+                displayName === username
+              )
+                displayName = String(at.values[0]);
+              if (at.type === a.emailAttr && at.values?.[0])
+                email = String(at.values[0]);
+              if (at.type === a.groupAttr)
+                for (const v of at.values ?? []) groups.push(String(v));
             }
           });
           search.on("error", () =>
@@ -356,22 +385,20 @@ export async function lookupLdapGroups(
       ({ "\\": "\\5c", "*": "\\2a", "(": "\\28", ")": "\\29", "\u0000": "\\00" })[c] ??
       c,
     );
-    const filter = (cfg.userFilter || "(sAMAccountName={username})").replace(
-      /{username}/g,
-      safe,
-    );
+    const a = attrs(cfg);
+    const filter = a.userFilter.replace(/{username}/g, safe);
     client.bind(cfg.bindDn!, cfg.bindPassword!, (err) => {
       if (err) return finish([]);
       const groups: string[] = [];
       client.search(
         cfg.baseDn!,
-        { filter, scope: "sub", attributes: ["memberOf", "dn"] },
+        { filter, scope: "sub", attributes: [a.groupAttr, "dn"] },
         (sErr, search) => {
           if (sErr) return finish([]);
           search.on("searchEntry", (entry) => {
-            for (const a of entry.pojo.attributes ?? []) {
-              if (a.type === "memberOf")
-                for (const v of a.values ?? []) groups.push(String(v));
+            for (const at of entry.pojo.attributes ?? []) {
+              if (at.type === a.groupAttr)
+                for (const v of at.values ?? []) groups.push(String(v));
             }
           });
           search.on("error", () => finish(groups));

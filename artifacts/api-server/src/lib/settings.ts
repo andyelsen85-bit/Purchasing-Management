@@ -2,6 +2,26 @@ import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 export type LdapEncryption = "ldaps" | "starttls" | "plain";
+export type LdapDirectoryType = "ad" | "generic";
+
+/** Defaults for a Microsoft Active Directory deployment. */
+export const AD_DEFAULTS = {
+  userFilter:
+    "(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))",
+  usernameAttribute: "sAMAccountName",
+  displayNameAttribute: "displayName",
+  emailAttribute: "mail",
+  groupMembershipAttribute: "memberOf",
+} as const;
+
+/** Defaults for a generic RFC 4519 directory (OpenLDAP, 389-DS, etc). */
+export const GENERIC_DEFAULTS = {
+  userFilter: "(&(objectClass=inetOrgPerson)(uid={username}))",
+  usernameAttribute: "uid",
+  displayNameAttribute: "cn",
+  emailAttribute: "mail",
+  groupMembershipAttribute: "memberOf",
+} as const;
 
 export interface LdapConfigStored {
   enabled?: boolean;
@@ -17,11 +37,33 @@ export interface LdapConfigStored {
    * backward compatibility.
    */
   encryption?: LdapEncryption | null;
+  /**
+   * Directory flavour. Drives the default filter and attribute names.
+   * `ad` = Microsoft Active Directory (sAMAccountName, memberOf, …).
+   * `generic` = RFC 4519 directories. Older saved configs default to `ad`
+   * to preserve existing behaviour.
+   */
+  directoryType?: LdapDirectoryType | null;
   baseDn?: string | null;
   bindDn?: string | null;
   bindPassword?: string | null;
   skipVerify?: boolean;
   caCert?: string | null;
+  /**
+   * LDAP search filter used to find the user record. Must contain the
+   * literal `{username}` token, which is replaced with the (escaped)
+   * sign-in name. AD default:
+   * `(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))`.
+   */
+  userFilter?: string | null;
+  /** Login-name attribute (`sAMAccountName` for AD, `uid` for OpenLDAP). */
+  usernameAttribute?: string | null;
+  /** Attribute holding the human display name (`displayName` / `cn`). */
+  displayNameAttribute?: string | null;
+  /** Attribute holding the e-mail address (`mail`). */
+  emailAttribute?: string | null;
+  /** Multi-valued attribute listing group DNs (`memberOf` in AD). */
+  groupMembershipAttribute?: string | null;
   kerberosEnabled?: boolean;
   servicePrincipalName?: string | null;
   /**
@@ -75,11 +117,17 @@ const DEFAULT: AppSettings = {
     host: null,
     port: 636,
     encryption: "ldaps",
+    directoryType: "ad",
     baseDn: null,
     bindDn: null,
     bindPassword: null,
     skipVerify: false,
     caCert: null,
+    userFilter: AD_DEFAULTS.userFilter,
+    usernameAttribute: AD_DEFAULTS.usernameAttribute,
+    displayNameAttribute: AD_DEFAULTS.displayNameAttribute,
+    emailAttribute: AD_DEFAULTS.emailAttribute,
+    groupMembershipAttribute: AD_DEFAULTS.groupMembershipAttribute,
     kerberosEnabled: false,
     servicePrincipalName: null,
     groupRoleMap: {},
@@ -119,11 +167,17 @@ export function toPublicSettings(s: AppSettings) {
       host: s.ldap?.host ?? null,
       port: s.ldap?.port ?? null,
       encryption: (s.ldap?.encryption ?? "ldaps") as LdapEncryption,
+      directoryType: (s.ldap?.directoryType ?? "ad") as LdapDirectoryType,
       baseDn: s.ldap?.baseDn ?? null,
       bindDn: s.ldap?.bindDn ?? null,
       bindPasswordSet: !!s.ldap?.bindPassword,
       skipVerify: !!s.ldap?.skipVerify,
       caCertSet: !!s.ldap?.caCert,
+      userFilter: s.ldap?.userFilter ?? null,
+      usernameAttribute: s.ldap?.usernameAttribute ?? null,
+      displayNameAttribute: s.ldap?.displayNameAttribute ?? null,
+      emailAttribute: s.ldap?.emailAttribute ?? null,
+      groupMembershipAttribute: s.ldap?.groupMembershipAttribute ?? null,
       kerberosEnabled: !!s.ldap?.kerberosEnabled,
       servicePrincipalName: s.ldap?.servicePrincipalName ?? null,
       groupRoleMap: s.ldap?.groupRoleMap ?? {},

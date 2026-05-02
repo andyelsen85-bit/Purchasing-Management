@@ -1333,11 +1333,21 @@ export const GetSettingsResponse = zod.object({
       .describe(
         "Transport security: `ldaps` (implicit TLS, default port 636),\n`starttls` (plain connect on 389 then upgrade), or `plain`\n(no encryption — diagnostic only).\n",
       ),
+    directoryType: zod
+      .enum(["ad", "generic"])
+      .describe(
+        "`ad` for Microsoft Active Directory (sAMAccountName,\ndisplayName, mail, memberOf); `generic` for RFC 4519\ndirectories like OpenLDAP. Drives the default user filter\nand attribute names.\n",
+      ),
     baseDn: zod.string().nullish(),
     bindDn: zod.string().nullish(),
     bindPasswordSet: zod.boolean(),
     skipVerify: zod.boolean(),
     caCertSet: zod.boolean(),
+    userFilter: zod.string().nullish(),
+    usernameAttribute: zod.string().nullish(),
+    displayNameAttribute: zod.string().nullish(),
+    emailAttribute: zod.string().nullish(),
+    groupMembershipAttribute: zod.string().nullish(),
     kerberosEnabled: zod.boolean(),
     servicePrincipalName: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
@@ -1375,11 +1385,19 @@ export const UpdateSettingsBody = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      directoryType: zod
+        .union([zod.literal("ad"), zod.literal("generic"), zod.literal(null)])
+        .nullish(),
       baseDn: zod.string().nullish(),
       bindDn: zod.string().nullish(),
       bindPassword: zod.string().nullish(),
       skipVerify: zod.boolean().nullish(),
       caCert: zod.string().nullish(),
+      userFilter: zod.string().nullish(),
+      usernameAttribute: zod.string().nullish(),
+      displayNameAttribute: zod.string().nullish(),
+      emailAttribute: zod.string().nullish(),
+      groupMembershipAttribute: zod.string().nullish(),
       kerberosEnabled: zod.boolean().nullish(),
       servicePrincipalName: zod.string().nullish(),
       groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
@@ -1416,11 +1434,21 @@ export const UpdateSettingsResponse = zod.object({
       .describe(
         "Transport security: `ldaps` (implicit TLS, default port 636),\n`starttls` (plain connect on 389 then upgrade), or `plain`\n(no encryption — diagnostic only).\n",
       ),
+    directoryType: zod
+      .enum(["ad", "generic"])
+      .describe(
+        "`ad` for Microsoft Active Directory (sAMAccountName,\ndisplayName, mail, memberOf); `generic` for RFC 4519\ndirectories like OpenLDAP. Drives the default user filter\nand attribute names.\n",
+      ),
     baseDn: zod.string().nullish(),
     bindDn: zod.string().nullish(),
     bindPasswordSet: zod.boolean(),
     skipVerify: zod.boolean(),
     caCertSet: zod.boolean(),
+    userFilter: zod.string().nullish(),
+    usernameAttribute: zod.string().nullish(),
+    displayNameAttribute: zod.string().nullish(),
+    emailAttribute: zod.string().nullish(),
+    groupMembershipAttribute: zod.string().nullish(),
     kerberosEnabled: zod.boolean(),
     servicePrincipalName: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),

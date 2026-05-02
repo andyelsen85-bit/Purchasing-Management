@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { LdapsSettingsDirectoryType } from "./ldapsSettingsDirectoryType";
 import type { LdapsSettingsEncryption } from "./ldapsSettingsEncryption";
 import type { LdapsSettingsGroupDepartmentMap } from "./ldapsSettingsGroupDepartmentMap";
 import type { LdapsSettingsGroupRoleMap } from "./ldapsSettingsGroupRoleMap";
@@ -20,6 +21,12 @@ export interface LdapsSettings {
 (no encryption — diagnostic only).
  */
   encryption: LdapsSettingsEncryption;
+  /** `ad` for Microsoft Active Directory (sAMAccountName,
+displayName, mail, memberOf); `generic` for RFC 4519
+directories like OpenLDAP. Drives the default user filter
+and attribute names.
+ */
+  directoryType: LdapsSettingsDirectoryType;
   /** @nullable */
   baseDn?: string | null;
   /** @nullable */
@@ -27,6 +34,16 @@ export interface LdapsSettings {
   bindPasswordSet: boolean;
   skipVerify: boolean;
   caCertSet: boolean;
+  /** @nullable */
+  userFilter?: string | null;
+  /** @nullable */
+  usernameAttribute?: string | null;
+  /** @nullable */
+  displayNameAttribute?: string | null;
+  /** @nullable */
+  emailAttribute?: string | null;
+  /** @nullable */
+  groupMembershipAttribute?: string | null;
   kerberosEnabled: boolean;
   /** @nullable */
   servicePrincipalName?: string | null;

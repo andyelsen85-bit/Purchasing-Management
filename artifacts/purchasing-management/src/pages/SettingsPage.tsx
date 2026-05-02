@@ -560,6 +560,12 @@ function LdapSettingsPanel() {
   const [encryption, setEncryption] = useState<"ldaps" | "starttls" | "plain">(
     "ldaps",
   );
+  const [directoryType, setDirectoryType] = useState<"ad" | "generic">("ad");
+  const [userFilter, setUserFilter] = useState("");
+  const [usernameAttr, setUsernameAttr] = useState("");
+  const [displayNameAttr, setDisplayNameAttr] = useState("");
+  const [emailAttr, setEmailAttr] = useState("");
+  const [groupAttr, setGroupAttr] = useState("");
   const [bindDn, setBindDn] = useState("");
   const [bindPassword, setBindPassword] = useState("");
   const [skipVerify, setSkipVerify] = useState(false);
@@ -577,6 +583,20 @@ function LdapSettingsPanel() {
       (s.ldap as { encryption?: "ldaps" | "starttls" | "plain" }).encryption ??
         "ldaps",
     );
+    const ld = s.ldap as {
+      directoryType?: "ad" | "generic" | null;
+      userFilter?: string | null;
+      usernameAttribute?: string | null;
+      displayNameAttribute?: string | null;
+      emailAttribute?: string | null;
+      groupMembershipAttribute?: string | null;
+    };
+    setDirectoryType(ld.directoryType ?? "ad");
+    setUserFilter(ld.userFilter ?? "");
+    setUsernameAttr(ld.usernameAttribute ?? "");
+    setDisplayNameAttr(ld.displayNameAttribute ?? "");
+    setEmailAttr(ld.emailAttribute ?? "");
+    setGroupAttr(ld.groupMembershipAttribute ?? "");
     setBaseDn(s.ldap.baseDn ?? "");
     setBindDn(s.ldap.bindDn ?? "");
     setBindPassword("");
@@ -653,10 +673,70 @@ function LdapSettingsPanel() {
             </p>
           </div>
           <div className="space-y-1 sm:col-span-2">
+            <Label>Directory type</Label>
+            <Select
+              value={directoryType}
+              onValueChange={(v) => {
+                const next = v as "ad" | "generic";
+                setDirectoryType(next);
+                // Snap the AD-specific attributes to the preset values
+                // when switching, but only if the operator hasn't already
+                // typed something custom (we don't want to clobber edits).
+                const adDef = {
+                  filter:
+                    "(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))",
+                  uname: "sAMAccountName",
+                  display: "displayName",
+                };
+                const genDef = {
+                  filter: "(&(objectClass=inetOrgPerson)(uid={username}))",
+                  uname: "uid",
+                  display: "cn",
+                };
+                const isOldDefault = (
+                  v: string,
+                  ...defaults: string[]
+                ): boolean => v === "" || defaults.includes(v);
+                const target = next === "ad" ? adDef : genDef;
+                if (isOldDefault(userFilter, adDef.filter, genDef.filter))
+                  setUserFilter(target.filter);
+                if (isOldDefault(usernameAttr, adDef.uname, genDef.uname))
+                  setUsernameAttr(target.uname);
+                if (isOldDefault(displayNameAttr, adDef.display, genDef.display))
+                  setDisplayNameAttr(target.display);
+                if (emailAttr === "") setEmailAttr("mail");
+                if (groupAttr === "") setGroupAttr("memberOf");
+              }}
+            >
+              <SelectTrigger data-testid="select-ldap-directory-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ad">
+                  Microsoft Active Directory
+                </SelectItem>
+                <SelectItem value="generic">
+                  Generic LDAP (RFC 4519)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Sets the default search filter and attribute names for your
+              directory. AD uses <code>sAMAccountName</code>,{" "}
+              <code>displayName</code>, <code>mail</code>, and{" "}
+              <code>memberOf</code>.
+            </p>
+          </div>
+          <div className="space-y-1 sm:col-span-2">
             <Label>Base DN</Label>
             <Input
               value={baseDn}
               onChange={(e) => setBaseDn(e.target.value)}
+              placeholder={
+                directoryType === "ad"
+                  ? "DC=example,DC=local"
+                  : "ou=people,dc=example,dc=org"
+              }
               data-testid="input-ldap-basedn"
             />
           </div>
@@ -665,8 +745,19 @@ function LdapSettingsPanel() {
             <Input
               value={bindDn}
               onChange={(e) => setBindDn(e.target.value)}
+              placeholder={
+                directoryType === "ad"
+                  ? "svc-purchasing@example.local  or  CN=Svc,OU=Service Accounts,DC=example,DC=local"
+                  : "cn=admin,dc=example,dc=org"
+              }
               data-testid="input-ldap-binddn"
             />
+            {directoryType === "ad" && (
+              <p className="text-xs text-muted-foreground">
+                For AD you can use either a full Distinguished Name or a
+                User Principal Name (<code>user@domain</code>).
+              </p>
+            )}
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label>Bind password</Label>
@@ -710,6 +801,78 @@ function LdapSettingsPanel() {
             is not in the public trust store and TLS verification is on.
           </p>
         </div>
+        <div className="space-y-3 rounded-md border p-3">
+          <div>
+            <Label className="text-sm">
+              {directoryType === "ad"
+                ? "Active Directory attributes"
+                : "Directory attributes"}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Override the user search filter and attribute names if your
+              schema differs from the defaults. Leave blank to use the
+              presets above.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>User search filter</Label>
+            <Input
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+              placeholder={
+                directoryType === "ad"
+                  ? "(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))"
+                  : "(&(objectClass=inetOrgPerson)(uid={username}))"
+              }
+              className="font-mono text-xs"
+              data-testid="input-ldap-user-filter"
+            />
+            <p className="text-xs text-muted-foreground">
+              Must contain the literal <code>{"{username}"}</code> token —
+              it is replaced with the (escaped) sign-in name. For AD with
+              UPN logins you can use{" "}
+              <code>(userPrincipalName={"{username}"})</code> instead.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Login attribute</Label>
+              <Input
+                value={usernameAttr}
+                onChange={(e) => setUsernameAttr(e.target.value)}
+                placeholder={directoryType === "ad" ? "sAMAccountName" : "uid"}
+                data-testid="input-ldap-attr-username"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Display name attribute</Label>
+              <Input
+                value={displayNameAttr}
+                onChange={(e) => setDisplayNameAttr(e.target.value)}
+                placeholder={directoryType === "ad" ? "displayName" : "cn"}
+                data-testid="input-ldap-attr-display"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Email attribute</Label>
+              <Input
+                value={emailAttr}
+                onChange={(e) => setEmailAttr(e.target.value)}
+                placeholder="mail"
+                data-testid="input-ldap-attr-email"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Group membership attribute</Label>
+              <Input
+                value={groupAttr}
+                onChange={(e) => setGroupAttr(e.target.value)}
+                placeholder="memberOf"
+                data-testid="input-ldap-attr-group"
+              />
+            </div>
+          </div>
+        </div>
         <div className="flex items-center justify-between rounded-md border p-3">
           <div>
             <Label>Enable Kerberos / GSSAPI</Label>
@@ -744,11 +907,17 @@ function LdapSettingsPanel() {
                     host: host || null,
                     port,
                     encryption,
+                    directoryType,
                     baseDn: baseDn || null,
                     bindDn: bindDn || null,
                     ...(bindPassword ? { bindPassword } : {}),
                     skipVerify,
                     ...(caCert.trim() ? { caCert: caCert.trim() } : {}),
+                    userFilter: userFilter.trim() || null,
+                    usernameAttribute: usernameAttr.trim() || null,
+                    displayNameAttribute: displayNameAttr.trim() || null,
+                    emailAttribute: emailAttr.trim() || null,
+                    groupMembershipAttribute: groupAttr.trim() || null,
                     kerberosEnabled: kerberos,
                     servicePrincipalName: spn || null,
                   },

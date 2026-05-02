@@ -1346,11 +1346,24 @@ components:
             Transport security: `ldaps` (implicit TLS, default port 636),
             `starttls` (plain connect on 389 then upgrade), or `plain`
             (no encryption — diagnostic only).
+        directoryType:
+          type: string
+          enum: [ad, generic]
+          description: |
+            `ad` for Microsoft Active Directory (sAMAccountName,
+            displayName, mail, memberOf); `generic` for RFC 4519
+            directories like OpenLDAP. Drives the default user filter
+            and attribute names.
         baseDn: { type: ["string", "null"] }
         bindDn: { type: ["string", "null"] }
         bindPasswordSet: { type: boolean }
         skipVerify: { type: boolean }
         caCertSet: { type: boolean }
+        userFilter: { type: ["string", "null"] }
+        usernameAttribute: { type: ["string", "null"] }
+        displayNameAttribute: { type: ["string", "null"] }
+        emailAttribute: { type: ["string", "null"] }
+        groupMembershipAttribute: { type: ["string", "null"] }
         kerberosEnabled: { type: boolean }
         servicePrincipalName: { type: ["string", "null"] }
         groupRoleMap:
@@ -1359,7 +1372,7 @@ components:
         groupDepartmentMap:
           type: object
           additionalProperties: { type: string }
-      required: [enabled, encryption, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
+      required: [enabled, encryption, directoryType, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
 
     SmtpSettings:
       type: object
@@ -1417,11 +1430,19 @@ components:
             encryption:
               type: ["string", "null"]
               enum: [ldaps, starttls, plain, null]
+            directoryType:
+              type: ["string", "null"]
+              enum: [ad, generic, null]
             baseDn: { type: ["string", "null"] }
             bindDn: { type: ["string", "null"] }
             bindPassword: { type: ["string", "null"] }
             skipVerify: { type: ["boolean", "null"] }
             caCert: { type: ["string", "null"] }
+            userFilter: { type: ["string", "null"] }
+            usernameAttribute: { type: ["string", "null"] }
+            displayNameAttribute: { type: ["string", "null"] }
+            emailAttribute: { type: ["string", "null"] }
+            groupMembershipAttribute: { type: ["string", "null"] }
             kerberosEnabled: { type: ["boolean", "null"] }
             servicePrincipalName: { type: ["string", "null"] }
             groupRoleMap:
