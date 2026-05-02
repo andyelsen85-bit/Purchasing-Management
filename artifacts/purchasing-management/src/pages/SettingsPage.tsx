@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { Save, Loader2, Image as ImageIcon, Trash2, Plus } from "lucide-react";
+import {
+  Save,
+  Loader2,
+  Image as ImageIcon,
+  Trash2,
+  Plus,
+  Download,
+  Upload,
+  ShieldAlert,
+} from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +66,9 @@ export function SettingsPage() {
           <TabsTrigger value="gt" data-testid="tab-gt">
             GT Invest
           </TabsTrigger>
+          <TabsTrigger value="backup" data-testid="tab-backup">
+            Backup &amp; Restore
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="app">
           <AppSettingsPanel />
@@ -79,6 +92,9 @@ export function SettingsPage() {
             <GtResultsPanel />
           </div>
         </TabsContent>
+        <TabsContent value="backup">
+          <BackupRestorePanel />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -89,6 +105,202 @@ function useSaveSettings() {
   return useUpdateSettings({
     mutation: { onSuccess: () => qc.invalidateQueries() },
   });
+}
+
+/**
+ * Operator-facing backup & restore. The backend route dumps every
+ * persisted table to JSON (documents are stored base64 in-row, so the
+ * file is fully self-contained); restoring wipes those tables inside
+ * a transaction, replays the dump, and forces every active session to
+ * re-authenticate.
+ */
+function BackupRestorePanel() {
+  const apiBase = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const [busy, setBusy] = useState<"download" | "upload" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  async function downloadBackup() {
+    setBusy("download");
+    setError(null);
+    setSuccess(null);
+    try {
+      const r = await fetch(`${apiBase}/api/admin/backup`, {
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `HTTP ${r.status}`);
+      }
+      const blob = await r.blob();
+      const cd = r.headers.get("content-disposition") ?? "";
+      const m = /filename="([^"]+)"/.exec(cd);
+      const filename = m
+        ? m[1]
+        : `purchasing-backup-${new Date().toISOString()}.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSuccess(`Downloaded ${filename}`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function pickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setPendingFile(f);
+    setConfirming(Boolean(f));
+    setError(null);
+    setSuccess(null);
+    e.target.value = ""; // allow re-selecting same file later
+  }
+
+  async function uploadRestore() {
+    if (!pendingFile) return;
+    setBusy("upload");
+    setError(null);
+    setSuccess(null);
+    setConfirming(false);
+    try {
+      const fd = new FormData();
+      fd.append("file", pendingFile);
+      const r = await fetch(`${apiBase}/api/admin/restore`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      const j = (await r.json().catch(() => ({}))) as {
+        error?: string;
+        restoredRows?: number;
+      };
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setSuccess(
+        `Restored ${j.restoredRows ?? 0} rows. You will be signed out — please log in again.`,
+      );
+      setPendingFile(null);
+      // Server already destroyed our session; redirect to login after a
+      // short delay so the success message is visible.
+      setTimeout(() => {
+        window.location.href = `${apiBase}/`;
+      }, 2000);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Backup &amp; Restore</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Download backup</h3>
+          <p className="text-sm text-muted-foreground">
+            Exports every user, department, company, workflow, document,
+            note, history entry, audit log, setting, GT Invest data and
+            TLS material as a single JSON file. Document files are
+            embedded as base64, so this single file is the complete
+            snapshot of the instance.
+          </p>
+          <Button
+            onClick={downloadBackup}
+            disabled={busy !== null}
+            data-testid="button-download-backup"
+          >
+            {busy === "download" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Download backup
+          </Button>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Restore from backup</h3>
+          <Alert variant="destructive">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertDescription>
+              Restoring overwrites <strong>every</strong> table (users,
+              workflows, documents, settings, …) with the contents of
+              the uploaded file. Any data created since the backup was
+              taken will be lost. You will be signed out and must log in
+              again with a user from the backup.
+            </AlertDescription>
+          </Alert>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={pickFile}
+              disabled={busy !== null}
+              data-testid="input-restore-file"
+              className="text-sm file:mr-3 file:rounded file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-accent"
+            />
+          </div>
+          {confirming && pendingFile && (
+            <div className="rounded-md border border-destructive bg-destructive/5 p-3 text-sm">
+              <p className="mb-2">
+                Selected: <strong>{pendingFile.name}</strong> (
+                {(pendingFile.size / 1024).toFixed(1)} KB). Click
+                Restore to wipe and replace all data.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={uploadRestore}
+                  disabled={busy !== null}
+                  data-testid="button-confirm-restore"
+                >
+                  {busy === "upload" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Restore (overwrite everything)
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPendingFile(null);
+                    setConfirming(false);
+                  }}
+                  disabled={busy !== null}
+                  data-testid="button-cancel-restore"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <Alert variant="destructive" data-testid="alert-backup-error">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {success && (
+          <Alert data-testid="alert-backup-success">
+            <AlertDescription>{success}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function AppSettingsPanel() {
