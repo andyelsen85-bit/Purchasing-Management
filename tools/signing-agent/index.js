@@ -1,27 +1,90 @@
 #!/usr/bin/env node
 "use strict";
 
+/**
+ * Purchasing Signing Agent
+ *
+ * Two transports, both authenticated with the same SHARED_TOKEN:
+ *
+ *   1. HTTPS endpoints  (corporate / internal CA flow)
+ *      - GET  /healthz                           → { ok, version }
+ *      - POST /sign      { csrPem, template? }   → { certPem }
+ *      - POST /list-certs                        → { certs: [...] }
+ *      - POST /sign-data { thumbprint, dataB64 } → { signatureB64 }
+ *
+ *   2. WebSocket on the same port and on the local-only port 27443
+ *      (tunneled via TLS upgrade) used by the web app to drive a
+ *      certificate picker. Messages are JSON envelopes:
+ *        { id, type: "list-certs" | "sign-data", payload: {...} }
+ *      Responses:
+ *        { id, ok: true,  result: {...} }   /   { id, ok: false, error }
+ *
+ * Certificate enumeration uses PowerShell against the Windows certificate
+ * store (Cert:\CurrentUser\My) — this is the supported scripting bridge to
+ * Windows CryptoAPI. We filter to certs whose Enhanced Key Usage / Key Usage
+ * permits Digital Signature and that have not expired. Signing uses
+ * `Set-AuthenticodeSignature` on a temp file so private keys never leave
+ * the Windows cert store.
+ */
+
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const http = require("http");
 const https = require("https");
+const url = require("url");
 const { execFile } = require("child_process");
 const crypto = require("crypto");
+const { WebSocketServer } = require("ws");
 
-const PORT = Number(process.env.PORT || 9443);
-const TLS_CERT_PATH = process.env.TLS_CERT_PATH || "./agent.crt";
-const TLS_KEY_PATH = process.env.TLS_KEY_PATH || "./agent.key";
-const SHARED_TOKEN = process.env.SHARED_TOKEN || "";
-const CERT_TEMPLATE = process.env.CERT_TEMPLATE || "WebServer";
-const CA_CONFIG = process.env.CA_CONFIG || "";
+function loadConfig() {
+  const candidates = [
+    process.env.CONFIG_PATH,
+    path.join(__dirname, "config.json"),
+    path.join(__dirname, "config.example.json"),
+  ].filter(Boolean);
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) {
+      try {
+        return JSON.parse(fs.readFileSync(p, "utf8"));
+      } catch (err) {
+        console.error(`Failed to parse ${p}:`, err.message);
+      }
+    }
+  }
+  return {};
+}
 
-if (!SHARED_TOKEN) {
-  console.error("FATAL: SHARED_TOKEN environment variable is required.");
+const cfg = loadConfig();
+const PORT = Number(process.env.PORT || cfg.port || 9443);
+const LOCAL_WS_PORT = Number(
+  process.env.LOCAL_WS_PORT || cfg.localWsPort || 27443,
+);
+const TLS_CERT_PATH =
+  process.env.TLS_CERT_PATH || cfg.tlsCertPath || "./agent.crt";
+const TLS_KEY_PATH =
+  process.env.TLS_KEY_PATH || cfg.tlsKeyPath || "./agent.key";
+const SHARED_TOKEN = process.env.SHARED_TOKEN || cfg.sharedToken || "";
+const CERT_TEMPLATE =
+  process.env.CERT_TEMPLATE || cfg.certTemplate || "WebServer";
+const CA_CONFIG = process.env.CA_CONFIG || cfg.caConfig || "";
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",")
+    : cfg.allowedOrigins ?? []
+)
+  .map((s) => String(s).trim())
+  .filter(Boolean);
+
+if (!SHARED_TOKEN || SHARED_TOKEN === "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARS") {
+  console.error(
+    "FATAL: SHARED_TOKEN missing or still set to the placeholder value.",
+  );
   process.exit(1);
 }
 if (!fs.existsSync(TLS_CERT_PATH) || !fs.existsSync(TLS_KEY_PATH)) {
   console.error(
-    `FATAL: TLS files not found. Set TLS_CERT_PATH (=${TLS_CERT_PATH}) and TLS_KEY_PATH (=${TLS_KEY_PATH}).`,
+    `FATAL: TLS files not found. Provide ${TLS_CERT_PATH} and ${TLS_KEY_PATH}.`,
   );
   process.exit(1);
 }
@@ -33,15 +96,14 @@ function timingSafeEqual(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-function authorize(req, res) {
-  const header = req.headers["authorization"] || "";
-  const m = /^Bearer\s+(.+)$/i.exec(header);
-  if (!m || !timingSafeEqual(m[1], SHARED_TOKEN)) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Unauthorized" }));
-    return false;
-  }
-  return true;
+function authorizeHeader(authHeader) {
+  const m = /^Bearer\s+(.+)$/i.exec(authHeader || "");
+  return !!(m && timingSafeEqual(m[1], SHARED_TOKEN));
+}
+
+function originAllowed(origin) {
+  if (ALLOWED_ORIGINS.length === 0) return true;
+  return ALLOWED_ORIGINS.includes(origin);
 }
 
 function readJsonBody(req, max = 256 * 1024) {
@@ -76,82 +138,250 @@ function tempFile(prefix, suffix) {
   );
 }
 
-function runCertReq(csrPath, certPath, template) {
+function execPowerShell(script) {
   return new Promise((resolve, reject) => {
-    const args = ["-submit", "-attrib", `CertificateTemplate:${template}`];
-    if (CA_CONFIG) args.push("-config", CA_CONFIG);
-    args.push(csrPath, certPath);
-    execFile("certreq.exe", args, { windowsHide: true }, (err, stdout, stderr) => {
-      if (err) {
-        reject(new Error(`certreq failed: ${stderr || stdout || err.message}`));
-        return;
-      }
-      resolve({ stdout, stderr });
-    });
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { windowsHide: true, maxBuffer: 32 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(new Error(`PowerShell failed: ${stderr || err.message}`));
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
   });
 }
 
-async function handleSign(req, res) {
-  let body;
-  try {
-    body = await readJsonBody(req);
-  } catch (err) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: String(err.message || err) }));
-    return;
-  }
-  const csrPem = String(body.csrPem || "");
-  const template = String(body.template || CERT_TEMPLATE);
-  if (!/-----BEGIN CERTIFICATE REQUEST-----/.test(csrPem)) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "csrPem missing or malformed" }));
-    return;
-  }
+async function listCerts() {
+  // Enumerate the user's personal cert store, keep only certs with a Digital
+  // Signature key usage and a private key, drop expired ones, return JSON.
+  const ps = `
+    $now = Get-Date
+    Get-ChildItem -Path Cert:\\CurrentUser\\My |
+      Where-Object {
+        $_.HasPrivateKey -and
+        $_.NotAfter -gt $now -and
+        ( -not $_.Extensions.KeyUsages -or
+          $_.Extensions.KeyUsages -match 'DigitalSignature' )
+      } |
+      Select-Object @{
+        Name='thumbprint'; Expression={$_.Thumbprint}
+      }, @{
+        Name='subject'; Expression={$_.Subject}
+      }, @{
+        Name='issuer'; Expression={$_.Issuer}
+      }, @{
+        Name='notBefore'; Expression={$_.NotBefore.ToString('o')}
+      }, @{
+        Name='notAfter'; Expression={$_.NotAfter.ToString('o')}
+      }, @{
+        Name='ekus'; Expression={
+          ($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join ','
+        }
+      } | ConvertTo-Json -Depth 4 -Compress
+  `;
+  const { stdout } = await execPowerShell(ps);
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+  const parsed = JSON.parse(trimmed);
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
 
-  const csrPath = tempFile("csr", ".req");
-  const certPath = tempFile("cert", ".cer");
+async function signData({ thumbprint, dataB64 }) {
+  if (!/^[A-Fa-f0-9]+$/.test(String(thumbprint || ""))) {
+    throw new Error("Invalid thumbprint");
+  }
+  if (!dataB64) throw new Error("dataB64 required");
+  const data = Buffer.from(dataB64, "base64");
+  const inFile = tempFile("sign-in", ".bin");
+  const outFile = tempFile("sign-out", ".sig");
+  fs.writeFileSync(inFile, data);
   try {
-    fs.writeFileSync(csrPath, csrPem, "utf8");
-    await runCertReq(csrPath, certPath, template);
-    const certPem = fs.readFileSync(certPath, "utf8");
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ certPem }));
-  } catch (err) {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: String(err.message || err) }));
+    // Authenticode signs the *file*, not the bytes — for a generic byte
+    // signature we use RSA via the cert's private key from the store.
+    const ps = `
+      $cert = Get-ChildItem -Path 'Cert:\\CurrentUser\\My\\${thumbprint}'
+      if (-not $cert) { throw "Certificate not found" }
+      $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+      $bytes = [System.IO.File]::ReadAllBytes('${inFile.replace(/\\/g, "\\\\")}')
+      $sig = $rsa.SignData(
+        $bytes,
+        [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+        [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+      [System.IO.File]::WriteAllBytes('${outFile.replace(/\\/g, "\\\\")}', $sig)
+    `;
+    await execPowerShell(ps);
+    const sig = fs.readFileSync(outFile);
+    return { signatureB64: sig.toString("base64") };
   } finally {
-    for (const p of [csrPath, certPath]) {
+    for (const p of [inFile, outFile])
       try {
         if (fs.existsSync(p)) fs.unlinkSync(p);
       } catch {
         /* ignore */
       }
-    }
   }
 }
 
-const server = https.createServer(
-  {
-    cert: fs.readFileSync(TLS_CERT_PATH),
-    key: fs.readFileSync(TLS_KEY_PATH),
-  },
-  (req, res) => {
-    res.setHeader("Cache-Control", "no-store");
-    if (req.method === "GET" && req.url === "/healthz") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, version: "0.1.0" }));
-      return;
-    }
-    if (!authorize(req, res)) return;
-    if (req.method === "POST" && req.url === "/sign") {
-      handleSign(req, res);
-      return;
-    }
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not Found" }));
-  },
-);
+async function submitCsr(csrPem, template) {
+  const csrPath = tempFile("csr", ".req");
+  const certPath = tempFile("cert", ".cer");
+  try {
+    fs.writeFileSync(csrPath, csrPem, "utf8");
+    const args = ["-submit", "-attrib", `CertificateTemplate:${template}`];
+    if (CA_CONFIG) args.push("-config", CA_CONFIG);
+    args.push(csrPath, certPath);
+    await new Promise((resolve, reject) =>
+      execFile(
+        "certreq.exe",
+        args,
+        { windowsHide: true },
+        (err, _stdout, stderr) =>
+          err ? reject(new Error(stderr || err.message)) : resolve(),
+      ),
+    );
+    return { certPem: fs.readFileSync(certPath, "utf8") };
+  } finally {
+    for (const p of [csrPath, certPath])
+      try {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      } catch {
+        /* ignore */
+      }
+  }
+}
 
-server.listen(PORT, () => {
-  console.log(`Signing agent listening on https://0.0.0.0:${PORT}`);
+// -------- HTTPS server (REST + WS upgrade) -------------------------------
+const tlsOpts = {
+  cert: fs.readFileSync(TLS_CERT_PATH),
+  key: fs.readFileSync(TLS_KEY_PATH),
+};
+
+const httpsServer = https.createServer(tlsOpts, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const u = url.parse(req.url, true);
+
+  if (req.method === "GET" && u.pathname === "/healthz") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, version: "0.2.0" }));
+    return;
+  }
+  if (!authorizeHeader(req.headers["authorization"])) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Unauthorized" }));
+    return;
+  }
+  try {
+    if (req.method === "POST" && u.pathname === "/sign") {
+      const body = await readJsonBody(req);
+      const out = await submitCsr(
+        String(body.csrPem || ""),
+        String(body.template || CERT_TEMPLATE),
+      );
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(out));
+      return;
+    }
+    if (req.method === "POST" && u.pathname === "/list-certs") {
+      const certs = await listCerts();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ certs }));
+      return;
+    }
+    if (req.method === "POST" && u.pathname === "/sign-data") {
+      const body = await readJsonBody(req);
+      const out = await signData(body);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(out));
+      return;
+    }
+  } catch (err) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: String(err.message || err) }));
+    return;
+  }
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not Found" }));
+});
+
+// -------- WebSocket envelopes -------------------------------------------
+const wss = new WebSocketServer({ noServer: true });
+
+function setupWs(ws, origin) {
+  ws.on("message", async (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw.toString("utf8"));
+    } catch {
+      ws.send(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+      return;
+    }
+    const { id, type, payload, token } = msg ?? {};
+    if (!timingSafeEqual(token, SHARED_TOKEN)) {
+      ws.send(JSON.stringify({ id, ok: false, error: "Unauthorized" }));
+      return;
+    }
+    try {
+      if (type === "list-certs") {
+        const certs = await listCerts();
+        ws.send(JSON.stringify({ id, ok: true, result: { certs } }));
+        return;
+      }
+      if (type === "sign-data") {
+        const out = await signData(payload || {});
+        ws.send(JSON.stringify({ id, ok: true, result: out }));
+        return;
+      }
+      ws.send(JSON.stringify({ id, ok: false, error: "Unknown type" }));
+    } catch (err) {
+      ws.send(
+        JSON.stringify({ id, ok: false, error: String(err.message || err) }),
+      );
+    }
+  });
+  ws.send(JSON.stringify({ type: "hello", origin }));
+}
+
+httpsServer.on("upgrade", (req, socket, head) => {
+  const origin = req.headers["origin"] || "";
+  if (!originAllowed(origin)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  if (!authorizeHeader(req.headers["authorization"])) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => setupWs(ws, origin));
+});
+
+httpsServer.listen(PORT, () => {
+  console.log(`Signing agent (HTTPS + WSS) listening on port ${PORT}`);
+});
+
+// -------- Local-only WebSocket on 127.0.0.1:27443 -----------------------
+// Same auth/origin rules. This is the channel the web app uses.
+const localServer = http.createServer((_req, res) => {
+  res.writeHead(426, { "Content-Type": "text/plain" });
+  res.end("Upgrade required");
+});
+localServer.on("upgrade", (req, socket, head) => {
+  const origin = req.headers["origin"] || "";
+  if (!originAllowed(origin)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  // Token may come via the first WS message instead of the upgrade header.
+  wss.handleUpgrade(req, socket, head, (ws) => setupWs(ws, origin));
+});
+localServer.listen(LOCAL_WS_PORT, "127.0.0.1", () => {
+  console.log(
+    `Signing agent local WS listening on ws://127.0.0.1:${LOCAL_WS_PORT}`,
+  );
 });

@@ -13,6 +13,7 @@ import auditRouter from "./audit";
 import gtInvestRouter from "./gtInvest";
 import settingsRouter from "./settings";
 import tlsRouter from "./tls";
+import exportsRouter from "./exports";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,9 @@ router.use(authRouter);
 router.use(usersRouter);
 router.use(departmentsRouter);
 router.use(companiesRouter);
+// exportsRouter must come before workflowsRouter so its
+// /workflows/export path isn't shadowed by /workflows/:id.
+router.use(exportsRouter);
 router.use(workflowsRouter);
 router.use(documentsRouter);
 router.use(notesRouter);

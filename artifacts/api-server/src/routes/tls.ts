@@ -185,4 +185,40 @@ router.post(
   },
 );
 
+/**
+ * POST /admin/cert/reload
+ *
+ * Triggers a hot-reload of the HTTPS listener so a freshly imported
+ * certificate becomes active without restarting the process. The
+ * server entrypoint exposes a global `reloadHttps()` helper.
+ */
+router.post(
+  "/admin/cert/reload",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (_req, res): Promise<void> => {
+    const reload = (
+      globalThis as {
+        __reloadHttps?: () => Promise<{ ok: boolean; mode: string }>;
+      }
+    ).__reloadHttps;
+    if (typeof reload !== "function") {
+      res.status(503).json({
+        ok: false,
+        error:
+          "HTTPS hot-reload is not available in this environment. Restart the process to apply the new certificate.",
+      });
+      return;
+    }
+    try {
+      const result = await reload();
+      res.json(result);
+    } catch (err) {
+      res
+        .status(500)
+        .json({ ok: false, error: String((err as Error).message ?? err) });
+    }
+  },
+);
+
 export default router;

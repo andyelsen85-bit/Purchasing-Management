@@ -46,7 +46,27 @@ if (process.env.NODE_ENV === "production") {
 }
 const sessionSecret = rawSecret ?? "dev-secret-change-me";
 
-app.use(cors({ origin: true, credentials: true }));
+// CORS — in production, restrict to a comma-separated allowlist via
+// CORS_ORIGINS. In development we reflect the request origin so the local
+// proxy / preview can talk to the API across artifact ports.
+const corsAllowlist = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    credentials: true,
+    origin:
+      process.env.NODE_ENV === "production"
+        ? (origin, cb) => {
+            if (!origin) return cb(null, true);
+            if (corsAllowlist.length === 0 || corsAllowlist.includes(origin))
+              return cb(null, true);
+            cb(new Error(`Origin ${origin} not allowed by CORS`));
+          }
+        : true,
+  }),
+);
 app.use(express.json({ limit: "32mb" }));
 app.use(express.urlencoded({ extended: true, limit: "32mb" }));
 
@@ -55,10 +75,12 @@ app.use(
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    proxy: true, // trust X-Forwarded-Proto for "secure" cookie decisions
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
+      // Secure in production so the cookie is only sent over HTTPS.
+      secure: process.env.NODE_ENV === "production",
       maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   }),

@@ -32,46 +32,65 @@ async function loadTlsMaterial(): Promise<{ key: string; cert: string } | null> 
   }
 }
 
-async function start(): Promise<void> {
+let httpServer: http.Server | null = null;
+let httpsServer: https.Server | null = null;
+
+function makeRedirector(httpsPort: number) {
+  return http.createServer((req, res) => {
+    const host = (req.headers.host ?? "").split(":")[0];
+    const target =
+      httpsPort === 443
+        ? `https://${host}${req.url ?? "/"}`
+        : `https://${host}:${httpsPort}${req.url ?? "/"}`;
+    res.writeHead(301, { Location: target });
+    res.end();
+  });
+}
+
+async function configureListeners(): Promise<{ ok: boolean; mode: string }> {
   const httpsPortRaw = process.env["HTTPS_PORT"];
   const httpsPort = httpsPortRaw ? Number(httpsPortRaw) : null;
   const tls = httpsPort ? await loadTlsMaterial() : null;
 
-  if (httpsPort && tls) {
-    https
-      .createServer({ key: tls.key, cert: tls.cert }, app)
-      .listen(httpsPort, () => {
-        logger.info({ port: httpsPort, mode: "https" }, "HTTPS listener ready");
-      });
-    // The plain port becomes a 301 redirector to HTTPS.
-    http
-      .createServer((req, res) => {
-        const host = (req.headers.host ?? "").split(":")[0];
-        const target =
-          httpsPort === 443
-            ? `https://${host}${req.url ?? "/"}`
-            : `https://${host}:${httpsPort}${req.url ?? "/"}`;
-        res.writeHead(301, { Location: target });
-        res.end();
-      })
-      .listen(port, () => {
-        logger.info({ port, mode: "http-redirect" }, "HTTP→HTTPS redirector ready");
-      });
-    return;
+  // Tear down whatever's currently bound so we can rebind cleanly.
+  if (httpsServer) {
+    await new Promise<void>((r) => httpsServer!.close(() => r()));
+    httpsServer = null;
+  }
+  if (httpServer) {
+    await new Promise<void>((r) => httpServer!.close(() => r()));
+    httpServer = null;
   }
 
-  // No cert configured — serve plain HTTP. The HTTPS Management UI lets
-  // operators import a cert; restart picks it up.
-  app.listen(port, (err) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    }
+  if (httpsPort && tls) {
+    httpsServer = https.createServer({ key: tls.key, cert: tls.cert }, app);
+    await new Promise<void>((r) => httpsServer!.listen(httpsPort, r));
+    logger.info({ port: httpsPort, mode: "https" }, "HTTPS listener ready");
+
+    httpServer = makeRedirector(httpsPort);
+    await new Promise<void>((r) => httpServer!.listen(port, r));
     logger.info(
-      { port, mode: "http", httpsConfigured: !!httpsPort },
-      "Server listening",
+      { port, mode: "http-redirect" },
+      "HTTP→HTTPS redirector ready",
     );
-  });
+    return { ok: true, mode: "https" };
+  }
+
+  httpServer = http.createServer(app);
+  await new Promise<void>((r) => httpServer!.listen(port, r));
+  logger.info(
+    { port, mode: "http", httpsConfigured: !!httpsPort },
+    "Server listening",
+  );
+  return { ok: true, mode: "http" };
 }
 
-void start();
+// Expose a hot-reload entrypoint for the /admin/cert/reload route.
+(globalThis as {
+  __reloadHttps?: () => Promise<{ ok: boolean; mode: string }>;
+}).__reloadHttps = configureListeners;
+
+void configureListeners().catch((err) => {
+  logger.error({ err }, "Failed to start listeners");
+  process.exit(1);
+});

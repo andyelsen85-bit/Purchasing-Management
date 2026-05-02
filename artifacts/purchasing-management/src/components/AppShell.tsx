@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -13,13 +13,29 @@ import {
   Moon,
   Sun,
   Package,
+  FolderTree,
+  ChevronRight,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useGetSettings, useLogout, getGetSessionQueryKey } from "@/lib/api";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { Badge } from "@/components/ui/badge";
+import {
+  useGetSettings,
+  useLogout,
+  useListDepartments,
+  useListWorkflows,
+  getGetSessionQueryKey,
+} from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@/components/AuthGate";
+import { STEP_LABEL, PRIORITY_TONE } from "@/lib/steps";
 
 interface NavItem {
   to: string;
@@ -52,6 +68,7 @@ interface Props {
 export function AppShell({ user, children }: Props) {
   const [location, setLocation] = useLocation();
   const { data: settings } = useGetSettings();
+  const { data: departments } = useListDepartments();
   const logout = useLogout();
   const qc = useQueryClient();
   const [dark, setDark] = useState<boolean>(() => {
@@ -60,6 +77,22 @@ export function AppShell({ user, children }: Props) {
       document.documentElement.classList.contains("dark")
     );
   });
+
+  // Selected department for the second sidebar (workflows panel).
+  const [selectedDeptId, setSelectedDeptId] = useState<number | "ALL">("ALL");
+  const departmentsList = useMemo(() => departments ?? [], [departments]);
+  useEffect(() => {
+    if (
+      selectedDeptId !== "ALL" &&
+      !departmentsList.some((d) => d.id === selectedDeptId)
+    ) {
+      setSelectedDeptId("ALL");
+    }
+  }, [departmentsList, selectedDeptId]);
+
+  const { data: deptWorkflows } = useListWorkflows(
+    selectedDeptId === "ALL" ? {} : { departmentId: selectedDeptId },
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem("theme");
@@ -89,118 +122,270 @@ export function AppShell({ user, children }: Props) {
     (n) => !n.roles || n.roles.some((r) => user.roles.includes(r)),
   );
 
+  // Show the workflows mini-sidebar only on workflow-related pages.
+  const showWorkflowsSidebar =
+    location === "/" ||
+    location.startsWith("/workflows") ||
+    location.startsWith("/gt-invest");
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-      <aside
-        className="flex w-64 flex-col bg-sidebar text-sidebar-foreground"
-        data-testid="sidebar-main"
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="h-full"
+        autoSaveId="purchasing-shell"
       >
-        <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-          {settings?.logoDataUrl ? (
-            <img
-              src={settings.logoDataUrl}
-              alt="Logo"
-              className="h-8 w-8 rounded object-cover"
-              data-testid="img-app-logo"
-            />
-          ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-sidebar-primary text-sidebar-primary-foreground">
-              <Package className="h-4 w-4" />
+        {/* Primary sidebar: top-level nav + departments tree */}
+        <ResizablePanel
+          defaultSize={18}
+          minSize={14}
+          maxSize={28}
+          className="bg-sidebar text-sidebar-foreground"
+        >
+          <div className="flex h-full flex-col" data-testid="sidebar-main">
+            <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
+              {settings?.logoDataUrl ? (
+                <img
+                  src={settings.logoDataUrl}
+                  alt="Logo"
+                  className="h-8 w-8 rounded object-cover"
+                  data-testid="img-app-logo"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded bg-sidebar-primary text-sidebar-primary-foreground">
+                  <Package className="h-4 w-4" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <div
+                  className="truncate text-sm font-semibold"
+                  data-testid="text-app-name"
+                >
+                  {settings?.appName ?? "Purchasing Management"}
+                </div>
+                <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
+                  Procurement Suite
+                </div>
+              </div>
             </div>
-          )}
-          <div className="min-w-0">
-            <div
-              className="truncate text-sm font-semibold"
-              data-testid="text-app-name"
-            >
-              {settings?.appName ?? "Purchasing Management"}
-            </div>
-            <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
-              Procurement Suite
-            </div>
-          </div>
-        </div>
 
-        <ScrollArea className="flex-1 px-2 py-4">
-          <nav className="space-y-1">
-            {visibleNav.map((item) => {
-              const active =
-                item.to === "/"
-                  ? location === "/"
-                  : location.startsWith(item.to);
-              return (
-                <Link
-                  key={item.to}
-                  href={item.to}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover-elevate ${
-                    active
+            <ScrollArea className="flex-1 px-2 py-4">
+              <nav className="space-y-1">
+                {visibleNav.map((item) => {
+                  const active =
+                    item.to === "/"
+                      ? location === "/"
+                      : location.startsWith(item.to);
+                  return (
+                    <Link
+                      key={item.to}
+                      href={item.to}
+                      className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover-elevate ${
+                        active
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          : "text-sidebar-foreground/80"
+                      }`}
+                      data-testid={`link-nav-${item.to.replace(/\//g, "-").replace(/^-/, "") || "home"}`}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              <Separator className="my-4 bg-sidebar-border" />
+
+              <div className="px-3">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+                  <FolderTree className="h-3 w-3" />
+                  Departments
+                </div>
+              </div>
+              <div className="mt-2 space-y-0.5" data-testid="list-departments">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeptId("ALL")}
+                  className={`flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm transition-colors hover-elevate ${
+                    selectedDeptId === "ALL"
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                       : "text-sidebar-foreground/80"
                   }`}
-                  data-testid={`link-nav-${item.to.replace(/\//g, "-").replace(/^-/, "") || "home"}`}
+                  data-testid="button-dept-all"
                 >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-        </ScrollArea>
+                  <span>All departments</span>
+                  <ChevronRight className="h-3 w-3 opacity-60" />
+                </button>
+                {departmentsList.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setSelectedDeptId(d.id)}
+                    className={`flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm transition-colors hover-elevate ${
+                      selectedDeptId === d.id
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                        : "text-sidebar-foreground/80"
+                    }`}
+                    data-testid={`button-dept-${d.id}`}
+                  >
+                    <span className="truncate">{d.name}</span>
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-sidebar-foreground/50">
+                      {d.code}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
 
-        <div className="border-t border-sidebar-border p-3">
-          <div className="rounded-md bg-sidebar-accent/40 p-3">
-            <div
-              className="text-sm font-medium text-sidebar-accent-foreground"
-              data-testid="text-user-name"
-            >
-              {user.displayName}
-            </div>
-            <div className="text-xs text-sidebar-foreground/70">
-              {user.username} · {user.source}
-            </div>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {user.roles.slice(0, 3).map((r) => (
-                <span
-                  key={r}
-                  className="rounded bg-sidebar/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/80"
+            <div className="border-t border-sidebar-border p-3">
+              <div className="rounded-md bg-sidebar-accent/40 p-3">
+                <div
+                  className="text-sm font-medium text-sidebar-accent-foreground"
+                  data-testid="text-user-name"
                 >
-                  {r}
-                </span>
-              ))}
+                  {user.displayName}
+                </div>
+                <div className="text-xs text-sidebar-foreground/70">
+                  {user.username} · {user.source}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {user.roles.slice(0, 3).map((r) => (
+                    <span
+                      key={r}
+                      className="rounded bg-sidebar/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/80"
+                    >
+                      {r}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <Separator className="my-3 bg-sidebar-border" />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                  onClick={toggleTheme}
+                  data-testid="button-toggle-theme"
+                >
+                  {dark ? (
+                    <Sun className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Moon className="mr-2 h-4 w-4" />
+                  )}
+                  {dark ? "Light" : "Dark"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                  onClick={doLogout}
+                  data-testid="button-logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
-          <Separator className="my-3 bg-sidebar-border" />
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-              onClick={toggleTheme}
-              data-testid="button-toggle-theme"
-            >
-              {dark ? (
-                <Sun className="mr-2 h-4 w-4" />
-              ) : (
-                <Moon className="mr-2 h-4 w-4" />
-              )}
-              {dark ? "Light" : "Dark"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-              onClick={doLogout}
-              data-testid="button-logout"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </aside>
+        </ResizablePanel>
 
-      <main className="flex-1 overflow-auto" data-testid="main-content">
-        {children}
-      </main>
+        {showWorkflowsSidebar && (
+          <>
+            <ResizableHandle withHandle />
+            {/* Secondary sidebar: workflows for the selected department */}
+            <ResizablePanel
+              defaultSize={18}
+              minSize={14}
+              maxSize={32}
+              className="bg-sidebar/60 text-sidebar-foreground"
+            >
+              <div
+                className="flex h-full flex-col"
+                data-testid="sidebar-workflows"
+              >
+                <div className="flex h-16 items-center justify-between gap-2 border-b border-sidebar-border px-4">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs uppercase tracking-wider text-sidebar-foreground/60">
+                      {selectedDeptId === "ALL"
+                        ? "All workflows"
+                        : (departmentsList.find((d) => d.id === selectedDeptId)
+                            ?.name ?? "Department")}
+                    </div>
+                    <div className="text-sm font-semibold">
+                      {(deptWorkflows ?? []).length} item
+                      {(deptWorkflows ?? []).length === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-2"
+                    data-testid="button-new-workflow-side"
+                  >
+                    <Link href="/workflows/new">
+                      <Plus className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </div>
+                <ScrollArea className="flex-1 px-2 py-2">
+                  <div className="space-y-1">
+                    {(deptWorkflows ?? []).map((w) => {
+                      const active = location === `/workflows/${w.id}`;
+                      return (
+                        <Link
+                          key={w.id}
+                          href={`/workflows/${w.id}`}
+                          className={`block rounded-md p-2 text-xs transition-colors hover-elevate ${
+                            active
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : "text-sidebar-foreground/85"
+                          }`}
+                          data-testid={`link-side-workflow-${w.id}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-[11px] opacity-80">
+                              {w.reference}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`border-0 px-1.5 py-0 text-[9px] uppercase ${PRIORITY_TONE[w.priority] ?? ""}`}
+                            >
+                              {w.priority}
+                            </Badge>
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-sidebar-foreground">
+                            {w.title}
+                          </div>
+                          <div className="mt-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/60">
+                            {STEP_LABEL[w.currentStep] ?? w.currentStep}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                    {(deptWorkflows ?? []).length === 0 && (
+                      <div className="px-3 py-6 text-center text-xs text-sidebar-foreground/50">
+                        No workflows in this scope.
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </ResizablePanel>
+          </>
+        )}
+
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={64} minSize={40}>
+          <main
+            className="h-full overflow-auto"
+            data-testid="main-content"
+          >
+            {children}
+          </main>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }
