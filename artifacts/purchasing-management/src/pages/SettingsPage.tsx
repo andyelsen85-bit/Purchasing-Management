@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -257,6 +258,8 @@ function LdapSettingsPanel() {
   const [bindDn, setBindDn] = useState("");
   const [bindPassword, setBindPassword] = useState("");
   const [skipVerify, setSkipVerify] = useState(false);
+  const [caCert, setCaCert] = useState("");
+  const [caCertSet, setCaCertSet] = useState(false);
   const [kerberos, setKerberos] = useState(false);
   const [spn, setSpn] = useState("");
 
@@ -269,6 +272,8 @@ function LdapSettingsPanel() {
     setBindDn(s.ldap.bindDn ?? "");
     setBindPassword("");
     setSkipVerify(s.ldap.skipVerify);
+    setCaCert("");
+    setCaCertSet(s.ldap.caCertSet);
     setKerberos(s.ldap.kerberosEnabled);
     setSpn(s.ldap.servicePrincipalName ?? "");
   }, [s]);
@@ -343,6 +348,26 @@ function LdapSettingsPanel() {
             data-testid="switch-skip-verify"
           />
         </div>
+        <div className="space-y-1">
+          <Label>CA certificate (PEM)</Label>
+          <Textarea
+            value={caCert}
+            onChange={(e) => setCaCert(e.target.value)}
+            placeholder={
+              caCertSet
+                ? "(stored — paste a new PEM to replace, leave empty to keep)"
+                : "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"
+            }
+            rows={6}
+            className="font-mono text-xs"
+            data-testid="input-ldap-cacert"
+          />
+          <p className="text-xs text-muted-foreground">
+            Paste the PEM-encoded CA used to sign your domain
+            controller&apos;s LDAPS certificate. Required when the issuing CA
+            is not in the public trust store and TLS verification is on.
+          </p>
+        </div>
         <div className="flex items-center justify-between rounded-md border p-3">
           <div>
             <Label>Enable Kerberos / GSSAPI</Label>
@@ -380,6 +405,7 @@ function LdapSettingsPanel() {
                     bindDn: bindDn || null,
                     ...(bindPassword ? { bindPassword } : {}),
                     skipVerify,
+                    ...(caCert.trim() ? { caCert: caCert.trim() } : {}),
                     kerberosEnabled: kerberos,
                     servicePrincipalName: spn || null,
                   },
