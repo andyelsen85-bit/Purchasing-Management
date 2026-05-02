@@ -60,24 +60,26 @@ if (process.env.NODE_ENV === "production" && corsAllowlist.length === 0) {
       "Same-origin requests (the proxied SPA hitting /api on the same host) still work.",
   );
 }
-app.use(
-  cors({
-    credentials: true,
-    origin:
-      process.env.NODE_ENV === "production"
-        ? (origin, cb) => {
-            // Same-origin / non-browser requests have no Origin header.
-            if (!origin) return cb(null, true);
-            // Deny by default when credentials are enabled and no allowlist
-            // is configured — never reflect arbitrary origins.
-            if (corsAllowlist.length === 0)
-              return cb(new Error(`Origin ${origin} not allowed by CORS`));
-            if (corsAllowlist.includes(origin)) return cb(null, true);
-            cb(new Error(`Origin ${origin} not allowed by CORS`));
-          }
-        : true,
-  }),
-);
+// CORS is scoped to /api below — static SPA assets must NOT go through
+// CORS at all. The browser sometimes sends an Origin header on
+// same-origin asset loads (e.g. <script crossorigin>, modulepreload),
+// which would be incorrectly rejected by the allowlist check.
+const corsMiddleware = cors({
+  credentials: true,
+  origin:
+    process.env.NODE_ENV === "production"
+      ? (origin, cb) => {
+          // Same-origin / non-browser requests have no Origin header.
+          if (!origin) return cb(null, true);
+          // No allowlist configured: only allow same-origin (no Origin
+          // header) requests; reject explicit cross-origin ones.
+          if (corsAllowlist.length === 0)
+            return cb(new Error(`Origin ${origin} not allowed by CORS`));
+          if (corsAllowlist.includes(origin)) return cb(null, true);
+          cb(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+      : true,
+});
 app.use(express.json({ limit: "32mb" }));
 app.use(express.urlencoded({ extended: true, limit: "32mb" }));
 
@@ -104,7 +106,7 @@ app.use(
   }),
 );
 
-app.use("/api", router);
+app.use("/api", corsMiddleware, router);
 
 // Optional SPA passthrough: when WEB_DIST is set (Docker / production), the
 // API process also serves the built React app and falls back to index.html
