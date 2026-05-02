@@ -2,8 +2,22 @@
 
 ## 1. Create your `.env`
 
-`docker-compose.yml` requires `SESSION_SECRET` to be set externally. Copy the
-template and fill in a real secret:
+`docker-compose.yml` requires `SESSION_SECRET` to be set externally. The
+easiest way is to run the included setup script — it writes a `.env` with
+a freshly generated 64-character random secret, and refuses to overwrite
+an existing `.env`:
+
+**Linux / macOS / WSL:**
+```bash
+bash scripts/setup-env.sh
+```
+
+**Windows PowerShell:**
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1
+```
+
+If you'd rather do it by hand, copy the template and fill in a real secret:
 
 ```bash
 cp .env.example .env
