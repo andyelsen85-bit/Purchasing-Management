@@ -48,7 +48,7 @@ RUN pnpm run typecheck:libs \
 # Produce a self-contained runtime tree for the api-server with only its
 # production dependencies (nodemailer, pg, drizzle-orm, etc. are externalized
 # by the esbuild bundle and need to resolve at runtime).
-RUN pnpm --filter @workspace/api-server deploy --prod /deploy/api
+RUN pnpm --filter @workspace/api-server deploy --prod --legacy /deploy/api
 
 # ---- Runtime ----------------------------------------------------------------
 # Same base family as the builder (glibc) so native deps that were resolved
