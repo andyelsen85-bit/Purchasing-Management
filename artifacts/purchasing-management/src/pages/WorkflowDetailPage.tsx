@@ -643,6 +643,134 @@ function QuotationPanel({
   );
 }
 
+function WinningQuoteCard({ wf }: { wf: Workflow }) {
+  const { data: companies } = useListCompanies();
+  const { data: docs } = useListWorkflowDocuments(wf.id);
+  const winning = (wf.quotes ?? []).find((q) => q.winning);
+  if (!winning) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          No winning quote selected yet. Go back to the Quotation step and
+          mark one quote as winning.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  const supplierName =
+    winning.companyName ??
+    companies?.find((c) => c.id === winning.companyId)?.name ??
+    "—";
+  const docIds = winning.documentIds ?? [];
+  const winningDocs = (docs ?? []).filter((d) => docIds.includes(d.id));
+  return (
+    <Card className="border-primary/40 bg-primary/5">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Winning quote</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <div className="text-xs text-muted-foreground">Reseller</div>
+            <div
+              className="font-medium"
+              data-testid="text-winning-supplier"
+            >
+              {supplierName}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Amount</div>
+            <div
+              className="font-medium"
+              data-testid="text-winning-amount"
+            >
+              {winning.amount != null
+                ? `${winning.amount} ${winning.currency ?? wf.currency ?? ""}`
+                : "—"}
+            </div>
+          </div>
+        </div>
+        {winning.notes && (
+          <div>
+            <div className="text-xs text-muted-foreground">Notes</div>
+            <div className="whitespace-pre-wrap">{winning.notes}</div>
+          </div>
+        )}
+        <div>
+          <div className="mb-1 text-xs text-muted-foreground">
+            Quote documents
+          </div>
+          {winningDocs.length === 0 ? (
+            <p className="text-xs italic text-muted-foreground">
+              No file was attached to the winning quote.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {winningDocs.map((d) => {
+                const href = `/api/documents/${d.id}/download`;
+                const isImage = d.mimeType?.startsWith("image/");
+                return (
+                  <li
+                    key={d.id}
+                    className="flex items-center gap-2 rounded border bg-background px-2 py-1"
+                    data-testid={`winning-doc-${d.id}`}
+                  >
+                    {isImage ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block h-8 w-8 shrink-0 overflow-hidden rounded border bg-muted"
+                      >
+                        <img
+                          src={href}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      </a>
+                    ) : (
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 truncate hover:underline"
+                    >
+                      {d.filename}
+                    </a>
+                    <span className="text-xs text-muted-foreground">
+                      {formatBytes(d.sizeBytes)}
+                    </span>
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                    >
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-testid={`button-download-winning-${d.id}`}
+                      >
+                        <Download className="h-3 w-3" />
+                      </a>
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ManagerApprovePanel({
   wf,
   onChange,
@@ -654,7 +782,9 @@ function ManagerApprovePanel({
   const [comment, setComment] = useState<string>(wf.managerComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
   return (
-    <Card>
+    <div className="space-y-3">
+      <WinningQuoteCard wf={wf} />
+      <Card>
       <CardHeader>
         <CardTitle>Department Manager Validation</CardTitle>
       </CardHeader>
@@ -697,7 +827,8 @@ function ManagerApprovePanel({
           <Save className="mr-2 h-4 w-4" /> Save decision
         </Button>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -714,7 +845,9 @@ function FinancialApprovePanel({
   const [comment, setComment] = useState<string>(wf.financialComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
   return (
-    <Card>
+    <div className="space-y-3">
+      <WinningQuoteCard wf={wf} />
+      <Card>
       <CardHeader>
         <CardTitle>Financial Approval</CardTitle>
         <p className="text-sm text-muted-foreground">
@@ -763,7 +896,8 @@ function FinancialApprovePanel({
           <Save className="mr-2 h-4 w-4" /> Save decision
         </Button>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
