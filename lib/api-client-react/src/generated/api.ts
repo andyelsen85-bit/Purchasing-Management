@@ -53,6 +53,7 @@ import type {
   LoginRequest,
   Note,
   NotificationEntry,
+  RejectWorkflowInput,
   SessionResponse,
   SessionUser,
   UpdateSettingsInput,
@@ -2256,6 +2257,87 @@ export const useAdvanceWorkflow = <
   TContext
 > => {
   return useMutation(getAdvanceWorkflowMutationOptions(options));
+};
+
+export const getRejectWorkflowUrl = (id: number) => {
+  return `/api/workflows/${id}/reject`;
+};
+
+export const rejectWorkflow = async (
+  id: number,
+  rejectWorkflowInput: RejectWorkflowInput,
+  options?: RequestInit,
+): Promise<Workflow> => {
+  return customFetch<Workflow>(getRejectWorkflowUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rejectWorkflowInput),
+  });
+};
+
+export const getRejectWorkflowMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectWorkflow>>,
+    TError,
+    { id: number; data: BodyType<RejectWorkflowInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectWorkflow>>,
+  TError,
+  { id: number; data: BodyType<RejectWorkflowInput> },
+  TContext
+> => {
+  const mutationKey = ["rejectWorkflow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectWorkflow>>,
+    { id: number; data: BodyType<RejectWorkflowInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rejectWorkflow(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectWorkflow>>
+>;
+export type RejectWorkflowMutationBody = BodyType<RejectWorkflowInput>;
+export type RejectWorkflowMutationError = ErrorType<unknown>;
+
+export const useRejectWorkflow = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectWorkflow>>,
+    TError,
+    { id: number; data: BodyType<RejectWorkflowInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectWorkflow>>,
+  TError,
+  { id: number; data: BodyType<RejectWorkflowInput> },
+  TContext
+> => {
+  return useMutation(getRejectWorkflowMutationOptions(options));
 };
 
 export const getUndoWorkflowUrl = (id: number) => {

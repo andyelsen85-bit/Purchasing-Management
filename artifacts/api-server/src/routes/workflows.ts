@@ -15,6 +15,8 @@ import {
   UpdateWorkflowParams,
   AdvanceWorkflowBody,
   AdvanceWorkflowParams,
+  RejectWorkflowBody,
+  RejectWorkflowParams,
   UndoWorkflowParams,
   GetWorkflowParams,
   DeleteWorkflowParams,
@@ -74,7 +76,10 @@ async function loadWorkflowFull(id: number) {
     departmentName: w.deptName ?? "",
     createdByName: w.creatorName ?? "",
     ageDays,
-    isStalled: ageDays > STALL_DAYS && wf.currentStep !== "DONE",
+    isStalled:
+      ageDays > STALL_DAYS &&
+      wf.currentStep !== "DONE" &&
+      wf.currentStep !== "REJECTED",
   };
 }
 
@@ -375,6 +380,99 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
       `${wf.reference}: advanced to ${next}`,
       `Workflow ${wf.reference} (${wf.title}) advanced from ${wf.currentStep} to ${next}.\n\nOpen the workflow in Purchasing Management to review.`,
       { workflowId: wf.id, step: next },
+    );
+  }
+
+  res.json(await loadWorkflowFull(wf.id));
+});
+
+router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void> => {
+  // Reject closes the workflow: it transitions to the terminal
+  // REJECTED step from any of the three approval steps. We keep
+  // `previousStep` populated so an admin / financial-all can Undo
+  // the close back to the approval step if it was a mistake.
+  const params = RejectWorkflowParams.safeParse(req.params);
+  const body = RejectWorkflowBody.safeParse(req.body ?? {});
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid request" });
+    return;
+  }
+  const wf = await loadWorkflowFull(params.data.id);
+  if (!wf) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  const user = getUser(req);
+  if (!canActOnStep(user, wf.currentStep as WorkflowStep, wf.departmentId)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  const REJECTABLE: WorkflowStep[] = [
+    "VALIDATING_QUOTE_FINANCIAL",
+    "VALIDATING_BY_FINANCIAL",
+    "VALIDATING_INVOICE",
+  ];
+  if (!REJECTABLE.includes(wf.currentStep as WorkflowStep)) {
+    res
+      .status(400)
+      .json({ error: "Reject is only allowed at an approval step" });
+    return;
+  }
+
+  const update: Record<string, unknown> = {
+    currentStep: "REJECTED",
+    previousStep: wf.currentStep,
+    lastStepChangeAt: new Date(),
+  };
+  // Persist the reject decision + comment on the matching step's
+  // approval columns so the audit trail and the existing detail UI
+  // both surface why the workflow was closed.
+  const comment = body.data.comment ?? null;
+  switch (wf.currentStep) {
+    case "VALIDATING_QUOTE_FINANCIAL":
+      update.managerApproved = false;
+      update.managerComment = comment;
+      break;
+    case "VALIDATING_BY_FINANCIAL":
+      update.financialApproved = false;
+      update.financialComment = comment;
+      break;
+    case "VALIDATING_INVOICE":
+      update.invoiceValidated = false;
+      break;
+  }
+
+  await db.update(workflowsTable).set(update).where(eq(workflowsTable.id, wf.id));
+  await db.insert(historyTable).values({
+    workflowId: wf.id,
+    action: "REJECT",
+    fromStep: wf.currentStep,
+    toStep: "REJECTED",
+    actorId: user.id,
+    details: comment ?? null,
+  });
+  await audit(
+    user.id,
+    "WORKFLOW_REJECT",
+    "workflow",
+    wf.id,
+    `${wf.currentStep}->REJECTED`,
+  );
+
+  // Notify the same recipients we would for an advance, plus the
+  // workflow creator so they know the request was closed.
+  const settings = await getSettings();
+  const recipients = await recipientsForStep(
+    { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
+    "REJECTED",
+  );
+  if (recipients.length > 0) {
+    void sendNotification(
+      settings.smtp,
+      recipients,
+      `${wf.reference}: rejected and closed`,
+      `Workflow ${wf.reference} (${wf.title}) was rejected at ${wf.currentStep} by ${user.displayName} and is now closed.${comment ? `\n\nReason: ${comment}` : ""}`,
+      { workflowId: wf.id, step: "REJECTED" },
     );
   }
 

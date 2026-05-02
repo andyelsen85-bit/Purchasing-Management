@@ -54,6 +54,7 @@ export * from "./notificationEntry";
 export * from "./notificationEntryStatus";
 export * from "./priority";
 export * from "./quoteEntry";
+export * from "./rejectWorkflowInput";
 export * from "./role";
 export * from "./sessionResponse";
 export * from "./sessionUser";

@@ -12,6 +12,7 @@ export const WORKFLOW_STEPS = [
   "VALIDATING_INVOICE",
   "PAYMENT",
   "DONE",
+  "REJECTED",
 ] as const;
 export type WorkflowStep = (typeof WORKFLOW_STEPS)[number];
 
@@ -86,6 +87,9 @@ export function canActOnStep(
     case "PAYMENT":
       return hasRole(user, "FINANCIAL_ALL", "FINANCIAL_PAYMENT");
     case "DONE":
+    case "REJECTED":
+      // Terminal steps — no one can act except via Undo (handled in
+      // the dedicated /undo endpoint, which uses canUndo).
       return false;
   }
   return false;
@@ -163,6 +167,7 @@ export function nextStep(
     case "PAYMENT":
       return "DONE";
     case "DONE":
+    case "REJECTED":
       return null;
   }
   return null;

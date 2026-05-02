@@ -404,6 +404,23 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Workflow" }
+  /workflows/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: rejectWorkflow
+      tags: [workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RejectWorkflowInput" }
+      responses:
+        "200":
+          description: Rejected and closed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
   /workflows/{id}/undo:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -865,6 +882,7 @@ components:
         - VALIDATING_INVOICE
         - PAYMENT
         - DONE
+        - REJECTED
 
     Priority:
       type: string
@@ -1058,6 +1076,7 @@ components:
         # Step 9 - Payment
         paymentDate: { type: ["string", "null"], format: date }
         paymentReference: { type: ["string", "null"] }
+        previousStep: { $ref: "#/components/schemas/WorkflowStep" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required:
@@ -1167,6 +1186,11 @@ components:
       type: object
       properties:
         branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+
+    RejectWorkflowInput:
+      type: object
+      properties:
+        comment: { type: ["string", "null"] }
 
     Document:
       type: object

@@ -37,6 +37,20 @@ export function StepProgress({ current, branch }: Props) {
     ];
   })();
 
+  // Rejected workflows render their own banner instead of the step
+  // ribbon — the linear progress bar is meaningless once the workflow
+  // is closed.
+  if (current === "REJECTED") {
+    return (
+      <div
+        className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+        data-testid="status-step-progress"
+      >
+        Rejected — workflow closed
+      </div>
+    );
+  }
+
   const currentIdx = flow.indexOf(current);
   const totalIdx = STEPS.indexOf(current);
 
@@ -44,7 +58,7 @@ export function StepProgress({ current, branch }: Props) {
     <div className="space-y-2" data-testid="status-step-progress">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
-          Step {Math.max(1, totalIdx + 1)} of 11
+          Step {Math.max(1, totalIdx + 1)} of {flow.length}
         </div>
         <div>{STEP_LABEL[current]}</div>
       </div>

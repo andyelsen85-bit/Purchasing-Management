@@ -41,6 +41,7 @@ export const WorkflowStep = {
   VALIDATING_INVOICE: "VALIDATING_INVOICE",
   PAYMENT: "PAYMENT",
   DONE: "DONE",
+  REJECTED: "REJECTED",
 } as const;
 
 export type Priority = (typeof Priority)[keyof typeof Priority];
@@ -257,6 +258,7 @@ export interface Workflow {
   paymentDate?: string | null;
   /** @nullable */
   paymentReference?: string | null;
+  previousStep?: WorkflowStep;
   createdAt: string;
   updatedAt: string;
 }
@@ -383,6 +385,11 @@ export const AdvanceWorkflowInputBranch = {
 export interface AdvanceWorkflowInput {
   /** @nullable */
   branch?: AdvanceWorkflowInputBranch;
+}
+
+export interface RejectWorkflowInput {
+  /** @nullable */
+  comment?: string | null;
 }
 
 export type DocumentKind = (typeof DocumentKind)[keyof typeof DocumentKind];

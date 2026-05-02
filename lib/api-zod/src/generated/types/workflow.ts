@@ -74,6 +74,7 @@ export interface Workflow {
   paymentDate?: Date | null;
   /** @nullable */
   paymentReference?: string | null;
+  previousStep?: WorkflowStep;
   createdAt: Date;
   updatedAt: Date;
 }

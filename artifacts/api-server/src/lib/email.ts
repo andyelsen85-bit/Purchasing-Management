@@ -37,6 +37,9 @@ const STEP_NOTIFY_ROLES: Record<WorkflowStep, string[]> = {
   VALIDATING_INVOICE: ["FINANCIAL_ALL"],
   PAYMENT: ["FINANCIAL_PAYMENT"],
   DONE: [],
+  // Reject closes the workflow. Notify the originating department
+  // (manager + users) so they know their request will not progress.
+  REJECTED: ["DEPT_MANAGER", "DEPT_USER"],
 };
 
 /**

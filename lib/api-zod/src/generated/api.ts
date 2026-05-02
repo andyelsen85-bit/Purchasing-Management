@@ -368,6 +368,7 @@ export const ListWorkflowsQueryParams = zod.object({
       "VALIDATING_INVOICE",
       "PAYMENT",
       "DONE",
+      "REJECTED",
     ])
     .optional(),
   q: zod.coerce.string().optional(),
@@ -392,6 +393,7 @@ export const ListWorkflowsResponseItem = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   branch: zod
     .union([
@@ -434,6 +436,7 @@ export const ListWorkflowsByStepResponseItem = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   workflows: zod.array(
     zod.object({
@@ -455,6 +458,7 @@ export const ListWorkflowsByStepResponseItem = zod.object({
         "VALIDATING_INVOICE",
         "PAYMENT",
         "DONE",
+        "REJECTED",
       ]),
       branch: zod
         .union([
@@ -502,6 +506,7 @@ export const GetWorkflowResponse = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   branch: zod
     .union([
@@ -549,6 +554,22 @@ export const GetWorkflowResponse = zod.object({
   invoiceSignedAt: zod.coerce.date().nullish(),
   paymentDate: zod.coerce.date().nullish(),
   paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -620,6 +641,7 @@ export const UpdateWorkflowResponse = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   branch: zod
     .union([
@@ -667,6 +689,22 @@ export const UpdateWorkflowResponse = zod.object({
   invoiceSignedAt: zod.coerce.date().nullish(),
   paymentDate: zod.coerce.date().nullish(),
   paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -710,6 +748,7 @@ export const AdvanceWorkflowResponse = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   branch: zod
     .union([
@@ -757,6 +796,119 @@ export const AdvanceWorkflowResponse = zod.object({
   invoiceSignedAt: zod.coerce.date().nullish(),
   paymentDate: zod.coerce.date().nullish(),
   paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const RejectWorkflowParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RejectWorkflowBody = zod.object({
+  comment: zod.string().nullish(),
+});
+
+export const RejectWorkflowResponse = zod.object({
+  id: zod.number(),
+  reference: zod.string(),
+  title: zod.string(),
+  departmentId: zod.number(),
+  departmentName: zod.string(),
+  createdById: zod.number(),
+  createdByName: zod.string(),
+  priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
+  currentStep: zod.enum([
+    "NEW",
+    "QUOTATION",
+    "VALIDATING_QUOTE_FINANCIAL",
+    "VALIDATING_BY_FINANCIAL",
+    "GT_INVEST",
+    "ORDERING",
+    "DELIVERY",
+    "INVOICE",
+    "VALIDATING_INVOICE",
+    "PAYMENT",
+    "DONE",
+    "REJECTED",
+  ]),
+  branch: zod
+    .union([
+      zod.literal("K_ORDER"),
+      zod.literal("GT_INVEST"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ageDays: zod.number(),
+  isStalled: zod.boolean(),
+  description: zod.string().nullish(),
+  category: zod.string().nullish(),
+  estimatedAmount: zod.number().nullish(),
+  currency: zod.string().nullish(),
+  neededBy: zod.coerce.date().nullish(),
+  quotes: zod.array(
+    zod.object({
+      companyId: zod.number().nullish(),
+      companyName: zod.string().nullish(),
+      contactId: zod.number().nullish(),
+      amount: zod.number().nullish(),
+      currency: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      winning: zod.boolean(),
+      documentIds: zod.array(zod.number()).optional(),
+    }),
+  ),
+  threeQuoteRequired: zod.boolean(),
+  managerApproved: zod.boolean().nullish(),
+  managerComment: zod.string().nullish(),
+  financialApproved: zod.boolean().nullish(),
+  financialComment: zod.string().nullish(),
+  gtInvestDateId: zod.number().nullish(),
+  gtInvestResultId: zod.number().nullish(),
+  gtInvestComment: zod.string().nullish(),
+  orderNumber: zod.string().nullish(),
+  orderDate: zod.coerce.date().nullish(),
+  deliveredOn: zod.coerce.date().nullish(),
+  deliveryNotes: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  invoiceAmount: zod.number().nullish(),
+  invoiceDate: zod.coerce.date().nullish(),
+  invoiceValidated: zod.boolean().nullish(),
+  invoiceSignedBy: zod.string().nullish(),
+  invoiceSignedAt: zod.coerce.date().nullish(),
+  paymentDate: zod.coerce.date().nullish(),
+  paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -786,6 +938,7 @@ export const UndoWorkflowResponse = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   branch: zod
     .union([
@@ -833,6 +986,22 @@ export const UndoWorkflowResponse = zod.object({
   invoiceSignedAt: zod.coerce.date().nullish(),
   paymentDate: zod.coerce.date().nullish(),
   paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -856,6 +1025,7 @@ export const ListWorkflowDocumentsResponseItem = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   filename: zod.string(),
   mimeType: zod.string(),
@@ -905,6 +1075,7 @@ export const UploadWorkflowDocumentBody = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   filename: zod.string(),
   mimeType: zod.string(),
@@ -943,6 +1114,7 @@ export const ListWorkflowNotesResponseItem = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   body: zod.string(),
   authorId: zod.number(),
@@ -970,6 +1142,7 @@ export const CreateWorkflowNoteBody = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   body: zod.string(),
 });
@@ -1012,6 +1185,7 @@ export const GetDashboardSummaryResponse = zod.object({
         "VALIDATING_INVOICE",
         "PAYMENT",
         "DONE",
+        "REJECTED",
       ]),
       count: zod.number(),
     }),
@@ -1050,6 +1224,7 @@ export const ListGtInvestWorkflowsResponseItem = zod.object({
     "VALIDATING_INVOICE",
     "PAYMENT",
     "DONE",
+    "REJECTED",
   ]),
   branch: zod
     .union([

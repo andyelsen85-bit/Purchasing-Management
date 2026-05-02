@@ -10,6 +10,7 @@ export const STEPS = [
   "VALIDATING_INVOICE",
   "PAYMENT",
   "DONE",
+  "REJECTED",
 ] as const;
 export type Step = (typeof STEPS)[number];
 
@@ -25,6 +26,7 @@ export const STEP_LABEL: Record<Step, string> = {
   VALIDATING_INVOICE: "Validate Invoice",
   PAYMENT: "Payment",
   DONE: "Done",
+  REJECTED: "Rejected",
 };
 
 export const PRIORITY_LABEL: Record<string, string> = {

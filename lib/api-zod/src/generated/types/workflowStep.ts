@@ -20,4 +20,5 @@ export const WorkflowStep = {
   VALIDATING_INVOICE: "VALIDATING_INVOICE",
   PAYMENT: "PAYMENT",
   DONE: "DONE",
+  REJECTED: "REJECTED",
 } as const;

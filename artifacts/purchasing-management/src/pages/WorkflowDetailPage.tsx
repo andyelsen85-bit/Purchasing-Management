@@ -48,6 +48,7 @@ import {
   useListGtInvestResults,
   useUpdateWorkflow,
   useAdvanceWorkflow,
+  useRejectWorkflow,
   useUndoWorkflow,
   useUploadWorkflowDocument,
   useDeleteDocument,
@@ -224,7 +225,11 @@ function ActionBar({
               data: { branch: branch ? branch : null },
             })
           }
-          disabled={advance.isPending || wf.currentStep === "DONE"}
+          disabled={
+            advance.isPending ||
+            wf.currentStep === "DONE" ||
+            wf.currentStep === "REJECTED"
+          }
           data-testid="button-advance"
         >
           {advance.isPending ? (
@@ -269,6 +274,8 @@ function StepPanel({ wf, onChange }: { wf: Workflow; onChange: () => void }) {
       return <InvoiceValidationPanel wf={wf} onChange={onChange} />;
     case "PAYMENT":
       return <PaymentPanel wf={wf} onChange={onChange} />;
+    case "REJECTED":
+      return <RejectedPanel wf={wf} />;
     default:
       return (
         <Card>
@@ -279,6 +286,46 @@ function StepPanel({ wf, onChange }: { wf: Workflow; onChange: () => void }) {
         </Card>
       );
   }
+}
+
+function RejectedPanel({ wf }: { wf: Workflow }) {
+  // Terminal closed-by-rejection panel. Surfaces which approval step
+  // closed the workflow and the rejection comment recorded there.
+  const fromStep = (wf.previousStep as Step | null) ?? null;
+  const reason =
+    fromStep === "VALIDATING_QUOTE_FINANCIAL"
+      ? wf.managerComment
+      : fromStep === "VALIDATING_BY_FINANCIAL"
+        ? wf.financialComment
+        : null;
+  return (
+    <Card className="border-destructive/40">
+      <CardHeader>
+        <CardTitle className="text-destructive">
+          Workflow rejected and closed
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <div>
+          Closed at step{" "}
+          <strong>
+            {fromStep ? STEP_LABEL[fromStep] : "an approval step"}
+          </strong>
+          .
+        </div>
+        {reason ? (
+          <div className="rounded-md bg-muted/50 p-3 text-muted-foreground">
+            <div className="text-[11px] uppercase tracking-wider">Reason</div>
+            <div className="mt-1 whitespace-pre-wrap">{reason}</div>
+          </div>
+        ) : (
+          <div className="text-muted-foreground">
+            No reason was recorded. Admin or Financial-All can Undo to reopen.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function useSaveWorkflow(wf: Workflow, onChange: () => void) {
@@ -761,55 +808,90 @@ function ManagerApprovePanel({
   wf: Workflow;
   onChange: () => void;
 }) {
-  const [approved, setApproved] = useState<boolean>(wf.managerApproved ?? true);
   const [comment, setComment] = useState<string>(wf.managerComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  // Reject is a *closing* action — it transitions to the terminal
+  // REJECTED step on the server. We use the dedicated /reject hook
+  // so the backend can record history, audit, and notifications in
+  // one atomic transition.
+  const reject = useRejectWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot reject: ${msg}`);
+      },
+    },
+  });
+  const busy = save.isPending || reject.isPending;
   return (
     <div className="space-y-3">
       <WinningQuoteCard wf={wf} />
       <Card>
-      <CardHeader>
-        <CardTitle>Department Manager Validation</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center gap-3">
-          <Button
-            variant={approved ? "default" : "outline"}
-            onClick={() => setApproved(true)}
-            data-testid="button-approve"
-          >
-            Approve
-          </Button>
-          <Button
-            variant={!approved ? "destructive" : "outline"}
-            onClick={() => setApproved(false)}
-            data-testid="button-reject"
-          >
-            Reject
-          </Button>
-        </div>
-        <div className="space-y-1">
-          <Label>Comment</Label>
-          <Textarea
-            rows={3}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            data-testid="input-manager-comment"
-          />
-        </div>
-        <Button
-          onClick={() =>
-            save.mutate({
-              id: wf.id,
-              data: { managerApproved: approved, managerComment: comment },
-            })
-          }
-          disabled={save.isPending}
-          data-testid="button-save-manager"
-        >
-          <Save className="mr-2 h-4 w-4" /> Save decision
-        </Button>
-      </CardContent>
+        <CardHeader>
+          <CardTitle>Department Manager Validation</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Approve to send this request on to Financial review, or
+            reject to close it. Rejecting closes the workflow.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1">
+            <Label>Comment</Label>
+            <Textarea
+              rows={3}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              data-testid="input-manager-comment"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() =>
+                save.mutate({
+                  id: wf.id,
+                  data: {
+                    managerApproved: true,
+                    managerComment: comment || null,
+                  },
+                })
+              }
+              disabled={busy}
+              data-testid="button-approve"
+            >
+              {save.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Approve
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (
+                  !confirm(
+                    "Reject and close this workflow? This action can be undone by an Admin or Financial-All user.",
+                  )
+                )
+                  return;
+                reject.mutate({
+                  id: wf.id,
+                  data: { comment: comment || null },
+                });
+              }}
+              disabled={busy}
+              data-testid="button-reject"
+            >
+              {reject.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Reject &amp; close
+            </Button>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );
@@ -838,7 +920,17 @@ function FinancialApprovePanel({
       },
     },
   });
-  const reject = useSaveWorkflow(wf, onChange);
+  const reject = useRejectWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot reject: ${msg}`);
+      },
+    },
+  });
   const busy = save.isPending || advance.isPending || reject.isPending;
 
   function approveAndAdvance() {
@@ -858,9 +950,15 @@ function FinancialApprovePanel({
     );
   }
   function rejectDecision() {
+    if (
+      !confirm(
+        "Reject and close this workflow? This action can be undone by an Admin or Financial-All user.",
+      )
+    )
+      return;
     reject.mutate({
       id: wf.id,
-      data: { financialApproved: false, financialComment: comment || null },
+      data: { comment: comment || null },
     });
   }
 
@@ -1209,33 +1307,30 @@ function InvoiceValidationPanel({
   wf: Workflow;
   onChange: () => void;
 }) {
-  const [validated, setValidated] = useState<boolean>(
-    wf.invoiceValidated ?? true,
-  );
   const [signedBy, setSignedBy] = useState(wf.invoiceSignedBy ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const reject = useRejectWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot reject: ${msg}`);
+      },
+    },
+  });
+  const busy = save.isPending || reject.isPending;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Validate Invoice</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Validate to advance to Payment, or reject to close the
+          workflow without paying.
+        </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-center gap-3">
-          <Button
-            variant={validated ? "default" : "outline"}
-            onClick={() => setValidated(true)}
-            data-testid="button-invoice-validate"
-          >
-            Validate
-          </Button>
-          <Button
-            variant={!validated ? "destructive" : "outline"}
-            onClick={() => setValidated(false)}
-            data-testid="button-invoice-reject"
-          >
-            Reject
-          </Button>
-        </div>
         <div className="space-y-1">
           <Label>Signed by (optional)</Label>
           <Input
@@ -1245,21 +1340,47 @@ function InvoiceValidationPanel({
             data-testid="input-invoice-signedby"
           />
         </div>
-        <Button
-          onClick={() =>
-            save.mutate({
-              id: wf.id,
-              data: {
-                invoiceValidated: validated,
-                invoiceSignedBy: signedBy || null,
-              },
-            })
-          }
-          disabled={save.isPending}
-          data-testid="button-save-invoice-validation"
-        >
-          <Save className="mr-2 h-4 w-4" /> Save
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() =>
+              save.mutate({
+                id: wf.id,
+                data: {
+                  invoiceValidated: true,
+                  invoiceSignedBy: signedBy || null,
+                },
+              })
+            }
+            disabled={busy}
+            data-testid="button-invoice-validate"
+          >
+            {save.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Validate
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (
+                !confirm(
+                  "Reject this invoice and close the workflow? This action can be undone by an Admin or Financial-All user.",
+                )
+              )
+                return;
+              reject.mutate({ id: wf.id, data: { comment: null } });
+            }}
+            disabled={busy}
+            data-testid="button-invoice-reject"
+          >
+            {reject.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Reject &amp; close
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
