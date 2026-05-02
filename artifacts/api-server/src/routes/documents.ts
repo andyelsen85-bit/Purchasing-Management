@@ -142,27 +142,44 @@ router.post(
       });
       return;
     }
-    // Determine version: if a current doc with same kind exists, mark old as not current
-    const previous = await db
-      .select()
-      .from(documentsTable)
-      .where(
-        and(
-          eq(documentsTable.workflowId, wf.id),
-          eq(documentsTable.kind, normalized.kind),
-          eq(documentsTable.isCurrent, true),
-        ),
-      );
+    // Determine version: only single-doc kinds (ORDER / DELIVERY / INVOICE /
+    // GT_INVEST_WINNER) version-bump; uploading a new revision marks the
+    // previous current doc not-current and increments the version number.
+    //
+    // Multi-doc kinds (QUOTE, OTHER) are never auto-bumped: the QUOTATION
+    // step collects one document per quote line and the linkage lives in
+    // `workflow.quotes[*].documentIds`. If we bumped versions here, every
+    // new per-quote upload would silently flip the previous quote's doc to
+    // isCurrent=false, and clients that filter the list by isCurrent would
+    // make the earlier files look detached.
+    const SINGLE_DOC_KINDS = new Set([
+      "ORDER",
+      "DELIVERY",
+      "INVOICE",
+      "GT_INVEST_WINNER",
+    ]);
     let version = 1;
     let previousVersionId: number | null = null;
-    if (previous.length > 0) {
-      const prev = previous[0];
-      version = (prev.version ?? 1) + 1;
-      previousVersionId = prev.id;
-      await db
-        .update(documentsTable)
-        .set({ isCurrent: false })
-        .where(eq(documentsTable.id, prev.id));
+    if (SINGLE_DOC_KINDS.has(normalized.kind)) {
+      const previous = await db
+        .select()
+        .from(documentsTable)
+        .where(
+          and(
+            eq(documentsTable.workflowId, wf.id),
+            eq(documentsTable.kind, normalized.kind),
+            eq(documentsTable.isCurrent, true),
+          ),
+        );
+      if (previous.length > 0) {
+        const prev = previous[0];
+        version = (prev.version ?? 1) + 1;
+        previousVersionId = prev.id;
+        await db
+          .update(documentsTable)
+          .set({ isCurrent: false })
+          .where(eq(documentsTable.id, prev.id));
+      }
     }
     const sizeBytes = Math.floor((normalized.contentBase64.length * 3) / 4);
     const [created] = await db
