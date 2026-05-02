@@ -207,51 +207,34 @@ function ActionBar({
 
   const canUndo =
     user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
-  const showBranchPicker = wf.currentStep === "VALIDATING_BY_FINANCIAL";
+  // The branch picker AND the advance button are both moved INTO the
+  // Financial Approval panel for VALIDATING_BY_FINANCIAL — that step
+  // bundles "approve + route" into a single inline action, so we hide
+  // the global Advance control here to avoid two ways to do the same
+  // thing (and to prevent advancing without picking a branch).
+  const inlineAdvanceStep = wf.currentStep === "VALIDATING_BY_FINANCIAL";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {showBranchPicker && (
-        <Select
-          value={branch}
-          onValueChange={(v) =>
-            setBranch(v as keyof typeof AdvanceWorkflowInputBranch)
+      {!inlineAdvanceStep && (
+        <Button
+          onClick={() =>
+            advance.mutate({
+              id: wf.id,
+              data: { branch: branch ? branch : null },
+            })
           }
+          disabled={advance.isPending || wf.currentStep === "DONE"}
+          data-testid="button-advance"
         >
-          <SelectTrigger className="w-40" data-testid="select-branch">
-            <SelectValue placeholder="Branch…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={AdvanceWorkflowInputBranch.K_ORDER}>
-              K-Order
-            </SelectItem>
-            <SelectItem value={AdvanceWorkflowInputBranch.GT_INVEST}>
-              GT Invest
-            </SelectItem>
-          </SelectContent>
-        </Select>
+          {advance.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <ArrowRight className="mr-2 h-4 w-4" />
+          )}
+          Advance
+        </Button>
       )}
-      <Button
-        onClick={() =>
-          advance.mutate({
-            id: wf.id,
-            data: { branch: branch ? branch : null },
-          })
-        }
-        disabled={
-          advance.isPending ||
-          wf.currentStep === "DONE" ||
-          (showBranchPicker && !branch)
-        }
-        data-testid="button-advance"
-      >
-        {advance.isPending ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <ArrowRight className="mr-2 h-4 w-4" />
-        )}
-        Advance
-      </Button>
       {canUndo && (
         <Button
           variant="outline"
@@ -839,63 +822,120 @@ function FinancialApprovePanel({
   wf: Workflow;
   onChange: () => void;
 }) {
-  const [approved, setApproved] = useState<boolean>(
-    wf.financialApproved ?? true,
-  );
+  const [branch, setBranch] = useState<
+    keyof typeof AdvanceWorkflowInputBranch | ""
+  >((wf.branch as keyof typeof AdvanceWorkflowInputBranch | null) ?? "");
   const [comment, setComment] = useState<string>(wf.financialComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const advance = useAdvanceWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot advance: ${msg}`);
+      },
+    },
+  });
+  const reject = useSaveWorkflow(wf, onChange);
+  const busy = save.isPending || advance.isPending || reject.isPending;
+
+  function approveAndAdvance() {
+    if (!branch) return;
+    // Two-step: persist comment + financialApproved=true, then advance
+    // with the chosen branch. Sequenced so the audit log records the
+    // approval before the step transition.
+    save.mutate(
+      {
+        id: wf.id,
+        data: { financialApproved: true, financialComment: comment || null },
+      },
+      {
+        onSuccess: () =>
+          advance.mutate({ id: wf.id, data: { branch } }),
+      },
+    );
+  }
+  function rejectDecision() {
+    reject.mutate({
+      id: wf.id,
+      data: { financialApproved: false, financialComment: comment || null },
+    });
+  }
+
   return (
     <div className="space-y-3">
       <WinningQuoteCard wf={wf} />
       <Card>
-      <CardHeader>
-        <CardTitle>Financial Approval</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Choose K-Order or GT Invest branch when advancing.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center gap-3">
-          <Button
-            variant={approved ? "default" : "outline"}
-            onClick={() => setApproved(true)}
-            data-testid="button-fin-approve"
-          >
-            Approve
-          </Button>
-          <Button
-            variant={!approved ? "destructive" : "outline"}
-            onClick={() => setApproved(false)}
-            data-testid="button-fin-reject"
-          >
-            Reject
-          </Button>
-        </div>
-        <div className="space-y-1">
-          <Label>Comment</Label>
-          <Textarea
-            rows={3}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            data-testid="input-fin-comment"
-          />
-        </div>
-        <Button
-          onClick={() =>
-            save.mutate({
-              id: wf.id,
-              data: {
-                financialApproved: approved,
-                financialComment: comment,
-              },
-            })
-          }
-          disabled={save.isPending}
-          data-testid="button-save-financial"
-        >
-          <Save className="mr-2 h-4 w-4" /> Save decision
-        </Button>
-      </CardContent>
+        <CardHeader>
+          <CardTitle>Financial Approval</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Pick a routing branch — K-Order or GT Invest — and approve to
+            send the workflow forward. Approval is implicit when you choose
+            a branch.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Routing branch *</Label>
+            <Select
+              value={branch}
+              onValueChange={(v) =>
+                setBranch(v as keyof typeof AdvanceWorkflowInputBranch)
+              }
+            >
+              <SelectTrigger
+                className="w-full sm:w-64"
+                data-testid="select-fin-branch"
+              >
+                <SelectValue placeholder="Choose K-Order or GT Invest…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AdvanceWorkflowInputBranch.K_ORDER}>
+                  K-Order
+                </SelectItem>
+                <SelectItem value={AdvanceWorkflowInputBranch.GT_INVEST}>
+                  GT Invest
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Comment</Label>
+            <Textarea
+              rows={3}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              data-testid="input-fin-comment"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={approveAndAdvance}
+              disabled={busy || !branch}
+              data-testid="button-fin-approve-advance"
+            >
+              {(save.isPending || advance.isPending) ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRight className="mr-2 h-4 w-4" />
+              )}
+              Approve &amp; route
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={rejectDecision}
+              disabled={busy}
+              data-testid="button-fin-reject"
+            >
+              {reject.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Reject
+            </Button>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );
