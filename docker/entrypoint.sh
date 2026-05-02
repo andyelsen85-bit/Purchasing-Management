@@ -24,4 +24,19 @@ if [ -z "${SESSION_SECRET:-}" ]; then
   export SESSION_SECRET
 fi
 
+# Apply the database schema. `drizzle-kit push` is idempotent — it
+# diffs the live database against the schema definitions in /app/db/src
+# and applies any missing tables/columns. On a fresh deployment this
+# creates every table; on subsequent boots it's a no-op. We exit on
+# failure so the container doesn't start serving against a half-migrated
+# database.
+if [ -n "${DATABASE_URL:-}" ]; then
+  echo "entrypoint: applying database schema (drizzle-kit push)…" >&2
+  ( cd /app/db && node ./node_modules/drizzle-kit/bin.cjs push \
+      --config ./drizzle.config.ts --force ) || {
+    echo "entrypoint: drizzle-kit push failed" >&2
+    exit 1
+  }
+fi
+
 exec "$@"

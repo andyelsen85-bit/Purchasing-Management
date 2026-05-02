@@ -50,6 +50,13 @@ RUN pnpm run typecheck:libs \
 # by the esbuild bundle and need to resolve at runtime).
 RUN pnpm --filter @workspace/api-server deploy --prod --legacy /deploy/api
 
+# Self-contained tree for @workspace/db so the runtime image can run
+# `drizzle-kit push` at startup to create / update the schema. We need
+# devDependencies here because drizzle-kit itself is a devDependency.
+RUN pnpm --filter @workspace/db deploy --legacy /deploy/db \
+ && cp -r lib/db/src /deploy/db/src \
+ && cp lib/db/drizzle.config.ts /deploy/db/drizzle.config.ts
+
 # ---- Runtime ----------------------------------------------------------------
 # Same base family as the builder (glibc) so native deps that were resolved
 # at install time (pg, sharp, ldapjs's bundled deps, etc.) load correctly.
@@ -70,6 +77,8 @@ RUN mkdir -p /app/state/uploads /app/state/certs
 # Self-contained API tree: bundle output + node_modules + manifests.
 COPY --from=builder /deploy/api ./api
 COPY --from=builder /app/artifacts/api-server/dist ./api/dist
+# DB schema + drizzle-kit, used by the entrypoint to push the schema on boot.
+COPY --from=builder /deploy/db ./db
 # Vite emits to dist/public — copy that subdirectory so /app/web/dist
 # directly contains index.html and the assets/ folder.
 COPY --from=builder /app/artifacts/purchasing-management/dist/public ./web/dist

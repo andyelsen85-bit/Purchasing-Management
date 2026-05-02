@@ -2,8 +2,9 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable, userDepartmentsTable } from "@workspace/db";
 import { LoginBody } from "@workspace/api-zod";
-import { verifyPassword } from "../lib/auth";
+import { verifyPassword, hashPassword } from "../lib/auth";
 import type { Role, SessionUser } from "../lib/auth";
+import { sql } from "drizzle-orm";
 import { ldapAuthenticate, lookupLdapGroups } from "../lib/ldap";
 import { getSettings } from "../lib/settings";
 import { audit } from "../lib/audit";
@@ -283,6 +284,105 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
       error: `Kerberos negotiation failed: ${(err as Error).message}`,
     });
   }
+});
+
+/**
+ * First-deployment bootstrap.
+ *
+ * `GET /auth/setup-status` reports whether the database has *no* admin
+ * yet. The login page polls this and switches to the "create admin"
+ * form when the answer is `needsSetup: true`.
+ *
+ * `POST /auth/setup` creates the very first admin account. The endpoint
+ * is intentionally unauthenticated, but it self-disables as soon as
+ * any user with the `ADMIN` role exists, so it can never be used to
+ * hijack an already-provisioned instance.
+ */
+router.get("/auth/setup-status", async (_req, res): Promise<void> => {
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(usersTable)
+    .where(sql`'ADMIN' = ANY(${usersTable.roles})`);
+  res.json({ needsSetup: n === 0 });
+});
+
+router.post("/auth/setup", async (req, res): Promise<void> => {
+  const username = String(req.body?.username ?? "").trim();
+  const password = String(req.body?.password ?? "");
+  const displayName =
+    String(req.body?.displayName ?? "").trim() || "Administrator";
+  const email = String(req.body?.email ?? "").trim() || null;
+  if (!username || username.length < 2) {
+    res.status(400).json({ error: "Username must be at least 2 characters." });
+    return;
+  }
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters." });
+    return;
+  }
+  // Hash outside the transaction (CPU-bound, ~100ms) so we don't hold
+  // the advisory lock across it.
+  const passwordHash = await hashPassword(password);
+  // Serialize the entire bootstrap with a Postgres advisory lock —
+  // the lock is auto-released when the transaction ends. Two concurrent
+  // setup requests will queue here, and the second one will see an
+  // existing admin and return 409 instead of creating a duplicate.
+  // The numeric key is an arbitrary constant unique to this code path.
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7460185421)`);
+    const [{ n }] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(usersTable)
+      .where(sql`'ADMIN' = ANY(${usersTable.roles})`);
+    if (n > 0) return { error: "ADMIN_EXISTS" as const };
+    const [exists] = await tx
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.username, username));
+    if (exists) return { error: "USERNAME_TAKEN" as const };
+    const [row] = await tx
+      .insert(usersTable)
+      .values({
+        username,
+        displayName,
+        email,
+        passwordHash,
+        roles: ["ADMIN", "FINANCIAL_ALL"],
+        source: "LOCAL",
+      })
+      .returning();
+    return { created: row };
+  });
+  if ("error" in result) {
+    if (result.error === "ADMIN_EXISTS") {
+      res.status(409).json({
+        error: "Setup already completed — an administrator exists.",
+      });
+    } else {
+      res.status(409).json({ error: "Username is already taken." });
+    }
+    return;
+  }
+  const created = result.created;
+  if (!created) {
+    res.status(500).json({ error: "Failed to create administrator." });
+    return;
+  }
+  const sessionUser = await buildSessionUser(created.id);
+  if (!sessionUser) {
+    res.status(500).json({ error: "Failed to load created user." });
+    return;
+  }
+  req.session.user = sessionUser;
+  await audit(
+    sessionUser.id,
+    "SETUP_ADMIN",
+    "user",
+    sessionUser.id,
+    "first-boot",
+    req.ip,
+  );
+  res.status(201).json(sessionUser);
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
