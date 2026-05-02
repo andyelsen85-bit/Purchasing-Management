@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { extractErrorMessage } from "@/lib/utils";
 import {
   Tabs,
   TabsContent,
@@ -171,11 +173,19 @@ function DatesPanel() {
                 },
               );
             }}
+            disabled={!date || create.isPending}
             data-testid="button-add-gt-date"
           >
             <Plus className="mr-2 h-4 w-4" /> Add
           </Button>
         </div>
+        {create.error && (
+          <Alert variant="destructive" data-testid="alert-gt-date-error">
+            <AlertDescription>
+              {extractErrorMessage(create.error)}
+            </AlertDescription>
+          </Alert>
+        )}
         <Separator />
         <div className="divide-y">
           {(dates ?? []).map((d) => (

@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { extractErrorMessage } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1389,6 +1390,11 @@ function GtDatesPanel() {
   const [date, setDate] = useState("");
   const [label, setLabel] = useState("");
 
+  const createErr = create.error
+    ? extractErrorMessage(create.error)
+    : null;
+  const delErr = del.error ? extractErrorMessage(del.error) : null;
+
   return (
     <Card>
       <CardHeader>
@@ -1421,12 +1427,22 @@ function GtDatesPanel() {
                 },
               );
             }}
-            disabled={create.isPending}
+            disabled={!date || create.isPending}
             data-testid="button-add-gt-date"
           >
             <Plus className="mr-2 h-4 w-4" /> Add
           </Button>
         </div>
+        {createErr && (
+          <Alert variant="destructive" data-testid="alert-gt-date-error">
+            <AlertDescription>{createErr}</AlertDescription>
+          </Alert>
+        )}
+        {delErr && (
+          <Alert variant="destructive">
+            <AlertDescription>{delErr}</AlertDescription>
+          </Alert>
+        )}
         <Separator />
         {(dates ?? []).length === 0 ? (
           <p className="py-3 text-sm text-muted-foreground">
