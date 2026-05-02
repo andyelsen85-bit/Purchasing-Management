@@ -137,6 +137,8 @@ export function AppShell({ user, children }: Props) {
       >
         {/* Primary sidebar: top-level nav + departments tree */}
         <ResizablePanel
+          id="primary-sidebar"
+          order={1}
           defaultSize={18}
           minSize={14}
           maxSize={28}
@@ -294,6 +296,8 @@ export function AppShell({ user, children }: Props) {
             <ResizableHandle withHandle />
             {/* Secondary sidebar: workflows for the selected department */}
             <ResizablePanel
+              id="workflows-sidebar"
+              order={2}
               defaultSize={18}
               minSize={14}
               maxSize={32}
@@ -377,7 +381,7 @@ export function AppShell({ user, children }: Props) {
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize={64} minSize={40}>
+        <ResizablePanel id="main-content" order={3} defaultSize={64} minSize={40}>
           <main
             className="h-full overflow-auto"
             data-testid="main-content"

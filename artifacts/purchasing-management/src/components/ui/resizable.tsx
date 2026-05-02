@@ -5,11 +5,42 @@ import * as ResizablePrimitive from "react-resizable-panels"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Persist panel sizes in `localStorage` instead of the library default
+ * (`sessionStorage`). sessionStorage is scoped to a single tab and is
+ * cleared whenever the browser is fully closed; users expect the
+ * sidebar widths to survive reloads, new tabs, and restarts. We expose
+ * a thin shim matching the library's `PanelGroupStorage` shape so the
+ * persisted JSON keeps the same `panel-group:<autoSaveId>` keys it
+ * already used — no migration required.
+ */
+const localStorageBacking: ResizablePrimitive.PanelGroupStorage | undefined =
+  typeof window !== "undefined"
+    ? {
+        getItem(name: string): string | null {
+          try {
+            return window.localStorage.getItem(name);
+          } catch {
+            return null;
+          }
+        },
+        setItem(name: string, value: string): void {
+          try {
+            window.localStorage.setItem(name, value);
+          } catch {
+            /* quota / privacy mode — silently ignore */
+          }
+        },
+      }
+    : undefined;
+
 const ResizablePanelGroup = ({
   className,
+  storage,
   ...props
 }: React.ComponentProps<typeof ResizablePrimitive.PanelGroup>) => (
   <ResizablePrimitive.PanelGroup
+    storage={storage ?? localStorageBacking}
     className={cn(
       "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
       className
