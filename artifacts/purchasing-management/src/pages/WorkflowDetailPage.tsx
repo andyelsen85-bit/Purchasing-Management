@@ -374,6 +374,17 @@ function QuotationPanel({
     setQuotes((q) => q.map((e, i) => ({ ...e, winning: i === idx })));
   }
 
+  // When three quotes are NOT required (amount below the limit) the
+  // single quote is automatically the winning one — there is no
+  // selector in the UI. Force-mark the first row as winning when
+  // persisting so the server-side WinningQuoteCard and downstream
+  // steps see a winner without the user having to click anything.
+  function normalizeForSave(rows: QuoteEntry[]): QuoteEntry[] {
+    if (threeQuotesRequired) return rows;
+    if (rows.length === 0) return rows;
+    return rows.map((r, i) => ({ ...r, winning: i === 0 }));
+  }
+
   // Dynamic "3 quotes required" check: derive from the first quote's
   // amount and the configured limit, so the warning appears as soon
   // as the user types it (before saving). Falls back to the persisted
@@ -417,7 +428,7 @@ function QuotationPanel({
           : q,
       );
       setQuotes(updated);
-      save.mutate({ id: wf.id, data: { quotes: updated } });
+      save.mutate({ id: wf.id, data: { quotes: normalizeForSave(updated) } });
     } finally {
       setUploadingIdx(null);
       e.target.value = "";
@@ -439,7 +450,7 @@ function QuotationPanel({
     // is shared between the quotes JSON and the documents table, so
     // deleting the file is the cleanest way to fully remove it.
     save.mutate(
-      { id: wf.id, data: { quotes: updated } },
+      { id: wf.id, data: { quotes: normalizeForSave(updated) } },
       {
         onSuccess: () =>
           del.mutate(
@@ -455,7 +466,9 @@ function QuotationPanel({
       <CardHeader>
         <CardTitle>Quotations</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Collect quotes from suppliers. Mark one as winning before advancing.
+          {threeQuotesRequired
+            ? "Collect quotes from suppliers. Mark one as winning before advancing."
+            : "The amount is below the limit — a single quote is enough and is automatically the winning one."}
         </p>
         {threeQuotesRequired && (
           <Alert className="mt-2 border-amber-500/50 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600">
@@ -536,16 +549,25 @@ function QuotationPanel({
             </div>
             <div className="col-span-2 space-y-1">
               <Label className="text-xs">Winning</Label>
-              <Button
-                type="button"
-                variant={q.winning ? "default" : "outline"}
-                className="w-full"
-                size="sm"
-                onClick={() => setWinning(idx)}
-                data-testid={`button-winning-${idx}`}
-              >
-                {q.winning ? "Selected" : "Mark"}
-              </Button>
+              {threeQuotesRequired ? (
+                <Button
+                  type="button"
+                  variant={q.winning ? "default" : "outline"}
+                  className="w-full"
+                  size="sm"
+                  onClick={() => setWinning(idx)}
+                  data-testid={`button-winning-${idx}`}
+                >
+                  {q.winning ? "Selected" : "Mark"}
+                </Button>
+              ) : (
+                <div
+                  className="flex h-9 w-full items-center justify-center rounded-md border bg-muted/50 text-xs text-muted-foreground"
+                  data-testid={`text-winning-auto-${idx}`}
+                >
+                  {idx === 0 ? "Auto" : "—"}
+                </div>
+              )}
             </div>
             <div className="col-span-1 flex justify-end">
               <Button
@@ -656,7 +678,10 @@ function QuotationPanel({
           </Button>
           <Button
             onClick={() =>
-              save.mutate({ id: wf.id, data: { quotes } })
+              save.mutate({
+                id: wf.id,
+                data: { quotes: normalizeForSave(quotes) },
+              })
             }
             disabled={save.isPending}
             data-testid="button-save-quotes"
@@ -676,7 +701,14 @@ function QuotationPanel({
 function WinningQuoteCard({ wf }: { wf: Workflow }) {
   const { data: companies } = useListCompanies();
   const { data: docs } = useListWorkflowDocuments(wf.id);
-  const winning = (wf.quotes ?? []).find((q) => q.winning);
+  const allQuotes = wf.quotes ?? [];
+  // When three quotes are NOT required, the single quote is the
+  // winning one by definition — fall back to the first row even if
+  // nothing was explicitly marked. This mirrors the QuotationPanel UI
+  // which hides the winning selector for the single-quote case.
+  const winning =
+    allQuotes.find((q) => q.winning) ??
+    (!wf.threeQuoteRequired && allQuotes.length > 0 ? allQuotes[0] : undefined);
   if (!winning) {
     return (
       <Alert variant="destructive">
