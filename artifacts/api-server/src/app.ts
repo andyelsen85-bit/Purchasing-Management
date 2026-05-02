@@ -64,21 +64,36 @@ if (process.env.NODE_ENV === "production" && corsAllowlist.length === 0) {
 // CORS at all. The browser sometimes sends an Origin header on
 // same-origin asset loads (e.g. <script crossorigin>, modulepreload),
 // which would be incorrectly rejected by the allowlist check.
-const corsMiddleware = cors({
-  credentials: true,
-  origin:
-    process.env.NODE_ENV === "production"
-      ? (origin, cb) => {
-          // Same-origin / non-browser requests have no Origin header.
-          if (!origin) return cb(null, true);
-          // No allowlist configured: only allow same-origin (no Origin
-          // header) requests; reject explicit cross-origin ones.
-          if (corsAllowlist.length === 0)
-            return cb(new Error(`Origin ${origin} not allowed by CORS`));
-          if (corsAllowlist.includes(origin)) return cb(null, true);
-          cb(new Error(`Origin ${origin} not allowed by CORS`));
-        }
-      : true,
+//
+// We use the per-request form of cors() so the same-origin check can
+// inspect the actual request Host. Modern browsers send an Origin
+// header even on same-origin POSTs/fetch (`https://app.example.com`
+// hitting `https://app.example.com/api/…`), so a naive "no Origin =
+// same-origin" check is not enough — we must compare the Origin's host
+// to the request's effective host (X-Forwarded-Host first, then Host).
+const corsMiddleware = cors((req, cb) => {
+  const origin = req.headers.origin;
+  if (process.env.NODE_ENV !== "production") {
+    return cb(null, { credentials: true, origin: true });
+  }
+  if (!origin) return cb(null, { credentials: true, origin: true });
+  // Same-origin: Origin host == request host (honour X-Forwarded-Host
+  // because we sit behind nginx/Caddy/etc. on commande.hostzone.lu).
+  const fwdHost =
+    (req.headers["x-forwarded-host"] as string | undefined) ??
+    (req.headers.host as string | undefined);
+  try {
+    const originHost = new URL(origin).host;
+    if (fwdHost && originHost === fwdHost) {
+      return cb(null, { credentials: true, origin: true });
+    }
+  } catch {
+    /* malformed Origin — fall through to allowlist */
+  }
+  if (corsAllowlist.includes(origin)) {
+    return cb(null, { credentials: true, origin: true });
+  }
+  cb(new Error(`Origin ${origin} not allowed by CORS`), { origin: false });
 });
 app.use(express.json({ limit: "32mb" }));
 app.use(express.urlencoded({ extended: true, limit: "32mb" }));
