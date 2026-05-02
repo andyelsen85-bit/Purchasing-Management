@@ -25,13 +25,25 @@ export function WorkflowsPage() {
   const [q, setQ] = useState("");
   const [step, setStep] = useState<string>("ALL");
   const [departmentId, setDepartmentId] = useState<string>("ALL");
+  // Active = anything not terminal (DONE / REJECTED). Default view hides
+  // finished work because most users only care about what's in flight.
+  const [status, setStatus] = useState<"ACTIVE" | "ALL" | "DONE" | "REJECTED">(
+    "ACTIVE",
+  );
   const params = {
     ...(q ? { q } : {}),
     ...(step !== "ALL" ? { step: step as keyof typeof WorkflowStep } : {}),
     ...(departmentId !== "ALL" ? { departmentId: Number(departmentId) } : {}),
   };
-  const { data: workflows, isLoading } = useListWorkflows(params);
+  const { data: workflowsRaw, isLoading } = useListWorkflows(params);
   const { data: departments } = useListDepartments();
+  const workflows = (workflowsRaw ?? []).filter((w) => {
+    if (status === "ALL") return true;
+    if (status === "DONE") return w.currentStep === "DONE";
+    if (status === "REJECTED") return w.currentStep === "REJECTED";
+    // ACTIVE
+    return w.currentStep !== "DONE" && w.currentStep !== "REJECTED";
+  });
 
   return (
     <div className="space-y-6 p-6">
@@ -59,7 +71,7 @@ export function WorkflowsPage() {
             <Filter className="h-4 w-4" /> Filters
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -81,6 +93,20 @@ export function WorkflowsPage() {
                   {STEP_LABEL[s]}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={status}
+            onValueChange={(v) => setStatus(v as typeof status)}
+          >
+            <SelectTrigger data-testid="select-status">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ACTIVE">Active only</SelectItem>
+              <SelectItem value="ALL">All workflows</SelectItem>
+              <SelectItem value="DONE">Done</SelectItem>
+              <SelectItem value="REJECTED">Rejected</SelectItem>
             </SelectContent>
           </Select>
           <Select value={departmentId} onValueChange={setDepartmentId}>
@@ -107,7 +133,7 @@ export function WorkflowsPage() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
-          ) : (workflows ?? []).length === 0 ? (
+          ) : workflows.length === 0 ? (
             <div
               className="p-12 text-center text-sm text-muted-foreground"
               data-testid="status-no-workflows"
@@ -124,7 +150,7 @@ export function WorkflowsPage() {
                 <div className="col-span-1">Priority</div>
                 <div className="col-span-1 text-right">Age</div>
               </div>
-              {(workflows ?? []).map((w: WorkflowSummary) => (
+              {workflows.map((w: WorkflowSummary) => (
                 <Link key={w.id} href={`/workflows/${w.id}`}>
                   <a
                     className="grid grid-cols-12 items-center gap-3 px-5 py-3 text-sm hover-elevate"
