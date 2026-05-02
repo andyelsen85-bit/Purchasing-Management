@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import {
   db,
   workflowsTable,
   departmentsTable,
   documentsTable,
   gtInvestDatesTable,
+  usersTable,
 } from "@workspace/db";
 import { PDFDocument } from "pdf-lib";
 import { requireAuth, getUser } from "../middlewares/auth";
@@ -28,17 +29,35 @@ router.get("/gt-invest/workflows", requireAuth, async (req, res): Promise<void> 
     .where(eq(workflowsTable.currentStep, "GT_INVEST"))
     .orderBy(desc(workflowsTable.lastStepChangeAt));
   const visible = rows.filter((r) => canSeeWorkflow(user, r.w.departmentId));
+  const STALL_DAYS = 7;
+  const creatorIds = Array.from(new Set(visible.map((r) => r.w.createdById)));
+  const usersRows = creatorIds.length
+    ? await db.select().from(usersTable).where(inArray(usersTable.id, creatorIds))
+    : [];
+  const userById = new Map(usersRows.map((u) => [u.id, u.displayName]));
   res.json(
-    visible.map((r) => ({
-      id: r.w.id,
-      reference: r.w.reference,
-      title: r.w.title,
-      departmentName: r.deptName ?? "",
-      estimatedAmount: r.w.estimatedAmount != null ? Number(r.w.estimatedAmount) : null,
-      currency: r.w.currency,
-      gtInvestDateId: r.w.gtInvestDateId,
-      gtInvestComment: r.w.gtInvestComment,
-    })),
+    visible.map((r) => {
+      const ageDays = Math.floor(
+        (Date.now() - new Date(r.w.lastStepChangeAt).getTime()) / 86_400_000,
+      );
+      return {
+        id: r.w.id,
+        reference: r.w.reference,
+        title: r.w.title,
+        departmentId: r.w.departmentId,
+        departmentName: r.deptName ?? "",
+        priority: r.w.priority,
+        currentStep: r.w.currentStep,
+        branch: r.w.branch ?? null,
+        estimatedAmount: r.w.estimatedAmount != null ? Number(r.w.estimatedAmount) : null,
+        currency: r.w.currency,
+        ageDays,
+        isStalled: ageDays > STALL_DAYS,
+        createdByName: userById.get(r.w.createdById) ?? "",
+        createdAt: r.w.createdAt,
+        updatedAt: r.w.updatedAt ?? r.w.lastStepChangeAt,
+      };
+    }),
   );
 });
 

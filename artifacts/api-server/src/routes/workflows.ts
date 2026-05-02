@@ -31,7 +31,7 @@ import {
 } from "../lib/permissions";
 import { audit } from "../lib/audit";
 import { getSettings } from "../lib/settings";
-import { sendNotification } from "../lib/email";
+import { sendNotification, recipientsForStep } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -338,15 +338,18 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
   });
   await audit(user.id, "WORKFLOW_ADVANCE", "workflow", wf.id, `${wf.currentStep}->${next}`);
 
-  // Notification: notify creator + dept users when stage changes
+  // Notification: route-targeted role recipients per spec
   const settings = await getSettings();
-  const [creator] = await db.select().from(usersTable).where(eq(usersTable.id, wf.createdById));
-  if (creator?.email) {
+  const recipients = await recipientsForStep(
+    { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
+    next,
+  );
+  if (recipients.length > 0) {
     void sendNotification(
       settings.smtp,
-      creator.email,
+      recipients,
       `${wf.reference}: advanced to ${next}`,
-      `Workflow ${wf.reference} (${wf.title}) advanced from ${wf.currentStep} to ${next}.`,
+      `Workflow ${wf.reference} (${wf.title}) advanced from ${wf.currentStep} to ${next}.\n\nOpen the workflow in Purchasing Management to review.`,
     );
   }
 

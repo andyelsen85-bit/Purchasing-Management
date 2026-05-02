@@ -26,14 +26,20 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      PORT: 8080
+      # PORT is the plain HTTP port (used for HTTP→HTTPS redirect and as a
+      # fallback when no TLS cert has been imported via the HTTPS settings page).
+      PORT: 80
+      # HTTPS_PORT is the TLS port. When the operator has imported a cert
+      # through the HTTPS Management page, the app serves it here.
+      HTTPS_PORT: 443
       DATABASE_URL: postgres://purchasing:purchasing@db:5432/purchasing
       # SESSION_SECRET MUST be set externally (e.g. .env file or shell export).
       # The app refuses to start in production if it is missing or weak (<32 chars / known placeholder).
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (>=32 chars).}
       WEB_DIST: /app/web/dist
     ports:
-      - "8080:8080"
+      - "80:80"
+      - "443:443"
     volumes:
       - app-state:/app/state
 

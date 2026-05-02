@@ -1,0 +1,13 @@
+{
+  "$schema": "./config.schema.json",
+  "port": 9443,
+  "tlsCertPath": "C:\\ProgramData\\PurchasingSigningAgent\\agent.crt",
+  "tlsKeyPath": "C:\\ProgramData\\PurchasingSigningAgent\\agent.key",
+  "sharedToken": "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARS",
+  "certTemplate": "WebServer",
+  "caConfig": "",
+  "allowedOrigins": [
+    "https://purchasing.example.lan",
+    "https://purchasing.example.com"
+  ]
+}

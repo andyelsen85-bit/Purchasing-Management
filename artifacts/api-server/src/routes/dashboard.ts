@@ -50,19 +50,20 @@ router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> =>
     .slice(0, 10);
 
   res.json({
-    activeCount: active,
-    doneCount: done,
+    totalActive: active,
+    totalDone: done,
     stalledCount: stalled,
     averageAgeDays: active > 0 ? Math.round(totalAge / active) : 0,
     countsByStep: STEPS.map((s) => ({ step: s, count: counts.get(s) ?? 0 })),
-    recentActivity: recent.map((r) => ({
+    recent: recent.map((r) => ({
       id: r.h.id,
       workflowId: r.h.workflowId,
-      workflowReference: r.ref ?? "",
       action: r.h.action,
       fromStep: r.h.fromStep,
       toStep: r.h.toStep,
+      actorId: r.h.actorId ?? 0,
       actorName: r.actorName ?? "",
+      details: r.h.details ?? `[${r.ref ?? ""}]`,
       createdAt: r.h.createdAt,
     })),
   });

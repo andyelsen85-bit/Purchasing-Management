@@ -107,6 +107,35 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   res.json(user);
 });
 
+/**
+ * Kerberos / SPNEGO negotiate endpoint.
+ *
+ * On a domain-joined Windows host the browser will automatically attach an
+ * `Authorization: Negotiate <base64-spnego>` header. When that header is
+ * present we forward the token to the configured Kerberos backend (set up
+ * via lib/auth.ts; in this environment the keytab is not provisioned, so
+ * the call returns 501 with a clear hint).
+ *
+ * When the header is missing we reply with `401 WWW-Authenticate: Negotiate`,
+ * which is the standard handshake that triggers the browser to retry with
+ * its Kerberos ticket.
+ */
+router.get("/auth/negotiate", async (req, res): Promise<void> => {
+  const header = req.headers["authorization"];
+  if (!header || !/^Negotiate\s+/i.test(header)) {
+    res.setHeader("WWW-Authenticate", "Negotiate");
+    res.status(401).json({ error: "Negotiate required" });
+    return;
+  }
+  // Token present — would call into Kerberos GSS-API here. Without a
+  // provisioned keytab we cannot complete the exchange, so fall back to
+  // the form login path with a clear error.
+  res.status(501).json({
+    error:
+      "Kerberos backend not configured on this server. Use the LDAP/local form login, or provision a service keytab.",
+  });
+});
+
 router.post("/auth/logout", async (req, res): Promise<void> => {
   const userId = req.session?.user?.id;
   await new Promise<void>((resolve) => req.session.destroy(() => resolve()));
