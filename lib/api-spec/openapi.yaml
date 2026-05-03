@@ -884,6 +884,29 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/LdapTestResult" }
 
+  /admin/smtp-test:
+    post:
+      operationId: testSmtp
+      tags: [admin]
+      summary: Send a test email using the current SMTP settings
+      description: |
+        Sends a one-off test message to the supplied recipient using
+        either the values in the request body (so admins can validate
+        a config *before* saving it) or, when fields are omitted, the
+        currently saved SMTP settings. The saved password is reused
+        whenever the body omits one. Admin-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SmtpTestInput" }
+      responses:
+        "200":
+          description: Result of the send attempt
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SmtpTestResult" }
+
   /admin/ldap-sync-roles:
     post:
       operationId: syncLdapRoles
@@ -1642,6 +1665,25 @@ components:
         preparedAt: { type: ["string", "null"], format: date-time }
         preparedByName: { type: ["string", "null"] }
       required: [id, date]
+
+    SmtpTestInput:
+      type: object
+      properties:
+        to: { type: string, format: email, description: Recipient email address }
+        host: { type: ["string", "null"] }
+        port: { type: ["integer", "null"] }
+        secure: { type: ["boolean", "null"] }
+        username: { type: ["string", "null"] }
+        password: { type: ["string", "null"], description: "Optional. When omitted, the saved password is reused." }
+        fromAddress: { type: ["string", "null"] }
+      required: [to]
+
+    SmtpTestResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        message: { type: ["string", "null"] }
+      required: [ok]
 
     LdapSyncRolesResult:
       type: object

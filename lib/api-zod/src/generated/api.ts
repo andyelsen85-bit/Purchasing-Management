@@ -1935,6 +1935,33 @@ export const TestLdapResponse = zod.object({
 });
 
 /**
+ * Sends a one-off test message to the supplied recipient using
+either the values in the request body (so admins can validate
+a config *before* saving it) or, when fields are omitted, the
+currently saved SMTP settings. The saved password is reused
+whenever the body omits one. Admin-only.
+
+ * @summary Send a test email using the current SMTP settings
+ */
+export const TestSmtpBody = zod.object({
+  to: zod.string().email().describe("Recipient email address"),
+  host: zod.string().nullish(),
+  port: zod.number().nullish(),
+  secure: zod.boolean().nullish(),
+  username: zod.string().nullish(),
+  password: zod
+    .string()
+    .nullish()
+    .describe("Optional. When omitted, the saved password is reused."),
+  fromAddress: zod.string().nullish(),
+});
+
+export const TestSmtpResponse = zod.object({
+  ok: zod.boolean(),
+  message: zod.string().nullish(),
+});
+
+/**
  * Iterates every user with `source=LDAP`, queries the directory for
 their current group memberships, and re-applies the configured
 Group → Role and Group → Department mappings. Use this after

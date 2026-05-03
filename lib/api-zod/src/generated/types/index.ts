@@ -71,6 +71,8 @@ export * from "./sessionResponse";
 export * from "./sessionUser";
 export * from "./sessionUserSource";
 export * from "./smtpSettings";
+export * from "./smtpTestInput";
+export * from "./smtpTestResult";
 export * from "./stepCount";
 export * from "./updateSettingsInput";
 export * from "./updateSettingsInputLdap";

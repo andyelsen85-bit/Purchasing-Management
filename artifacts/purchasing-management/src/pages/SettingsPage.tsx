@@ -45,6 +45,7 @@ import {
   useCreateGtInvestDate,
   useDeleteGtInvestDate,
   useTestLdap,
+  useTestSmtp,
   useSyncLdapRoles,
   useGetSession,
   useListDeletedWorkflows,
@@ -1111,6 +1112,7 @@ function LdapSettingsPanel() {
 function SmtpSettingsPanel() {
   const { data: s } = useGetSettings();
   const save = useSaveSettings();
+  const test = useTestSmtp();
   const [enabled, setEnabled] = useState(false);
   const [host, setHost] = useState("");
   const [port, setPort] = useState(465);
@@ -1118,6 +1120,8 @@ function SmtpSettingsPanel() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fromAddress, setFromAddress] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string | null } | null>(null);
 
   useEffect(() => {
     if (!s) return;
@@ -1224,6 +1228,66 @@ function SmtpSettingsPanel() {
             <Save className="mr-2 h-4 w-4" /> Save
           </Button>
         </div>
+
+        <Separator />
+
+        {/* Send a test message using the values currently in the form
+            (so we can validate them before saving). The server falls
+            back to the stored password when this form leaves it blank. */}
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">Send test email</h3>
+          <p className="text-xs text-muted-foreground">
+            Uses the values currently in the form above. If the password
+            field is left blank, the saved password is reused.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              placeholder="recipient@example.com"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              data-testid="input-smtp-test-to"
+            />
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTestResult(null);
+                test.mutate(
+                  {
+                    data: {
+                      to: testTo,
+                      host: host || null,
+                      port,
+                      secure,
+                      username: username || null,
+                      ...(password ? { password } : {}),
+                      fromAddress: fromAddress || null,
+                    },
+                  },
+                  {
+                    onSuccess: (r) =>
+                      setTestResult({ ok: r.ok, message: r.message ?? null }),
+                    onError: (e) =>
+                      setTestResult({ ok: false, message: extractErrorMessage(e) }),
+                  },
+                );
+              }}
+              disabled={test.isPending || !testTo}
+              data-testid="button-smtp-test"
+            >
+              {test.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Send test
+            </Button>
+          </div>
+          {testResult && (
+            <Alert variant={testResult.ok ? "default" : "destructive"}>
+              <AlertDescription data-testid="text-smtp-test-result">
+                {testResult.ok ? "Success: " : "Failed: "}
+                {testResult.message ?? (testResult.ok ? "test email sent." : "unknown error")}
+              </AlertDescription>
+            </Alert>
+          )}
+        </section>
       </CardContent>
     </Card>
   );

@@ -12,7 +12,9 @@ import {
   CreateGtInvestResultBody,
   DeleteGtInvestDateParams,
   DeleteGtInvestResultParams,
+  TestSmtpBody,
 } from "@workspace/api-zod";
+import nodemailer from "nodemailer";
 import { requireAuth, requireRole, getUser } from "../middlewares/auth";
 import { getSettings, toPublicSettings, updateSettingsRecord } from "../lib/settings";
 import { audit } from "../lib/audit";
@@ -180,6 +182,76 @@ router.delete(
     await db.delete(gtInvestResultsTable).where(eq(gtInvestResultsTable.id, params.data.id));
     await audit(getUser(req).id, "GT_RESULT_DELETE", "gt-result", params.data.id);
     res.sendStatus(204);
+  },
+);
+
+/**
+ * POST /api/admin/smtp-test
+ *
+ * Sends a test email so the operator can validate their SMTP config
+ * without waiting for a real workflow event. Accepts the same fields
+ * as the SMTP settings form so the panel can offer "Send test" *before*
+ * the operator hits Save. Any field omitted falls back to the saved
+ * value — most importantly, omit `password` to reuse the stored one
+ * (the GET endpoint never returns it).
+ */
+router.post(
+  "/admin/smtp-test",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req, res): Promise<void> => {
+    const parsed = TestSmtpBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, message: parsed.error.message });
+      return;
+    }
+    const stored = (await getSettings()).smtp;
+    const body = parsed.data;
+    const host = body.host ?? stored.host ?? null;
+    const port = body.port ?? stored.port ?? 587;
+    const secure = body.secure ?? stored.secure ?? false;
+    const username = body.username ?? stored.username ?? null;
+    // Empty string in the form means "no change" — fall through to the
+    // stored secret. Only a *populated* override replaces it.
+    const password = body.password ? body.password : stored.password ?? null;
+    const fromAddress = body.fromAddress ?? stored.from ?? null;
+
+    if (!host) {
+      res.status(400).json({ ok: false, message: "SMTP host is required." });
+      return;
+    }
+
+    try {
+      const transport = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: username && password ? { user: username, pass: password } : undefined,
+      });
+      // verify() runs an EHLO (and AUTH if creds are supplied) without
+      // sending anything — gives a fast, specific failure when the host
+      // or credentials are wrong before we attempt the real send.
+      await transport.verify();
+      const info = await transport.sendMail({
+        from: fromAddress ?? username ?? "noreply@example.com",
+        to: body.to,
+        subject: "Purchasing Management — SMTP test",
+        text:
+          "This is a test message sent from the Purchasing Management Settings page.\n\n" +
+          "If you received this, your SMTP configuration is working.",
+      });
+      await audit(
+        getUser(req).id,
+        "SMTP_TEST",
+        "settings",
+        undefined,
+        `to=${body.to}, host=${host}:${port}`,
+      );
+      res.json({ ok: true, message: `Sent (id ${info.messageId ?? "?"}) to ${body.to}.` });
+    } catch (err) {
+      req.log.warn({ err: String(err) }, "SMTP test failed");
+      res.json({ ok: false, message: String(err instanceof Error ? err.message : err) });
+    }
   },
 );
 

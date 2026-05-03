@@ -190,7 +190,11 @@ export function toPublicSettings(s: AppSettings) {
       username: s.smtp?.username ?? null,
       passwordSet: !!s.smtp?.password,
       secure: !!s.smtp?.secure,
-      from: s.smtp?.from ?? null,
+      // Public field is named `fromAddress` (matches the OpenAPI schema
+      // and the React form). The stored shape uses the legacy `from`
+      // column name — translate it on the way out so the SMTP form
+      // re-populates correctly after a save + reload.
+      fromAddress: s.smtp?.from ?? null,
     },
   };
 }

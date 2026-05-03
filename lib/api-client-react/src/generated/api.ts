@@ -60,6 +60,8 @@ import type {
   RejectWorkflowInput,
   SessionResponse,
   SessionUser,
+  SmtpTestInput,
+  SmtpTestResult,
   UpdateSettingsInput,
   UpdateUserInput,
   UpdateWorkflowInput,
@@ -4591,6 +4593,98 @@ export const useTestLdap = <
   TContext
 > => {
   return useMutation(getTestLdapMutationOptions(options));
+};
+
+/**
+ * Sends a one-off test message to the supplied recipient using
+either the values in the request body (so admins can validate
+a config *before* saving it) or, when fields are omitted, the
+currently saved SMTP settings. The saved password is reused
+whenever the body omits one. Admin-only.
+
+ * @summary Send a test email using the current SMTP settings
+ */
+export const getTestSmtpUrl = () => {
+  return `/api/admin/smtp-test`;
+};
+
+export const testSmtp = async (
+  smtpTestInput: SmtpTestInput,
+  options?: RequestInit,
+): Promise<SmtpTestResult> => {
+  return customFetch<SmtpTestResult>(getTestSmtpUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(smtpTestInput),
+  });
+};
+
+export const getTestSmtpMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testSmtp>>,
+    TError,
+    { data: BodyType<SmtpTestInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof testSmtp>>,
+  TError,
+  { data: BodyType<SmtpTestInput> },
+  TContext
+> => {
+  const mutationKey = ["testSmtp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof testSmtp>>,
+    { data: BodyType<SmtpTestInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return testSmtp(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TestSmtpMutationResult = NonNullable<
+  Awaited<ReturnType<typeof testSmtp>>
+>;
+export type TestSmtpMutationBody = BodyType<SmtpTestInput>;
+export type TestSmtpMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send a test email using the current SMTP settings
+ */
+export const useTestSmtp = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testSmtp>>,
+    TError,
+    { data: BodyType<SmtpTestInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testSmtp>>,
+  TError,
+  { data: BodyType<SmtpTestInput> },
+  TContext
+> => {
+  return useMutation(getTestSmtpMutationOptions(options));
 };
 
 /**

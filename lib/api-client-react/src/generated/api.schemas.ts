@@ -813,6 +813,32 @@ export interface GtInvestDate {
   preparedByName?: string | null;
 }
 
+export interface SmtpTestInput {
+  /** Recipient email address */
+  to: string;
+  /** @nullable */
+  host?: string | null;
+  /** @nullable */
+  port?: number | null;
+  /** @nullable */
+  secure?: boolean | null;
+  /** @nullable */
+  username?: string | null;
+  /**
+   * Optional. When omitted, the saved password is reused.
+   * @nullable
+   */
+  password?: string | null;
+  /** @nullable */
+  fromAddress?: string | null;
+}
+
+export interface SmtpTestResult {
+  ok: boolean;
+  /** @nullable */
+  message?: string | null;
+}
+
 export type LdapSyncRolesResultErrorsItem = {
   username: string;
   error: string;
