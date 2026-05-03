@@ -2483,7 +2483,19 @@ function HistoryPanel({ wf }: { wf: Workflow }) {
                 </div>
                 <div className="flex-1 pb-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{h.action}</span>
+                    <span className="font-medium">
+                      {h.action === "ADVANCE"
+                        ? "Next Step"
+                        : h.action === "REJECT"
+                          ? "Reject"
+                          : h.action === "UNDO"
+                            ? "Undo"
+                            : h.action === "CREATE"
+                              ? "Create"
+                              : h.action === "EDIT"
+                                ? "Edit"
+                                : h.action}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {new Date(h.createdAt).toLocaleString()}
                     </span>
