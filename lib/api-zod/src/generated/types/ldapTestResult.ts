@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { LdapDiagnosticStep } from "./ldapDiagnosticStep";
 import type { LdapTestResultStage } from "./ldapTestResultStage";
 import type { Role } from "./role";
 
@@ -21,4 +22,8 @@ export interface LdapTestResult {
   groups: string[];
   derivedRoles: Role[];
   derivedDepartmentCodes: string[];
+  /** Step-by-step trace of the diagnostic so the operator can see
+exactly which phase failed and the raw error message.
+ */
+  steps: LdapDiagnosticStep[];
 }

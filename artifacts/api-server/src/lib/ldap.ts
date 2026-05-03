@@ -53,6 +53,22 @@ export interface LdapAuthResult {
   error?: string;
 }
 
+/**
+ * One row in the diagnostic trace returned by `runLdapDiagnostics`.
+ *
+ * `name` is a short human label ("Connect", "Bind as service account",
+ * "Search user", "Bind as user", "Resolve groups"). `status` is "ok" /
+ * "fail" / "skip". `detail` is free-form text shown to the operator —
+ * usually the raw `ldapjs` / Node error message so they can fix the
+ * config without grepping server logs.
+ */
+export interface LdapDiagnosticStep {
+  name: string;
+  status: "ok" | "fail" | "skip";
+  detail?: string | null;
+  durationMs?: number | null;
+}
+
 interface ResolvedTransport {
   url: string;
   encryption: LdapEncryption;
@@ -344,6 +360,376 @@ export async function ldapAuthenticate(
       doSearch();
     }
   });
+}
+
+/**
+ * Step-by-step diagnostic for the Settings → Test LDAP panel.
+ *
+ * Unlike `ldapAuthenticate` which collapses everything into a single
+ * boolean + error string, this walks each phase of the login pipeline
+ * (TCP/TLS connect → service-account bind → user search → user-bind →
+ * group resolution) and records the raw underlying error for each one.
+ * The UI renders the resulting list as a checklist so operators can see
+ * exactly where things break (e.g. "Connect ✓, Bind ✗ — invalid
+ * credentials") without digging through server logs.
+ */
+export async function runLdapDiagnostics(
+  cfg: LdapConfig,
+  username: string | null,
+  password: string | null,
+): Promise<{
+  ok: boolean;
+  stage: "bind" | "search" | "user_bind" | "complete";
+  error: string | null;
+  displayName: string | null;
+  email: string | null;
+  groups: string[];
+  steps: LdapDiagnosticStep[];
+}> {
+  const steps: LdapDiagnosticStep[] = [];
+  const t0 = (): number => Date.now();
+  const since = (start: number) => Date.now() - start;
+
+  if (!cfg.enabled || !cfg.host || !cfg.baseDn) {
+    return {
+      ok: false,
+      stage: "bind",
+      error:
+        "LDAP is not enabled or host/baseDn missing in Settings — fill those in and save before testing.",
+      displayName: null,
+      email: null,
+      groups: [],
+      steps: [
+        {
+          name: "Configuration",
+          status: "fail",
+          detail: "LDAP disabled or host/baseDn missing.",
+        },
+      ],
+    };
+  }
+
+  const transport = resolveTransport(cfg);
+  const tConn = t0();
+  const conn = await connect(transport);
+  if (!conn.ok) {
+    steps.push({
+      name: `Connect (${transport.encryption.toUpperCase()} → ${transport.url})`,
+      status: "fail",
+      detail: conn.error,
+      durationMs: since(tConn),
+    });
+    return {
+      ok: false,
+      stage: "bind",
+      error: conn.error,
+      displayName: null,
+      email: null,
+      groups: [],
+      steps,
+    };
+  }
+  steps.push({
+    name: `Connect (${transport.encryption.toUpperCase()} → ${transport.url})`,
+    status: "ok",
+    durationMs: since(tConn),
+  });
+  const client = conn.client;
+
+  const cleanup = () => {
+    try {
+      client.unbind();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // ----- Bind as service account (if configured) -----
+  if (cfg.bindDn && cfg.bindPassword) {
+    const tBind = t0();
+    const bindErr = await new Promise<string | null>((resolve) => {
+      client.bind(cfg.bindDn!, cfg.bindPassword!, (err) => {
+        if (err) {
+          const raw = (err as Error).message ?? String(err);
+          resolve(friendlyError(err) + ` — raw: ${raw}`);
+        } else resolve(null);
+      });
+    });
+    if (bindErr) {
+      steps.push({
+        name: `Bind as service account (${cfg.bindDn})`,
+        status: "fail",
+        detail: bindErr,
+        durationMs: since(tBind),
+      });
+      cleanup();
+      return {
+        ok: false,
+        stage: "bind",
+        error: bindErr,
+        displayName: null,
+        email: null,
+        groups: [],
+        steps,
+      };
+    }
+    steps.push({
+      name: `Bind as service account (${cfg.bindDn})`,
+      status: "ok",
+      durationMs: since(tBind),
+    });
+  } else {
+    steps.push({
+      name: "Bind as service account",
+      status: "skip",
+      detail: "Bind DN/password not configured — skipping.",
+    });
+  }
+
+  // ----- Search user (if username provided) -----
+  if (!username) {
+    cleanup();
+    steps.push({
+      name: "Search user",
+      status: "skip",
+      detail: "No test username supplied — server reachability confirmed.",
+    });
+    return {
+      ok: true,
+      stage: "bind",
+      error: null,
+      displayName: null,
+      email: null,
+      groups: [],
+      steps,
+    };
+  }
+
+  const a = attrs(cfg);
+  const safeUsername = username.replace(/[\\*()\u0000]/g, (ch) => {
+    const map: Record<string, string> = {
+      "\\": "\\5c",
+      "*": "\\2a",
+      "(": "\\28",
+      ")": "\\29",
+      "\u0000": "\\00",
+    };
+    return map[ch] ?? ch;
+  });
+  const filter = a.userFilter.replace(/{username}/g, safeUsername);
+
+  const tSearch = t0();
+  const search = await new Promise<{
+    ok: boolean;
+    error: string | null;
+    foundDn: string | null;
+    displayName: string | null;
+    email: string | null;
+    groups: string[];
+  }>((resolve) => {
+    let foundDn: string | null = null;
+    let displayName: string | null = null;
+    let email: string | null = null;
+    const groups: string[] = [];
+    client.search(
+      cfg.baseDn!,
+      {
+        filter,
+        scope: "sub",
+        attributes: Array.from(
+          new Set(["dn", a.displayAttr, a.emailAttr, a.groupAttr, "cn"]),
+        ),
+      },
+      (err, s) => {
+        if (err) {
+          resolve({
+            ok: false,
+            error: friendlyError(err) + ` — raw: ${(err as Error).message}`,
+            foundDn: null,
+            displayName: null,
+            email: null,
+            groups: [],
+          });
+          return;
+        }
+        s.on("searchEntry", (entry) => {
+          const obj = entry.pojo;
+          foundDn = obj.objectName ?? foundDn;
+          for (const at of obj.attributes ?? []) {
+            if (at.type === a.displayAttr && at.values?.[0])
+              displayName = String(at.values[0]);
+            else if (at.type === "cn" && at.values?.[0] && !displayName)
+              displayName = String(at.values[0]);
+            if (at.type === a.emailAttr && at.values?.[0])
+              email = String(at.values[0]);
+            if (at.type === a.groupAttr)
+              for (const v of at.values ?? []) groups.push(String(v));
+          }
+        });
+        s.on("error", (e) =>
+          resolve({
+            ok: false,
+            error: friendlyError(e) + ` — raw: ${e.message}`,
+            foundDn: null,
+            displayName: null,
+            email: null,
+            groups: [],
+          }),
+        );
+        s.on("end", () =>
+          resolve({
+            ok: true,
+            error: null,
+            foundDn,
+            displayName,
+            email,
+            groups,
+          }),
+        );
+      },
+    );
+  });
+
+  if (!search.ok) {
+    steps.push({
+      name: `Search user "${username}"`,
+      status: "fail",
+      detail: `${search.error}\nFilter: ${filter}\nBase DN: ${cfg.baseDn}`,
+      durationMs: since(tSearch),
+    });
+    cleanup();
+    return {
+      ok: false,
+      stage: "search",
+      error: search.error,
+      displayName: null,
+      email: null,
+      groups: [],
+      steps,
+    };
+  }
+  if (!search.foundDn) {
+    const msg = `User "${username}" not found in ${cfg.baseDn}. Filter used: ${filter}`;
+    steps.push({
+      name: `Search user "${username}"`,
+      status: "fail",
+      detail: msg,
+      durationMs: since(tSearch),
+    });
+    cleanup();
+    return {
+      ok: false,
+      stage: "search",
+      error: msg,
+      displayName: null,
+      email: null,
+      groups: [],
+      steps,
+    };
+  }
+  steps.push({
+    name: `Search user "${username}"`,
+    status: "ok",
+    detail: `Found DN: ${search.foundDn} · ${search.groups.length} direct group(s)`,
+    durationMs: since(tSearch),
+  });
+
+  // ----- Bind as user (if password provided) -----
+  if (!password) {
+    steps.push({
+      name: "Bind as user",
+      status: "skip",
+      detail: "No test password — search-only probe (login flow not exercised).",
+    });
+    cleanup();
+    return {
+      ok: true,
+      stage: "search",
+      error: null,
+      displayName: search.displayName,
+      email: search.email,
+      groups: search.groups,
+      steps,
+    };
+  }
+
+  const tUserBind = t0();
+  const userConn = await connect(transport);
+  if (!userConn.ok) {
+    steps.push({
+      name: "Bind as user",
+      status: "fail",
+      detail: `Could not open second connection: ${userConn.error}`,
+      durationMs: since(tUserBind),
+    });
+    cleanup();
+    return {
+      ok: false,
+      stage: "user_bind",
+      error: userConn.error,
+      displayName: search.displayName,
+      email: search.email,
+      groups: search.groups,
+      steps,
+    };
+  }
+  const userClient = userConn.client;
+  const bindErr = await new Promise<string | null>((resolve) => {
+    userClient.bind(search.foundDn!, password, (err) => {
+      try {
+        userClient.unbind();
+      } catch {
+        /* ignore */
+      }
+      if (err) {
+        const raw = (err as Error).message ?? String(err);
+        resolve(/InvalidCredentials/i.test(raw)
+          ? `Invalid credentials for ${search.foundDn} — raw: ${raw}`
+          : friendlyError(err) + ` — raw: ${raw}`);
+      } else resolve(null);
+    });
+  });
+  if (bindErr) {
+    steps.push({
+      name: "Bind as user",
+      status: "fail",
+      detail: bindErr,
+      durationMs: since(tUserBind),
+    });
+    cleanup();
+    return {
+      ok: false,
+      stage: "user_bind",
+      error: bindErr,
+      displayName: search.displayName,
+      email: search.email,
+      groups: search.groups,
+      steps,
+    };
+  }
+  steps.push({
+    name: "Bind as user",
+    status: "ok",
+    durationMs: since(tUserBind),
+  });
+
+  // Group resolution success is implied by the search step above.
+  steps.push({
+    name: "Resolve groups",
+    status: "ok",
+    detail: `${search.groups.length} direct group(s) (nested AD chains expanded at sign-in).`,
+  });
+
+  cleanup();
+  return {
+    ok: true,
+    stage: "complete",
+    error: null,
+    displayName: search.displayName,
+    email: search.email,
+    groups: search.groups,
+    steps,
+  };
 }
 
 /**

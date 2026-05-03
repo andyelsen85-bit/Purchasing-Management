@@ -1234,6 +1234,12 @@ function LdapTestPanel() {
   const [password, setPassword] = useState("");
   // The mutation result is typed as `unknown` because the OpenAPI
   // response is generic JSON; narrow it here for the UI.
+  type TestStep = {
+    name: string;
+    status: "ok" | "fail" | "skip";
+    detail?: string | null;
+    durationMs?: number | null;
+  };
   type TestResult = {
     ok: boolean;
     stage: string;
@@ -1243,6 +1249,7 @@ function LdapTestPanel() {
     groups?: string[];
     derivedRoles?: string[];
     derivedDepartmentCodes?: string[];
+    steps?: TestStep[];
   };
   const result = test.data as TestResult | undefined;
   const enabled = Boolean(s?.ldap.enabled);
@@ -1339,6 +1346,51 @@ function LdapTestPanel() {
               <p className="text-destructive">
                 <strong>Error:</strong> {result.error}
               </p>
+            )}
+            {result.steps && result.steps.length > 0 && (
+              <div data-testid="ldap-test-steps">
+                <strong className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Diagnostic trace
+                </strong>
+                <ol className="mt-1 space-y-1">
+                  {result.steps.map((st, i) => {
+                    const color =
+                      st.status === "ok"
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : st.status === "fail"
+                          ? "text-destructive"
+                          : "text-muted-foreground";
+                    const icon =
+                      st.status === "ok"
+                        ? "✓"
+                        : st.status === "fail"
+                          ? "✗"
+                          : "•";
+                    return (
+                      <li
+                        key={i}
+                        className="rounded border bg-background p-2"
+                        data-testid={`ldap-test-step-${i}`}
+                      >
+                        <div className={`flex items-center gap-2 ${color}`}>
+                          <span className="font-mono">{icon}</span>
+                          <span className="font-medium">{st.name}</span>
+                          {typeof st.durationMs === "number" && (
+                            <span className="ml-auto text-xs text-muted-foreground">
+                              {st.durationMs} ms
+                            </span>
+                          )}
+                        </div>
+                        {st.detail && (
+                          <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">
+                            {st.detail}
+                          </pre>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
             )}
             {result.displayName && (
               <p>

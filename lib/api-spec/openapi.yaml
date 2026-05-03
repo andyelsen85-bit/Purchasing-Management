@@ -1587,7 +1587,24 @@ components:
         derivedDepartmentCodes:
           type: array
           items: { type: string }
-      required: [ok, stage, groups, derivedRoles, derivedDepartmentCodes]
+        steps:
+          type: array
+          description: |
+            Step-by-step trace of the diagnostic so the operator can see
+            exactly which phase failed and the raw error message.
+          items: { $ref: "#/components/schemas/LdapDiagnosticStep" }
+      required: [ok, stage, groups, derivedRoles, derivedDepartmentCodes, steps]
+
+    LdapDiagnosticStep:
+      type: object
+      properties:
+        name: { type: string }
+        status:
+          type: string
+          enum: [ok, fail, skip]
+        detail: { type: ["string", "null"] }
+        durationMs: { type: ["integer", "null"] }
+      required: [name, status]
 
     NotificationEntry:
       type: object

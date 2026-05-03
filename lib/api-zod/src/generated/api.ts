@@ -1554,6 +1554,18 @@ export const TestLdapResponse = zod.object({
     ]),
   ),
   derivedDepartmentCodes: zod.array(zod.string()),
+  steps: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        status: zod.enum(["ok", "fail", "skip"]),
+        detail: zod.string().nullish(),
+        durationMs: zod.number().nullish(),
+      }),
+    )
+    .describe(
+      "Step-by-step trace of the diagnostic so the operator can see\nexactly which phase failed and the raw error message.\n",
+    ),
 });
 
 export const GenerateCsrBody = zod.object({

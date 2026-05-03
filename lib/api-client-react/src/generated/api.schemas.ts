@@ -835,6 +835,24 @@ export const LdapTestResultStage = {
   complete: "complete",
 } as const;
 
+export type LdapDiagnosticStepStatus =
+  (typeof LdapDiagnosticStepStatus)[keyof typeof LdapDiagnosticStepStatus];
+
+export const LdapDiagnosticStepStatus = {
+  ok: "ok",
+  fail: "fail",
+  skip: "skip",
+} as const;
+
+export interface LdapDiagnosticStep {
+  name: string;
+  status: LdapDiagnosticStepStatus;
+  /** @nullable */
+  detail?: string | null;
+  /** @nullable */
+  durationMs?: number | null;
+}
+
 export interface LdapTestResult {
   ok: boolean;
   /** Which phase of the test the outcome reports on */
@@ -848,6 +866,10 @@ export interface LdapTestResult {
   groups: string[];
   derivedRoles: Role[];
   derivedDepartmentCodes: string[];
+  /** Step-by-step trace of the diagnostic so the operator can see
+exactly which phase failed and the raw error message.
+ */
+  steps: LdapDiagnosticStep[];
 }
 
 export type NotificationEntryStatus =
