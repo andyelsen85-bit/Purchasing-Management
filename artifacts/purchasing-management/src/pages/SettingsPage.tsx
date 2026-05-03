@@ -44,9 +44,6 @@ import {
   useListGtInvestDates,
   useCreateGtInvestDate,
   useDeleteGtInvestDate,
-  useListGtInvestResults,
-  useCreateGtInvestResult,
-  useDeleteGtInvestResult,
   useTestLdap,
   useGetSession,
   useListDeletedWorkflows,
@@ -248,7 +245,6 @@ export function SettingsPage() {
           <div className="space-y-4">
             <GtRecipientsPanel />
             <GtDatesPanel />
-            <GtResultsPanel />
           </div>
         </TabsContent>
         <TabsContent value="https">
@@ -1889,78 +1885,6 @@ function GtDatesPanel() {
                   variant="ghost"
                   size="icon"
                   onClick={() => del.mutate({ id: d.id })}
-                  disabled={del.isPending}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function GtResultsPanel() {
-  const qc = useQueryClient();
-  const { data: results } = useListGtInvestResults();
-  const create = useCreateGtInvestResult({
-    mutation: { onSuccess: () => qc.invalidateQueries() },
-  });
-  const del = useDeleteGtInvestResult({
-    mutation: { onSuccess: () => qc.invalidateQueries() },
-  });
-  const [label, setLabel] = useState("");
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>GT Invest result options</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Outcomes the GT Invest committee can record on a workflow.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <Input
-            placeholder="Label (e.g. Approved)"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            data-testid="input-gt-result-label"
-          />
-          <Button
-            onClick={() => {
-              if (!label.trim()) return;
-              create.mutate(
-                { data: { label: label.trim() } },
-                { onSuccess: () => setLabel("") },
-              );
-            }}
-            disabled={create.isPending}
-            data-testid="button-add-gt-result"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add
-          </Button>
-        </div>
-        <Separator />
-        {(results ?? []).length === 0 ? (
-          <p className="py-3 text-sm text-muted-foreground">
-            No result options configured.
-          </p>
-        ) : (
-          <div className="divide-y">
-            {(results ?? []).map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-3 py-2 text-sm"
-                data-testid={`gt-result-row-${r.id}`}
-              >
-                <span className="flex-1">{r.label}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => del.mutate({ id: r.id })}
                   disabled={del.isPending}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />

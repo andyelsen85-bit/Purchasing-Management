@@ -452,6 +452,30 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Workflow" }
+  /workflows/{id}/gt-invest-decision:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: setGtInvestDecision
+      tags: [workflows]
+      summary: Record the GT Invest committee decision and apply transition
+      description: |
+        Records the committee's decision on a workflow currently sitting
+        on the GT_INVEST step and applies the matching transition:
+        OK → ORDERING; REFUSED → REJECTED (closed);
+        POSTPONED / ACCORD_PRINCIPE → stays on GT_INVEST and
+        re-assigns the workflow to the supplied meeting `dateId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GtInvestDecisionInput" }
+      responses:
+        "200":
+          description: Decision applied
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
 
   # ---------------- DOCUMENTS ----------------
   /workflows/{id}/documents:
@@ -1117,6 +1141,8 @@ components:
         # GT Invest
         gtInvestDateId: { type: ["integer", "null"] }
         gtInvestResultId: { type: ["integer", "null"] }
+        gtInvestDecision:
+          $ref: "#/components/schemas/GtInvestDecision"
         gtInvestComment: { type: ["string", "null"] }
         # Step 5 - Ordering
         orderNumber: { type: ["string", "null"] }
@@ -1267,6 +1293,27 @@ components:
       type: object
       properties:
         branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+
+    GtInvestDecision:
+      type: ["string", "null"]
+      enum: [OK, REFUSED, POSTPONED, ACCORD_PRINCIPE, null]
+      description: |
+        Outcome recorded by the GT Invest committee for a workflow:
+        OK → moves to Ordering;
+        REFUSED → closes the workflow;
+        POSTPONED / ACCORD_PRINCIPE → re-queues for the chosen meeting date.
+
+    GtInvestDecisionInput:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum: [OK, REFUSED, POSTPONED, ACCORD_PRINCIPE]
+        dateId:
+          type: ["integer", "null"]
+          description: Required when decision is POSTPONED or ACCORD_PRINCIPE.
+        comment: { type: ["string", "null"] }
+      required: [decision]
 
     RejectWorkflowInput:
       type: object

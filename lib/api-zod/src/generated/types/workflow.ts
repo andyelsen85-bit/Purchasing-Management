@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { GtInvestDecision } from "./gtInvestDecision";
 import type { Priority } from "./priority";
 import type { QuoteEntry } from "./quoteEntry";
 import type { WorkflowBranch } from "./workflowBranch";
@@ -48,6 +49,7 @@ export interface Workflow {
   gtInvestDateId?: number | null;
   /** @nullable */
   gtInvestResultId?: number | null;
+  gtInvestDecision?: GtInvestDecision | null;
   /** @nullable */
   gtInvestComment?: string | null;
   /** @nullable */

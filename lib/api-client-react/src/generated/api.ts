@@ -42,6 +42,7 @@ import type {
   ExportGtInvestPackageParams,
   ExportWorkflowsParams,
   GtInvestDate,
+  GtInvestDecisionInput,
   GtInvestResult,
   HealthStatus,
   HistoryEntry,
@@ -2512,6 +2513,99 @@ export const useUndoWorkflow = <
   TContext
 > => {
   return useMutation(getUndoWorkflowMutationOptions(options));
+};
+
+/**
+ * Records the committee's decision on a workflow currently sitting
+on the GT_INVEST step and applies the matching transition:
+OK → ORDERING; REFUSED → REJECTED (closed);
+POSTPONED / ACCORD_PRINCIPE → stays on GT_INVEST and
+re-assigns the workflow to the supplied meeting `dateId`.
+
+ * @summary Record the GT Invest committee decision and apply transition
+ */
+export const getSetGtInvestDecisionUrl = (id: number) => {
+  return `/api/workflows/${id}/gt-invest-decision`;
+};
+
+export const setGtInvestDecision = async (
+  id: number,
+  gtInvestDecisionInput: GtInvestDecisionInput,
+  options?: RequestInit,
+): Promise<Workflow> => {
+  return customFetch<Workflow>(getSetGtInvestDecisionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(gtInvestDecisionInput),
+  });
+};
+
+export const getSetGtInvestDecisionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setGtInvestDecision>>,
+    TError,
+    { id: number; data: BodyType<GtInvestDecisionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setGtInvestDecision>>,
+  TError,
+  { id: number; data: BodyType<GtInvestDecisionInput> },
+  TContext
+> => {
+  const mutationKey = ["setGtInvestDecision"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setGtInvestDecision>>,
+    { id: number; data: BodyType<GtInvestDecisionInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setGtInvestDecision(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetGtInvestDecisionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setGtInvestDecision>>
+>;
+export type SetGtInvestDecisionMutationBody = BodyType<GtInvestDecisionInput>;
+export type SetGtInvestDecisionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Record the GT Invest committee decision and apply transition
+ */
+export const useSetGtInvestDecision = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setGtInvestDecision>>,
+    TError,
+    { id: number; data: BodyType<GtInvestDecisionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setGtInvestDecision>>,
+  TError,
+  { id: number; data: BodyType<GtInvestDecisionInput> },
+  TContext
+> => {
+  return useMutation(getSetGtInvestDecisionMutationOptions(options));
 };
 
 export const getListWorkflowDocumentsUrl = (id: number) => {

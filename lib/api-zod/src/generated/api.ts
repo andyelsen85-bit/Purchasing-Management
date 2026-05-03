@@ -543,6 +543,18 @@ export const GetWorkflowResponse = zod.object({
   financialComment: zod.string().nullish(),
   gtInvestDateId: zod.number().nullish(),
   gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
   gtInvestComment: zod.string().nullish(),
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
@@ -678,6 +690,18 @@ export const UpdateWorkflowResponse = zod.object({
   financialComment: zod.string().nullish(),
   gtInvestDateId: zod.number().nullish(),
   gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
   gtInvestComment: zod.string().nullish(),
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
@@ -786,6 +810,18 @@ export const RestoreWorkflowResponse = zod.object({
   financialComment: zod.string().nullish(),
   gtInvestDateId: zod.number().nullish(),
   gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
   gtInvestComment: zod.string().nullish(),
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
@@ -889,6 +925,18 @@ export const AdvanceWorkflowResponse = zod.object({
   financialComment: zod.string().nullish(),
   gtInvestDateId: zod.number().nullish(),
   gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
   gtInvestComment: zod.string().nullish(),
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
@@ -986,6 +1034,18 @@ export const RejectWorkflowResponse = zod.object({
   financialComment: zod.string().nullish(),
   gtInvestDateId: zod.number().nullish(),
   gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
   gtInvestComment: zod.string().nullish(),
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
@@ -1079,6 +1139,141 @@ export const UndoWorkflowResponse = zod.object({
   financialComment: zod.string().nullish(),
   gtInvestDateId: zod.number().nullish(),
   gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
+  gtInvestComment: zod.string().nullish(),
+  orderNumber: zod.string().nullish(),
+  orderDate: zod.coerce.date().nullish(),
+  deliveredOn: zod.coerce.date().nullish(),
+  deliveryNotes: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  invoiceAmount: zod.number().nullish(),
+  invoiceDate: zod.coerce.date().nullish(),
+  invoiceValidated: zod.boolean().nullish(),
+  invoiceSignedBy: zod.string().nullish(),
+  invoiceSignedAt: zod.coerce.date().nullish(),
+  paymentDate: zod.coerce.date().nullish(),
+  paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * Records the committee's decision on a workflow currently sitting
+on the GT_INVEST step and applies the matching transition:
+OK → ORDERING; REFUSED → REJECTED (closed);
+POSTPONED / ACCORD_PRINCIPE → stays on GT_INVEST and
+re-assigns the workflow to the supplied meeting `dateId`.
+
+ * @summary Record the GT Invest committee decision and apply transition
+ */
+export const SetGtInvestDecisionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SetGtInvestDecisionBody = zod.object({
+  decision: zod.enum(["OK", "REFUSED", "POSTPONED", "ACCORD_PRINCIPE"]),
+  dateId: zod
+    .number()
+    .nullish()
+    .describe("Required when decision is POSTPONED or ACCORD_PRINCIPE."),
+  comment: zod.string().nullish(),
+});
+
+export const SetGtInvestDecisionResponse = zod.object({
+  id: zod.number(),
+  reference: zod.string(),
+  title: zod.string(),
+  departmentId: zod.number(),
+  departmentName: zod.string(),
+  createdById: zod.number(),
+  createdByName: zod.string(),
+  priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
+  currentStep: zod.enum([
+    "NEW",
+    "QUOTATION",
+    "VALIDATING_QUOTE_FINANCIAL",
+    "VALIDATING_BY_FINANCIAL",
+    "GT_INVEST",
+    "ORDERING",
+    "DELIVERY",
+    "INVOICE",
+    "VALIDATING_INVOICE",
+    "PAYMENT",
+    "DONE",
+    "REJECTED",
+  ]),
+  branch: zod
+    .union([
+      zod.literal("K_ORDER"),
+      zod.literal("GT_INVEST"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ageDays: zod.number(),
+  isStalled: zod.boolean(),
+  description: zod.string().nullish(),
+  category: zod.string().nullish(),
+  estimatedAmount: zod.number().nullish(),
+  currency: zod.string().nullish(),
+  neededBy: zod.coerce.date().nullish(),
+  quotes: zod.array(
+    zod.object({
+      companyId: zod.number().nullish(),
+      companyName: zod.string().nullish(),
+      contactId: zod.number().nullish(),
+      amount: zod.number().nullish(),
+      currency: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      winning: zod.boolean(),
+      documentIds: zod.array(zod.number()).optional(),
+    }),
+  ),
+  threeQuoteRequired: zod.boolean(),
+  managerApproved: zod.boolean().nullish(),
+  managerComment: zod.string().nullish(),
+  financialApproved: zod.boolean().nullish(),
+  financialComment: zod.string().nullish(),
+  gtInvestDateId: zod.number().nullish(),
+  gtInvestResultId: zod.number().nullish(),
+  gtInvestDecision: zod
+    .union([
+      zod.literal("OK"),
+      zod.literal("REFUSED"),
+      zod.literal("POSTPONED"),
+      zod.literal("ACCORD_PRINCIPE"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome recorded by the GT Invest committee for a workflow:\nOK → moves to Ordering;\nREFUSED → closes the workflow;\nPOSTPONED \/ ACCORD_PRINCIPE → re-queues for the chosen meeting date.\n",
+    ),
   gtInvestComment: zod.string().nullish(),
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),

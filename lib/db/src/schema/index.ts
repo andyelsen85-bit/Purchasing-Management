@@ -116,6 +116,12 @@ export const workflowsTable = pgTable(
     // GT Invest
     gtInvestDateId: integer("gt_invest_date_id"),
     gtInvestResultId: integer("gt_invest_result_id"),
+    // Fixed enum decision recorded by the GT Invest committee.
+    // One of: OK, REFUSED, POSTPONED, ACCORD_PRINCIPE.
+    // OK advances to ORDERING; REFUSED closes the workflow; POSTPONED
+    // and ACCORD_PRINCIPE keep the workflow on GT_INVEST and require a
+    // (re-)assigned meeting date.
+    gtInvestDecision: text("gt_invest_decision"),
     gtInvestComment: text("gt_invest_comment"),
 
     // Step 5 - ordering

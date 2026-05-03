@@ -18,6 +18,8 @@ import {
   AdvanceWorkflowParams,
   RejectWorkflowBody,
   RejectWorkflowParams,
+  SetGtInvestDecisionBody,
+  SetGtInvestDecisionParams,
   UndoWorkflowParams,
   GetWorkflowParams,
   DeleteWorkflowParams,
@@ -396,8 +398,13 @@ async function validateAdvancePrereqs(
         return "Pick a routing branch (K-Order or GT Invest) before advancing.";
       return null;
     case "GT_INVEST":
-      if (!wf.gtInvestDateId || !wf.gtInvestResultId)
-        return "Pick a meeting date and a decision before advancing.";
+      // Manual advance from GT_INVEST is no longer the normal path —
+      // the dedicated /gt-invest-decision endpoint records the
+      // committee's outcome and routes the workflow accordingly.
+      // We still allow advancing here for admin recovery, but only
+      // when the decision was OK.
+      if ((wf as { gtInvestDecision?: string | null }).gtInvestDecision !== "OK")
+        return "Record the GT Invest decision before advancing.";
       return null;
     case "ORDERING":
       if (!wf.orderNumber || !wf.orderDate)
@@ -659,6 +666,122 @@ router.post("/workflows/:id/undo", requireAuth, async (req, res): Promise<void> 
   await audit(user.id, "WORKFLOW_UNDO", "workflow", wf.id, `${wf.currentStep}->${prev}`);
   res.json(await loadWorkflowFull(wf.id));
 });
+
+/**
+ * Record the GT Invest committee's decision on a workflow currently
+ * sitting at GT_INVEST and apply the matching transition in one shot:
+ *
+ *   OK              → advance to ORDERING
+ *   REFUSED         → close the workflow (REJECTED)
+ *   POSTPONED       → stay at GT_INVEST, re-assign meeting date
+ *   ACCORD_PRINCIPE → stay at GT_INVEST, re-assign meeting date
+ *
+ * The four decisions are a fixed enum (no admin editing) — see
+ * `GtInvestDecision` in the OpenAPI spec.
+ */
+router.post(
+  "/workflows/:id/gt-invest-decision",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = SetGtInvestDecisionParams.safeParse(req.params);
+    const body = SetGtInvestDecisionBody.safeParse(req.body ?? {});
+    if (!params.success || !body.success) {
+      res.status(400).json({ error: "Invalid request" });
+      return;
+    }
+    const wf = await loadWorkflowFull(params.data.id);
+    if (!wf) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const user = getUser(req);
+    if (!canActOnStep(user, wf.currentStep as WorkflowStep, wf.departmentId)) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    if (wf.currentStep !== "GT_INVEST") {
+      const msg = "Workflow is not currently at GT Invest.";
+      res.status(400).json({ error: msg, message: msg });
+      return;
+    }
+
+    const decision = body.data.decision;
+    const dateId = body.data.dateId ?? wf.gtInvestDateId ?? null;
+    const comment =
+      body.data.comment !== undefined ? body.data.comment : wf.gtInvestComment;
+
+    if (
+      (decision === "POSTPONED" || decision === "ACCORD_PRINCIPE") &&
+      !dateId
+    ) {
+      const msg = "Pick a meeting date for postponed / accord principe decisions.";
+      res.status(400).json({ error: msg, message: msg });
+      return;
+    }
+
+    let nextStepValue: WorkflowStep = "GT_INVEST";
+    if (decision === "OK") nextStepValue = "ORDERING";
+    else if (decision === "REFUSED") nextStepValue = "REJECTED";
+
+    const update: Record<string, unknown> = {
+      gtInvestDecision: decision,
+      gtInvestDateId: dateId,
+      gtInvestComment: comment,
+      lastStepChangeAt: new Date(),
+    };
+    let historyAction: "ADVANCE" | "REJECT" | "EDIT" = "EDIT";
+    if (nextStepValue !== wf.currentStep) {
+      update.currentStep = nextStepValue;
+      update.previousStep = wf.currentStep;
+      historyAction = nextStepValue === "REJECTED" ? "REJECT" : "ADVANCE";
+    }
+
+    await db
+      .update(workflowsTable)
+      .set(update)
+      .where(eq(workflowsTable.id, wf.id));
+    await db.insert(historyTable).values({
+      workflowId: wf.id,
+      action: historyAction,
+      fromStep: wf.currentStep,
+      toStep: nextStepValue,
+      actorId: user.id,
+      details: `GT Invest: ${decision}${dateId ? ` (date #${dateId})` : ""}`,
+    });
+    await audit(
+      user.id,
+      "GT_INVEST_DECISION",
+      "workflow",
+      wf.id,
+      `${decision}: ${wf.currentStep}->${nextStepValue}`,
+    );
+
+    if (historyAction !== "EDIT") {
+      const settings = await getSettings();
+      const recipients = await recipientsForStep(
+        {
+          id: wf.id,
+          departmentId: wf.departmentId,
+          createdById: wf.createdById,
+        },
+        nextStepValue,
+      );
+      if (recipients.length > 0) {
+        const subjVerb =
+          nextStepValue === "REJECTED" ? "rejected and closed" : `advanced to ${nextStepValue}`;
+        void sendNotification(
+          settings.smtp,
+          recipients,
+          `${wf.reference}: ${subjVerb}`,
+          `Workflow ${wf.reference} (${wf.title}) — GT Invest decision: ${decision}.`,
+          { workflowId: wf.id, step: nextStepValue },
+        );
+      }
+    }
+
+    res.json(await loadWorkflowFull(wf.id));
+  },
+);
 
 /**
  * Merged-PDF export of a single workflow's attachments.

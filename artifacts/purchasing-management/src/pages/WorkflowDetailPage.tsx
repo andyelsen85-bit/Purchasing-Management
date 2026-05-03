@@ -46,7 +46,7 @@ import {
   useListWorkflowHistory,
   useListCompanies,
   useListGtInvestDates,
-  useListGtInvestResults,
+  useSetGtInvestDecision,
   useUpdateWorkflow,
   useAdvanceWorkflow,
   useRejectWorkflow,
@@ -62,6 +62,7 @@ import {
 } from "@/lib/api";
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
+import { GT_DECISION_OPTIONS, gtDecisionLabel } from "@/pages/GtInvestPage";
 import type { SessionUser } from "@/components/AuthGate";
 import { useToast } from "@/hooks/use-toast";
 import { extractErrorMessage } from "@/lib/utils";
@@ -482,7 +483,6 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
   // export on the Validate Invoice step but viewed in-app.
   const { data: docs } = useListWorkflowDocuments(wf.id);
   const { data: dates } = useListGtInvestDates();
-  const { data: results } = useListGtInvestResults();
   const { data: hist } = useListWorkflowHistory(wf.id);
   const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
 
@@ -508,8 +508,7 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
   })();
 
   const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
-  const gtResult =
-    results?.find((r) => r.id === wf.gtInvestResultId)?.label ?? null;
+  const gtResult = gtDecisionLabel(wf.gtInvestDecision);
 
   const fmtDate = (s: string | null | undefined) =>
     s ? new Date(s).toLocaleDateString() : "—";
@@ -1562,22 +1561,64 @@ function GtInvestPanel({
   onChange: () => void;
 }) {
   const { data: dates } = useListGtInvestDates();
-  const { data: results } = useListGtInvestResults();
+  const qc = useQueryClient();
+  const [decision, setDecision] = useState<
+    "OK" | "REFUSED" | "POSTPONED" | "ACCORD_PRINCIPE" | ""
+  >("");
   const [dateId, setDateId] = useState<string>(
     wf.gtInvestDateId ? String(wf.gtInvestDateId) : "",
   );
-  const [resultId, setResultId] = useState<string>(
-    wf.gtInvestResultId ? String(wf.gtInvestResultId) : "",
-  );
   const [comment, setComment] = useState<string>(wf.gtInvestComment ?? "");
-  const save = useSaveWorkflow(wf, onChange);
+  const submit = useSetGtInvestDecision({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries();
+        onChange();
+      },
+    },
+  });
+  const opt = GT_DECISION_OPTIONS.find((o) => o.value === decision);
+  const needsDate = opt?.needsDate ?? false;
+  const canSubmit =
+    !!decision && (!needsDate || !!dateId) && !submit.isPending;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>GT Invest Decision</CardTitle>
+        {wf.gtInvestDecision && (
+          <p className="text-xs text-muted-foreground">
+            Last recorded decision: {gtDecisionLabel(wf.gtInvestDecision)}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label>Decision</Label>
+          <Select
+            value={decision}
+            onValueChange={(v) =>
+              setDecision(
+                v as "OK" | "REFUSED" | "POSTPONED" | "ACCORD_PRINCIPE",
+              )
+            }
+          >
+            <SelectTrigger data-testid="select-gt-decision">
+              <SelectValue placeholder="Pick a decision" />
+            </SelectTrigger>
+            <SelectContent>
+              {GT_DECISION_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  <span className="flex items-center gap-2">
+                    <o.Icon className={`h-3.5 w-3.5 ${o.tone}`} />
+                    {o.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {needsDate && (
           <div className="space-y-1">
             <Label>Meeting date</Label>
             <Select value={dateId} onValueChange={setDateId}>
@@ -1594,24 +1635,9 @@ function GtInvestPanel({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label>Decision</Label>
-            <Select value={resultId} onValueChange={setResultId}>
-              <SelectTrigger data-testid="select-gt-result">
-                <SelectValue placeholder="Pick a result" />
-              </SelectTrigger>
-              <SelectContent>
-                {(results ?? []).map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        )}
         <div className="space-y-1">
-          <Label>Comment</Label>
+          <Label>Comment (optional)</Label>
           <Textarea
             rows={3}
             value={comment}
@@ -1619,21 +1645,29 @@ function GtInvestPanel({
             data-testid="input-gt-comment"
           />
         </div>
+        {submit.error && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {extractErrorMessage(submit.error)}
+            </AlertDescription>
+          </Alert>
+        )}
         <Button
-          onClick={() =>
-            save.mutate({
+          disabled={!canSubmit}
+          onClick={() => {
+            if (!decision) return;
+            submit.mutate({
               id: wf.id,
               data: {
-                gtInvestDateId: dateId ? Number(dateId) : null,
-                gtInvestResultId: resultId ? Number(resultId) : null,
-                gtInvestComment: comment,
+                decision,
+                dateId: needsDate ? Number(dateId) : null,
+                comment: comment || null,
               },
-            })
-          }
-          disabled={save.isPending}
-          data-testid="button-save-gt"
+            });
+          }}
+          data-testid="button-apply-gt"
         >
-          <Save className="mr-2 h-4 w-4" /> Save
+          <Save className="mr-2 h-4 w-4" /> Apply decision
         </Button>
       </CardContent>
     </Card>
@@ -1658,7 +1692,6 @@ function PriorStepsRecap({
   throughStep: Step;
 }) {
   const { data: dates } = useListGtInvestDates();
-  const { data: results } = useListGtInvestResults();
   const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
 
   const ORDER: Step[] = [
@@ -1680,8 +1713,7 @@ function PriorStepsRecap({
   };
 
   const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
-  const gtResult =
-    results?.find((r) => r.id === wf.gtInvestResultId)?.label ?? null;
+  const gtResult = gtDecisionLabel(wf.gtInvestDecision);
 
   const fmtDate = (s: string | null | undefined) =>
     s ? new Date(s).toLocaleDateString() : "—";

@@ -194,6 +194,25 @@ export const WorkflowBranch = {
   GT_INVEST: "GT_INVEST",
 } as const;
 
+/**
+ * Outcome recorded by the GT Invest committee for a workflow:
+OK → moves to Ordering;
+REFUSED → closes the workflow;
+POSTPONED / ACCORD_PRINCIPE → re-queues for the chosen meeting date.
+
+ * @nullable
+ */
+export type GtInvestDecision =
+  | (typeof GtInvestDecision)[keyof typeof GtInvestDecision]
+  | null;
+
+export const GtInvestDecision = {
+  OK: "OK",
+  REFUSED: "REFUSED",
+  POSTPONED: "POSTPONED",
+  ACCORD_PRINCIPE: "ACCORD_PRINCIPE",
+} as const;
+
 export interface Workflow {
   id: number;
   reference: string;
@@ -232,6 +251,7 @@ export interface Workflow {
   gtInvestDateId?: number | null;
   /** @nullable */
   gtInvestResultId?: number | null;
+  gtInvestDecision?: GtInvestDecision | null;
   /** @nullable */
   gtInvestComment?: string | null;
   /** @nullable */
@@ -398,6 +418,27 @@ export const AdvanceWorkflowInputBranch = {
 export interface AdvanceWorkflowInput {
   /** @nullable */
   branch?: AdvanceWorkflowInputBranch;
+}
+
+export type GtInvestDecisionInputDecision =
+  (typeof GtInvestDecisionInputDecision)[keyof typeof GtInvestDecisionInputDecision];
+
+export const GtInvestDecisionInputDecision = {
+  OK: "OK",
+  REFUSED: "REFUSED",
+  POSTPONED: "POSTPONED",
+  ACCORD_PRINCIPE: "ACCORD_PRINCIPE",
+} as const;
+
+export interface GtInvestDecisionInput {
+  decision: GtInvestDecisionInputDecision;
+  /**
+   * Required when decision is POSTPONED or ACCORD_PRINCIPE.
+   * @nullable
+   */
+  dateId?: number | null;
+  /** @nullable */
+  comment?: string | null;
 }
 
 export interface RejectWorkflowInput {
