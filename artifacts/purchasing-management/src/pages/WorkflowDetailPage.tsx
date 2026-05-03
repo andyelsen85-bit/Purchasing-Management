@@ -14,6 +14,7 @@ import {
   Download,
   Save,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -1676,6 +1677,21 @@ function PaymentPanel({
   wf: Workflow;
   onChange: () => void;
 }) {
+  // Payment is the last actionable step — advancing from PAYMENT
+  // transitions the workflow to the terminal DONE state, so the
+  // "Paid" button below uses the same advance call as Next Step but
+  // with a clearer label for finance users.
+  const advance = useAdvanceWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot mark as paid: ${msg}`);
+      },
+    },
+  });
   return (
     <Card>
       <CardHeader>
@@ -1683,13 +1699,32 @@ function PaymentPanel({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Mark this workflow as paid using <em>Advance</em>. Reference:{" "}
-          <span className="font-mono">{wf.reference}</span> · Amount:{" "}
+          Reference: <span className="font-mono">{wf.reference}</span> ·
+          Amount:{" "}
           <strong>
             {wf.invoiceAmount} {wf.currency}
           </strong>
-          . Notify finance via the Notes tab if needed.
+          . Click <em>Paid</em> once the transfer is complete to close
+          the workflow.
         </p>
+        <div>
+          <Button
+            onClick={() => {
+              if (!confirm("Mark this workflow as Paid and close it?"))
+                return;
+              advance.mutate({ id: wf.id, data: { branch: null } });
+            }}
+            disabled={advance.isPending}
+            data-testid="button-paid"
+          >
+            {advance.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+            )}
+            Paid
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
