@@ -1305,6 +1305,13 @@ function WinningQuoteCard({ wf }: { wf: Workflow }) {
     "—";
   const docIds = winning.documentIds ?? [];
   const winningDocs = (docs ?? []).filter((d) => docIds.includes(d.id));
+  // Other quotes (non-winning) — surfaced read-only so the approver
+  // can see *why* the chosen one is the best (price comparison,
+  // supplier alternatives). Only shown when three quotes were
+  // required, since the single-quote case has nothing to compare.
+  const otherQuotes = wf.threeQuoteRequired
+    ? allQuotes.filter((q) => q !== winning)
+    : [];
   return (
     <Card className="border-primary/40 bg-primary/5">
       <CardHeader className="pb-2">
@@ -1407,6 +1414,75 @@ function WinningQuoteCard({ wf }: { wf: Workflow }) {
             </ul>
           )}
         </div>
+        {otherQuotes.length > 0 && (
+          <div className="border-t border-primary/20 pt-3">
+            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Other quotes ({otherQuotes.length})
+            </div>
+            <ul className="space-y-2" data-testid="list-other-quotes">
+              {otherQuotes.map((q, i) => {
+                const otherSupplier =
+                  q.companyName ??
+                  companies?.find((c) => c.id === q.companyId)?.name ??
+                  "—";
+                const otherDocIds = q.documentIds ?? [];
+                const otherDocs = (docs ?? []).filter((d) =>
+                  otherDocIds.includes(d.id),
+                );
+                return (
+                  <li
+                    key={i}
+                    className="rounded-md border bg-background/60 p-2 text-xs"
+                    data-testid={`other-quote-${i}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium" data-testid={`text-other-supplier-${i}`}>
+                        {otherSupplier}
+                      </span>
+                      <span className="text-muted-foreground" data-testid={`text-other-amount-${i}`}>
+                        {q.amount != null
+                          ? `${q.amount} ${q.currency ?? wf.currency ?? ""}`
+                          : "—"}
+                      </span>
+                    </div>
+                    {q.notes && (
+                      <div className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                        {q.notes}
+                      </div>
+                    )}
+                    {otherDocs.length > 0 && (
+                      <ul className="mt-1.5 space-y-1">
+                        {otherDocs.map((d) => {
+                          const href = `/api/documents/${d.id}/download`;
+                          return (
+                            <li
+                              key={d.id}
+                              className="flex items-center gap-1.5"
+                              data-testid={`other-quote-doc-${i}-${d.id}`}
+                            >
+                              <FileText className="h-3 w-3 text-muted-foreground" />
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex-1 truncate hover:underline"
+                              >
+                                {d.filename}
+                              </a>
+                              <span className="text-muted-foreground">
+                                {formatBytes(d.sizeBytes)}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
