@@ -103,6 +103,10 @@ export interface AppSettings {
   // http://localhost:<port>/sign, so the URL is implicit and only
   // the port (defined at agent install time) needs to be configured.
   signingAgentPort?: number | null;
+  // Default retention (in days) used to pre-populate the Settings →
+  // Archive panel. The archive endpoint always reads the cutoff from
+  // the request body, so this is purely a UX default.
+  archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
   ldap: LdapConfigStored;
   smtp: SmtpConfigStored;
@@ -115,6 +119,7 @@ const DEFAULT: AppSettings = {
   currency: "EUR",
   certSigningEnabled: false,
   signingAgentPort: 9443,
+  archiveRetentionDays: 365,
   gtInvestRecipients: [],
   ldap: {
     enabled: false,
@@ -165,6 +170,7 @@ export function toPublicSettings(s: AppSettings) {
     currency: s.currency,
     certSigningEnabled: s.certSigningEnabled,
     signingAgentPort: s.signingAgentPort ?? null,
+    archiveRetentionDays: s.archiveRetentionDays ?? null,
     gtInvestRecipients: s.gtInvestRecipients ?? [],
     ldap: {
       enabled: !!s.ldap?.enabled,

@@ -323,6 +323,14 @@ The API is served under `/api` and described by `lib/api-spec/openapi.yaml`
 - `POST   /api/admin/restore` — multipart upload of a backup JSON
   (admin-only); transactional truncate + re-seed; sequences bumped
   past restored ids; caller's session is destroyed on success.
+- `POST   /api/admin/archive-attachments` — admin-only. Body
+  `{ olderThanDays, dryRun? }`. Deletes the binary attachments
+  (`documents` + `document_versions`) for every workflow whose
+  `created_at` is older than the cutoff and writes one summary
+  `audit_log` entry plus a per-workflow `history` row of action
+  `ARCHIVE_ATTACHMENTS`. The workflow row, notes, history, audit
+  trail and GT Invest data are preserved. Surfaced in the UI under
+  Settings → Archive (preview + confirm + persisted default).
 
 All operations are typed in the SPA via the generated React Query hooks
 (`useListWorkflows`, `useAdvanceWorkflow`, `useSetGtInvestDecision`, …).

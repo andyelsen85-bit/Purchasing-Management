@@ -1657,6 +1657,7 @@ export const GetSettingsResponse = zod.object({
   currency: zod.string(),
   certSigningEnabled: zod.boolean(),
   signingAgentPort: zod.number().nullish(),
+  archiveRetentionDays: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()),
   ldap: zod.object({
     enabled: zod.boolean(),
@@ -1705,6 +1706,7 @@ export const UpdateSettingsBody = zod.object({
   currency: zod.string().nullish(),
   certSigningEnabled: zod.boolean().nullish(),
   signingAgentPort: zod.number().nullish(),
+  archiveRetentionDays: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()).optional(),
   ldap: zod
     .object({
@@ -1758,6 +1760,7 @@ export const UpdateSettingsResponse = zod.object({
   currency: zod.string(),
   certSigningEnabled: zod.boolean(),
   signingAgentPort: zod.number().nullish(),
+  archiveRetentionDays: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()),
   ldap: zod.object({
     enabled: zod.boolean(),
@@ -2051,4 +2054,56 @@ export const ReloadCertResponse = zod.object({
   validTo: zod.coerce.date().nullish(),
   sans: zod.array(zod.string()),
   fingerprint: zod.string().nullish(),
+});
+
+/**
+ * Frees disk space by removing every uploaded document (and its
+version history) attached to workflows whose `created_at` is
+older than the supplied cutoff. The workflow rows themselves —
+and all of their notes, history, audit entries, GT Invest
+decisions, etc. — are left untouched, so the audit trail and
+operational data remain intact.
+
+Pass `dryRun: true` to compute and return the stats that
+*would* be freed without touching the database. A real run
+deletes inside a transaction and writes one summary
+`audit_log` entry plus a per-workflow `history` row with
+action `ARCHIVE_ATTACHMENTS` so the workflow detail page
+explains why its document grid is now empty.
+
+ * @summary Delete attachments for workflows older than N days
+ */
+
+export const archiveAttachmentsBodyDryRunDefault = false;
+
+export const ArchiveAttachmentsBody = zod.object({
+  olderThanDays: zod
+    .number()
+    .min(1)
+    .describe(
+      "Workflows whose `created_at` is strictly older than `now - olderThanDays`\nwill have all of their attachments + version history removed.\n",
+    ),
+  dryRun: zod
+    .boolean()
+    .default(archiveAttachmentsBodyDryRunDefault)
+    .describe(
+      "When `true`, no rows are deleted — the response only reports\nwhat \*would\* be removed.\n",
+    ),
+});
+
+export const ArchiveAttachmentsResponse = zod.object({
+  dryRun: zod.boolean(),
+  cutoffIso: zod.coerce
+    .date()
+    .describe("ISO 8601 cutoff timestamp the server actually used."),
+  workflowsAffected: zod
+    .number()
+    .describe(
+      "Number of workflows that had at least one attachment removed (or would have, in a dry run).",
+    ),
+  documentsRemoved: zod.number(),
+  versionsRemoved: zod.number(),
+  bytesFreed: zod
+    .number()
+    .describe("Sum of `size_bytes` across every removed document and version."),
 });

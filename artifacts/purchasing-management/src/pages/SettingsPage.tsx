@@ -8,6 +8,7 @@ import {
   Download,
   Upload,
   ShieldAlert,
+  Archive,
   PlugZap,
   CheckCircle2,
   XCircle,
@@ -52,6 +53,7 @@ import {
   useRestoreWorkflow,
   useListUsers,
   useListAuditLog,
+  useArchiveAttachments,
   getListUsersQueryKey,
   getListDeletedWorkflowsQueryKey,
 } from "@/lib/api";
@@ -139,6 +141,7 @@ const TAB_VALUES = [
   "gt",
   "https",
   "backup",
+  "archive",
   "audit",
   "trash",
 ] as const;
@@ -233,6 +236,9 @@ export function SettingsPage() {
           <TabsTrigger value="backup" data-testid="tab-backup">
             Backup &amp; Restore
           </TabsTrigger>
+          <TabsTrigger value="archive" data-testid="tab-archive">
+            Archive
+          </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit">
             Audit Log
           </TabsTrigger>
@@ -270,6 +276,9 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="backup">
           <BackupRestorePanel />
+        </TabsContent>
+        <TabsContent value="archive">
+          <AttachmentArchivePanel />
         </TabsContent>
         <TabsContent value="audit">
           <AuditLogPanel />
@@ -621,6 +630,230 @@ function BackupRestorePanel() {
         {success && (
           <Alert data-testid="alert-backup-success">
             <AlertDescription>{success}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Settings → Archive. Operator-driven cleanup that frees disk space
+ * by deleting the binary attachments (and their version history)
+ * belonging to workflows older than the chosen cutoff. The workflow
+ * rows themselves and all of their notes / history / audit trail are
+ * preserved — only the documents go.
+ */
+function AttachmentArchivePanel() {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const archive = useArchiveAttachments();
+  const qc = useQueryClient();
+  const [days, setDays] = useState<number>(365);
+  const [confirming, setConfirming] = useState(false);
+  const [preview, setPreview] = useState<{
+    dryRun: boolean;
+    cutoffIso: string;
+    workflowsAffected: number;
+    documentsRemoved: number;
+    versionsRemoved: number;
+    bytesFreed: number;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Hydrate the days input from the persisted default the first time
+  // settings come back from the API.
+  useEffect(() => {
+    if (s?.archiveRetentionDays != null) {
+      setDays(s.archiveRetentionDays);
+    }
+  }, [s?.archiveRetentionDays]);
+
+  function fmtBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+    return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+
+  async function run(dryRun: boolean) {
+    setError(null);
+    setConfirming(false);
+    try {
+      const r = await archive.mutateAsync({
+        data: { olderThanDays: days, dryRun },
+      });
+      setPreview(r);
+      if (!dryRun) {
+        // Workflow detail pages, document grids and dashboards may
+        // now be stale.
+        qc.invalidateQueries();
+        toast({
+          title: "Attachments archived",
+          description: `${r.documentsRemoved} document(s) and ${r.versionsRemoved} version(s) removed across ${r.workflowsAffected} workflow(s).`,
+        });
+      }
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }
+
+  async function saveDefault() {
+    try {
+      await save.mutateAsync({ data: { archiveRetentionDays: days } });
+      toast({ title: "Saved", description: `Default retention set to ${days} day(s).` });
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }
+
+  const validDays = Number.isInteger(days) && days >= 1;
+  const busy = archive.isPending;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Archive attachments</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Frees disk space by deleting every uploaded file (and its
+            version history) attached to workflows whose creation date
+            is older than the cutoff below. The workflow rows
+            themselves, plus all notes, step history, audit log
+            entries and GT Invest data, are kept intact — only the
+            binary attachments are removed. Soft-deleted workflows in
+            the Trash tab are <strong>not</strong> touched.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            A history entry of type{" "}
+            <code className="rounded bg-muted px-1">ARCHIVE_ATTACHMENTS</code>{" "}
+            is added to every affected workflow so the workflow detail
+            page explains why the document grid is empty.
+          </p>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="archive-days">Older than (days)</Label>
+            <Input
+              id="archive-days"
+              type="number"
+              min={1}
+              step={1}
+              value={Number.isFinite(days) ? days : ""}
+              onChange={(e) => setDays(parseInt(e.target.value, 10))}
+              className="w-32"
+              data-testid="input-archive-days"
+            />
+          </div>
+          <Button
+            variant="outline"
+            onClick={saveDefault}
+            disabled={!validDays || save.isPending || busy}
+            data-testid="button-save-archive-default"
+          >
+            {save.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save as default
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => run(true)}
+            disabled={!validDays || busy}
+            data-testid="button-preview-archive"
+          >
+            {busy && preview?.dryRun !== false ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Preview
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => setConfirming(true)}
+            disabled={!validDays || busy}
+            data-testid="button-archive-now"
+          >
+            <Archive className="mr-2 h-4 w-4" />
+            Archive now
+          </Button>
+        </div>
+
+        {confirming && (
+          <Alert variant="destructive">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertDescription>
+              <p className="mb-2">
+                This will permanently delete attachments for every
+                workflow created more than <strong>{days}</strong>{" "}
+                day(s) ago. This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={() => run(false)}
+                  disabled={busy}
+                  data-testid="button-confirm-archive"
+                >
+                  {busy ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Archive className="mr-2 h-4 w-4" />
+                  )}
+                  Yes, delete attachments
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirming(false)}
+                  disabled={busy}
+                  data-testid="button-cancel-archive"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {preview && (
+          <div
+            className="rounded-md border bg-muted/30 p-3 text-sm"
+            data-testid="archive-result"
+          >
+            <p className="mb-1 font-semibold">
+              {preview.dryRun ? "Preview" : "Completed"} — cutoff{" "}
+              {new Date(preview.cutoffIso).toLocaleString()}
+            </p>
+            <ul className="ml-5 list-disc space-y-0.5">
+              <li>
+                Workflows affected:{" "}
+                <strong>{preview.workflowsAffected}</strong>
+              </li>
+              <li>
+                Documents {preview.dryRun ? "to remove" : "removed"}:{" "}
+                <strong>{preview.documentsRemoved}</strong>
+              </li>
+              <li>
+                Versions {preview.dryRun ? "to remove" : "removed"}:{" "}
+                <strong>{preview.versionsRemoved}</strong>
+              </li>
+              <li>
+                Disk space {preview.dryRun ? "to free" : "freed"}:{" "}
+                <strong>{fmtBytes(preview.bytesFreed)}</strong>
+              </li>
+            </ul>
+          </div>
+        )}
+
+        {error && (
+          <Alert variant="destructive" data-testid="alert-archive-error">
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
       </CardContent>

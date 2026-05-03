@@ -994,6 +994,42 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApiError" }
 
+  /admin/archive-attachments:
+    post:
+      operationId: archiveAttachments
+      tags: [admin]
+      summary: Delete attachments for workflows older than N days
+      description: |
+        Frees disk space by removing every uploaded document (and its
+        version history) attached to workflows whose `created_at` is
+        older than the supplied cutoff. The workflow rows themselves —
+        and all of their notes, history, audit entries, GT Invest
+        decisions, etc. — are left untouched, so the audit trail and
+        operational data remain intact.
+
+        Pass `dryRun: true` to compute and return the stats that
+        *would* be freed without touching the database. A real run
+        deletes inside a transaction and writes one summary
+        `audit_log` entry plus a per-workflow `history` row with
+        action `ARCHIVE_ATTACHMENTS` so the workflow detail page
+        explains why its document grid is now empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArchiveAttachmentsInput" }
+      responses:
+        "200":
+          description: Archive run result (or dry-run preview)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArchiveAttachmentsResult" }
+        "400":
+          description: Invalid input.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+
 components:
   schemas:
     HealthStatus:
@@ -1586,6 +1622,47 @@ components:
         fromAddress: { type: ["string", "null"] }
       required: [enabled, passwordSet, secure]
 
+    ArchiveAttachmentsInput:
+      type: object
+      properties:
+        olderThanDays:
+          type: integer
+          minimum: 1
+          description: |
+            Workflows whose `created_at` is strictly older than `now - olderThanDays`
+            will have all of their attachments + version history removed.
+        dryRun:
+          type: boolean
+          default: false
+          description: |
+            When `true`, no rows are deleted — the response only reports
+            what *would* be removed.
+      required: [olderThanDays]
+
+    ArchiveAttachmentsResult:
+      type: object
+      properties:
+        dryRun: { type: boolean }
+        cutoffIso:
+          type: string
+          format: date-time
+          description: ISO 8601 cutoff timestamp the server actually used.
+        workflowsAffected:
+          type: integer
+          description: Number of workflows that had at least one attachment removed (or would have, in a dry run).
+        documentsRemoved: { type: integer }
+        versionsRemoved: { type: integer }
+        bytesFreed:
+          type: integer
+          description: Sum of `size_bytes` across every removed document and version.
+      required:
+        - dryRun
+        - cutoffIso
+        - workflowsAffected
+        - documentsRemoved
+        - versionsRemoved
+        - bytesFreed
+
     AppSettings:
       type: object
       properties:
@@ -1595,6 +1672,10 @@ components:
         currency: { type: string }
         certSigningEnabled: { type: boolean }
         signingAgentPort: { type: ["integer", "null"] }
+        # Default retention period (in days) used to pre-populate the
+        # Settings → Archive form. The actual archive run takes its
+        # cutoff from the request body, so this is a UX-only default.
+        archiveRetentionDays: { type: ["integer", "null"] }
         gtInvestRecipients:
           type: array
           items: { type: string }
@@ -1618,6 +1699,7 @@ components:
         currency: { type: ["string", "null"] }
         certSigningEnabled: { type: ["boolean", "null"] }
         signingAgentPort: { type: ["integer", "null"] }
+        archiveRetentionDays: { type: ["integer", "null"] }
         gtInvestRecipients:
           type: array
           items: { type: string }

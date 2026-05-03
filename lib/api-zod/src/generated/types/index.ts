@@ -10,6 +10,8 @@ export * from "./advanceWorkflowInput";
 export * from "./advanceWorkflowInputBranch";
 export * from "./apiError";
 export * from "./appSettings";
+export * from "./archiveAttachmentsInput";
+export * from "./archiveAttachmentsResult";
 export * from "./auditEntry";
 export * from "./branch";
 export * from "./certInfo";

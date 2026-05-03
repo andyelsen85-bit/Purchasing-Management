@@ -683,6 +683,32 @@ export interface SmtpSettings {
   fromAddress?: string | null;
 }
 
+export interface ArchiveAttachmentsInput {
+  /**
+   * Workflows whose `created_at` is strictly older than `now - olderThanDays`
+will have all of their attachments + version history removed.
+
+   * @minimum 1
+   */
+  olderThanDays: number;
+  /** When `true`, no rows are deleted — the response only reports
+what *would* be removed.
+ */
+  dryRun?: boolean;
+}
+
+export interface ArchiveAttachmentsResult {
+  dryRun: boolean;
+  /** ISO 8601 cutoff timestamp the server actually used. */
+  cutoffIso: string;
+  /** Number of workflows that had at least one attachment removed (or would have, in a dry run). */
+  workflowsAffected: number;
+  documentsRemoved: number;
+  versionsRemoved: number;
+  /** Sum of `size_bytes` across every removed document and version. */
+  bytesFreed: number;
+}
+
 export interface AppSettings {
   appName: string;
   /** @nullable */
@@ -692,6 +718,8 @@ export interface AppSettings {
   certSigningEnabled: boolean;
   /** @nullable */
   signingAgentPort?: number | null;
+  /** @nullable */
+  archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
@@ -797,6 +825,8 @@ export interface UpdateSettingsInput {
   certSigningEnabled?: boolean | null;
   /** @nullable */
   signingAgentPort?: number | null;
+  /** @nullable */
+  archiveRetentionDays?: number | null;
   gtInvestRecipients?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;

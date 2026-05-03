@@ -20,6 +20,8 @@ import type {
   AdvanceWorkflowInput,
   ApiError,
   AppSettings,
+  ArchiveAttachmentsInput,
+  ArchiveAttachmentsResult,
   AuditEntry,
   CertInfo,
   Company,
@@ -5112,4 +5114,104 @@ export const useReloadCert = <
   TContext
 > => {
   return useMutation(getReloadCertMutationOptions(options));
+};
+
+/**
+ * Frees disk space by removing every uploaded document (and its
+version history) attached to workflows whose `created_at` is
+older than the supplied cutoff. The workflow rows themselves —
+and all of their notes, history, audit entries, GT Invest
+decisions, etc. — are left untouched, so the audit trail and
+operational data remain intact.
+
+Pass `dryRun: true` to compute and return the stats that
+*would* be freed without touching the database. A real run
+deletes inside a transaction and writes one summary
+`audit_log` entry plus a per-workflow `history` row with
+action `ARCHIVE_ATTACHMENTS` so the workflow detail page
+explains why its document grid is now empty.
+
+ * @summary Delete attachments for workflows older than N days
+ */
+export const getArchiveAttachmentsUrl = () => {
+  return `/api/admin/archive-attachments`;
+};
+
+export const archiveAttachments = async (
+  archiveAttachmentsInput: ArchiveAttachmentsInput,
+  options?: RequestInit,
+): Promise<ArchiveAttachmentsResult> => {
+  return customFetch<ArchiveAttachmentsResult>(getArchiveAttachmentsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(archiveAttachmentsInput),
+  });
+};
+
+export const getArchiveAttachmentsMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveAttachments>>,
+    TError,
+    { data: BodyType<ArchiveAttachmentsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveAttachments>>,
+  TError,
+  { data: BodyType<ArchiveAttachmentsInput> },
+  TContext
+> => {
+  const mutationKey = ["archiveAttachments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveAttachments>>,
+    { data: BodyType<ArchiveAttachmentsInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return archiveAttachments(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveAttachmentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveAttachments>>
+>;
+export type ArchiveAttachmentsMutationBody = BodyType<ArchiveAttachmentsInput>;
+export type ArchiveAttachmentsMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete attachments for workflows older than N days
+ */
+export const useArchiveAttachments = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveAttachments>>,
+    TError,
+    { data: BodyType<ArchiveAttachmentsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveAttachments>>,
+  TError,
+  { data: BodyType<ArchiveAttachmentsInput> },
+  TContext
+> => {
+  return useMutation(getArchiveAttachmentsMutationOptions(options));
 };
