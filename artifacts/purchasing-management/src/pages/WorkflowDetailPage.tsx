@@ -160,7 +160,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
         </TabsList>
 
         <TabsContent value="step">
-          <StepPanel wf={wf} onChange={refresh} />
+          <StepPanel wf={wf} user={user} onChange={refresh} />
         </TabsContent>
         <TabsContent value="docs">
           <DocumentsPanel wf={wf} />
@@ -431,7 +431,15 @@ function StepDocumentUploader({
   );
 }
 
-function StepPanel({ wf, onChange }: { wf: Workflow; onChange: () => void }) {
+function StepPanel({
+  wf,
+  user,
+  onChange,
+}: {
+  wf: Workflow;
+  user: SessionUser;
+  onChange: () => void;
+}) {
   switch (wf.currentStep) {
     case "QUOTATION":
       return <QuotationPanel wf={wf} onChange={onChange} />;
@@ -448,7 +456,7 @@ function StepPanel({ wf, onChange }: { wf: Workflow; onChange: () => void }) {
     case "INVOICE":
       return <InvoicePanel wf={wf} onChange={onChange} />;
     case "VALIDATING_INVOICE":
-      return <InvoiceValidationPanel wf={wf} onChange={onChange} />;
+      return <InvoiceValidationPanel wf={wf} user={user} onChange={onChange} />;
     case "PAYMENT":
       return <PaymentPanel wf={wf} onChange={onChange} />;
     case "DONE":
@@ -1632,6 +1640,206 @@ function GtInvestPanel({
   );
 }
 
+/**
+ * Read-only recap of every field captured in steps that have already
+ * been completed. Reused on Ordering / Delivery / Validate Invoice /
+ * Payment so the operator on the current step can review the full
+ * upstream context — including a one-click merged-PDF download — in
+ * place, without bouncing to the History tab.
+ *
+ * `throughStep` is the *current* step; sections strictly earlier than
+ * it are shown.
+ */
+function PriorStepsRecap({
+  wf,
+  throughStep,
+}: {
+  wf: Workflow;
+  throughStep: Step;
+}) {
+  const { data: dates } = useListGtInvestDates();
+  const { data: results } = useListGtInvestResults();
+  const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
+
+  const ORDER: Step[] = [
+    "NEW",
+    "QUOTATION",
+    "VALIDATING_QUOTE_FINANCIAL",
+    "VALIDATING_BY_FINANCIAL",
+    "GT_INVEST",
+    "ORDERING",
+    "DELIVERY",
+    "INVOICE",
+    "VALIDATING_INVOICE",
+    "PAYMENT",
+  ];
+  const cutoff = ORDER.indexOf(throughStep);
+  const show = (step: Step) => {
+    const idx = ORDER.indexOf(step);
+    return idx >= 0 && idx < cutoff;
+  };
+
+  const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
+  const gtResult =
+    results?.find((r) => r.id === wf.gtInvestResultId)?.label ?? null;
+
+  const fmtDate = (s: string | null | undefined) =>
+    s ? new Date(s).toLocaleDateString() : "—";
+  const fmtDateTime = (s: string | null | undefined) =>
+    s ? new Date(s).toLocaleString() : "—";
+  const fmtMoney = (n: number | null | undefined, c: string | null | undefined) =>
+    n != null ? `${n} ${c ?? ""}`.trim() : "—";
+  const fmtBool = (b: boolean | null | undefined) =>
+    b == null ? "—" : b ? "Yes" : "No";
+  const orDash = (v: string | null | undefined) =>
+    v && v.length > 0 ? v : "—";
+
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="grid grid-cols-[180px_1fr] gap-3 py-1 text-sm">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="break-words">{value}</div>
+    </div>
+  );
+  const Section = ({
+    title,
+    children,
+  }: {
+    title: string;
+    children: React.ReactNode;
+  }) => (
+    <div className="rounded-md border bg-muted/20 p-3">
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      <div className="divide-y">{children}</div>
+    </div>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle className="text-base">Workflow recap</CardTitle>
+        <Button asChild variant="outline" size="sm">
+          <a
+            href={exportHref}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="button-export-merged-pdf-recap"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export merged PDF
+          </a>
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Section title="General">
+          <Row label="Reference" value={<span className="font-mono">{wf.reference}</span>} />
+          <Row label="Title" value={wf.title} />
+          <Row label="Department" value={wf.departmentName} />
+          <Row label="Requested by" value={wf.createdByName} />
+          <Row label="Priority" value={wf.priority} />
+          <Row label="Branch" value={orDash(wf.branch)} />
+          <Row label="Created" value={fmtDateTime(wf.createdAt)} />
+        </Section>
+
+        {show("NEW") && (
+          <Section title="1 · New request">
+            <Row label="Description" value={orDash(wf.description)} />
+            <Row label="Category" value={orDash(wf.category)} />
+            <Row label="Estimated amount" value={fmtMoney(wf.estimatedAmount, wf.currency)} />
+            <Row label="Needed by" value={fmtDate(wf.neededBy)} />
+          </Section>
+        )}
+
+        {show("QUOTATION") && (
+          <Section title="2 · Quotation">
+            <Row label="3 quotes required" value={fmtBool(wf.threeQuoteRequired)} />
+            {wf.quotes && wf.quotes.length > 0 ? (
+              <div className="overflow-x-auto py-1">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground">
+                      <th className="px-2 py-1">Company</th>
+                      <th className="px-2 py-1">Amount</th>
+                      <th className="px-2 py-1">Notes</th>
+                      <th className="px-2 py-1">Winning</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wf.quotes.map((q, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1">{orDash(q.companyName)}</td>
+                        <td className="px-2 py-1">{fmtMoney(q.amount, q.currency)}</td>
+                        <td className="px-2 py-1">{orDash(q.notes)}</td>
+                        <td className="px-2 py-1">{q.winning ? "★" : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Row label="Quotes" value="—" />
+            )}
+          </Section>
+        )}
+
+        {show("VALIDATING_QUOTE_FINANCIAL") && (
+          <Section title="3 · Manager approval">
+            <Row label="Approved" value={fmtBool(wf.managerApproved)} />
+            <Row label="Comment" value={orDash(wf.managerComment)} />
+          </Section>
+        )}
+
+        {show("VALIDATING_BY_FINANCIAL") && (
+          <Section title="4 · Financial approval">
+            <Row label="Approved" value={fmtBool(wf.financialApproved)} />
+            <Row label="Comment" value={orDash(wf.financialComment)} />
+          </Section>
+        )}
+
+        {show("GT_INVEST") &&
+        (wf.branch === "GT_INVEST" || wf.gtInvestDateId || wf.gtInvestResultId) ? (
+          <Section title="GT Invest">
+            <Row label="Session date" value={fmtDate(gtDate)} />
+            <Row label="Result" value={orDash(gtResult)} />
+            <Row label="Comment" value={orDash(wf.gtInvestComment)} />
+          </Section>
+        ) : null}
+
+        {show("ORDERING") && (
+          <Section title="5 · Ordering">
+            <Row label="Order number" value={orDash(wf.orderNumber)} />
+            <Row label="Order date" value={fmtDate(wf.orderDate)} />
+          </Section>
+        )}
+
+        {show("DELIVERY") && (
+          <Section title="6 · Delivery">
+            <Row label="Delivered on" value={fmtDate(wf.deliveredOn)} />
+            <Row label="Notes" value={orDash(wf.deliveryNotes)} />
+          </Section>
+        )}
+
+        {show("INVOICE") && (
+          <Section title="7 · Invoice">
+            <Row label="Invoice number" value={orDash(wf.invoiceNumber)} />
+            <Row label="Invoice amount" value={fmtMoney(wf.invoiceAmount, wf.currency)} />
+            <Row label="Invoice date" value={fmtDate(wf.invoiceDate)} />
+          </Section>
+        )}
+
+        {show("VALIDATING_INVOICE") && (
+          <Section title="8 · Validate invoice">
+            <Row label="Validated" value={fmtBool(wf.invoiceValidated)} />
+            <Row label="Signed by" value={orDash(wf.invoiceSignedBy)} />
+            <Row label="Signed at" value={fmtDateTime(wf.invoiceSignedAt)} />
+          </Section>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function OrderingPanel({
   wf,
   onChange,
@@ -1643,6 +1851,8 @@ function OrderingPanel({
   const [orderDate, setOrderDate] = useState(wf.orderDate ?? "");
   const save = useSaveWorkflow(wf, onChange);
   return (
+    <div className="space-y-4">
+      <PriorStepsRecap wf={wf} throughStep="ORDERING" />
     <Card>
       <CardHeader>
         <CardTitle>Order details</CardTitle>
@@ -1687,6 +1897,7 @@ function OrderingPanel({
         />
       </CardContent>
     </Card>
+    </div>
   );
 }
 
@@ -1701,9 +1912,15 @@ function DeliveryPanel({
   const [deliveryNotes, setDeliveryNotes] = useState(wf.deliveryNotes ?? "");
   const save = useSaveWorkflow(wf, onChange);
   return (
+    <div className="space-y-4">
+      <PriorStepsRecap wf={wf} throughStep="DELIVERY" />
     <Card>
       <CardHeader>
         <CardTitle>Delivery</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Record the delivery date below. Attaching a delivery note is
+          optional — many suppliers don't issue one.
+        </p>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
@@ -1743,10 +1960,11 @@ function DeliveryPanel({
           wf={wf}
           kind="DELIVERY"
           step="DELIVERY"
-          label="Delivery note"
+          label="Delivery note (optional)"
         />
       </CardContent>
     </Card>
+    </div>
   );
 }
 
@@ -1827,12 +2045,20 @@ function InvoicePanel({
 
 function InvoiceValidationPanel({
   wf,
+  user,
   onChange,
 }: {
   wf: Workflow;
+  user: SessionUser;
   onChange: () => void;
 }) {
-  const [signedBy, setSignedBy] = useState(wf.invoiceSignedBy ?? "");
+  // Default the signer to the connected user's full name so finance
+  // doesn't have to retype it on every workflow. They can still
+  // override it if a different person physically signs the paper
+  // copy.
+  const [signedBy, setSignedBy] = useState(
+    wf.invoiceSignedBy ?? user.displayName ?? "",
+  );
   const save = useSaveWorkflow(wf, onChange);
   // Build a merged PDF of every attached document (quote → order →
   // delivery → invoice). The endpoint returns application/pdf which
@@ -1851,6 +2077,8 @@ function InvoiceValidationPanel({
   });
   const busy = save.isPending || reject.isPending;
   return (
+    <div className="space-y-4">
+      <PriorStepsRecap wf={wf} throughStep="VALIDATING_INVOICE" />
     <Card>
       <CardHeader>
         <CardTitle>Validate Invoice</CardTitle>
@@ -1920,6 +2148,7 @@ function InvoiceValidationPanel({
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
@@ -1946,19 +2175,21 @@ function PaymentPanel({
     },
   });
   return (
+    <div className="space-y-4">
+      <PriorStepsRecap wf={wf} throughStep="PAYMENT" />
     <Card>
       <CardHeader>
         <CardTitle>Payment</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Reference: <span className="font-mono">{wf.reference}</span> ·
-          Amount:{" "}
+          Review the recap above, then click <em>Paid</em> once the
+          transfer of{" "}
           <strong>
             {wf.invoiceAmount} {wf.currency}
-          </strong>
-          . Click <em>Paid</em> once the transfer is complete to close
-          the workflow.
+          </strong>{" "}
+          for <span className="font-mono">{wf.reference}</span> is
+          complete to close the workflow.
         </p>
         <div>
           <Button
@@ -1980,6 +2211,7 @@ function PaymentPanel({
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
