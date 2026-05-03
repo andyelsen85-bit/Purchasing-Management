@@ -296,6 +296,17 @@ export interface WorkflowSummary {
   updatedAt: string;
 }
 
+export interface DeletedWorkflow {
+  id: number;
+  reference: string;
+  title: string;
+  departmentId: number;
+  departmentName: string;
+  currentStep: WorkflowStep;
+  deletedAt: string;
+  deletedByName: string;
+}
+
 export interface WorkflowsByStepGroup {
   step: WorkflowStep;
   workflows: WorkflowSummary[];

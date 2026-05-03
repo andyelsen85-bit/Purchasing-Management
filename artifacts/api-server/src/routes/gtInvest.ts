@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import {
   db,
   workflowsTable,
@@ -26,7 +26,12 @@ router.get("/gt-invest/workflows", requireAuth, async (req, res): Promise<void> 
     })
     .from(workflowsTable)
     .leftJoin(departmentsTable, eq(departmentsTable.id, workflowsTable.departmentId))
-    .where(eq(workflowsTable.currentStep, "GT_INVEST"))
+    .where(
+      and(
+        eq(workflowsTable.currentStep, "GT_INVEST"),
+        isNull(workflowsTable.deletedAt),
+      ),
+    )
     .orderBy(desc(workflowsTable.lastStepChangeAt));
   const visible = rows.filter((r) => canSeeWorkflow(user, r.w.departmentId));
   const STALL_DAYS = 7;
@@ -71,7 +76,12 @@ router.get("/gt-invest/export", requireAuth, async (req, res): Promise<void> => 
   const wfs = await db
     .select()
     .from(workflowsTable)
-    .where(eq(workflowsTable.currentStep, "GT_INVEST"));
+    .where(
+      and(
+        eq(workflowsTable.currentStep, "GT_INVEST"),
+        isNull(workflowsTable.deletedAt),
+      ),
+    );
   const merged = await PDFDocument.create();
   const helveticaFont = await merged.embedFont("Helvetica");
 

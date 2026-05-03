@@ -27,6 +27,7 @@ export * from "./createWorkflowInput";
 export * from "./csrRequest";
 export * from "./csrResponse";
 export * from "./dashboardSummary";
+export * from "./deletedWorkflow";
 export * from "./department";
 export * from "./document";
 export * from "./documentKind";

@@ -49,6 +49,9 @@ import {
   useDeleteGtInvestResult,
   useTestLdap,
   useGetSession,
+  useListDeletedWorkflows,
+  useRestoreWorkflow,
+  getListDeletedWorkflowsQueryKey,
 } from "@/lib/api";
 import { HttpsSettingsPanel } from "@/pages/settings/HttpsSettingsPanel";
 
@@ -125,6 +128,7 @@ const TAB_VALUES = [
   "gt",
   "https",
   "backup",
+  "trash",
 ] as const;
 type SettingsTab = (typeof TAB_VALUES)[number];
 
@@ -217,6 +221,9 @@ export function SettingsPage() {
           <TabsTrigger value="backup" data-testid="tab-backup">
             Backup &amp; Restore
           </TabsTrigger>
+          <TabsTrigger value="trash" data-testid="tab-trash">
+            Trash
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="app">
           <AppSettingsPanel />
@@ -250,8 +257,99 @@ export function SettingsPage() {
         <TabsContent value="backup">
           <BackupRestorePanel />
         </TabsContent>
+        <TabsContent value="trash">
+          <DeletedWorkflowsPanel />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * Settings → Trash. Lists every soft-deleted workflow and lets the
+ * admin restore it (clearing `deletedAt` so it re-appears in the
+ * normal lists). Hard purge is intentionally not exposed here — the
+ * admin can purge from the database directly if they really want
+ * to free disk space; the spec is to preserve audit trails.
+ */
+function DeletedWorkflowsPanel() {
+  const qc = useQueryClient();
+  const { data: deleted, isLoading, error } = useListDeletedWorkflows();
+  const restore = useRestoreWorkflow({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({
+          queryKey: getListDeletedWorkflowsQueryKey(),
+        });
+        // Also refresh active workflow lists so the restored row
+        // shows up immediately on /workflows etc.
+        qc.invalidateQueries();
+      },
+    },
+  });
+  const rows = deleted ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Deleted workflows</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Workflows deleted by an administrator are flagged as deleted
+          rather than removed from the database, so the full history
+          (notes, documents, audit trail) is preserved. Restore one to
+          make it visible again on the workflows list.
+        </p>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{extractErrorMessage(error)}</AlertDescription>
+          </Alert>
+        )}
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="rounded-md border bg-muted/30 px-3 py-6 text-center text-sm text-muted-foreground">
+            The trash is empty.
+          </p>
+        ) : (
+          <div className="divide-y rounded-md border">
+            {rows.map((w) => (
+              <div
+                key={w.id}
+                className="flex items-center justify-between gap-3 px-3 py-2"
+                data-testid={`deleted-workflow-${w.id}`}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {w.reference} — {w.title}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {w.departmentName} · step {w.currentStep} · deleted
+                    {" "}
+                    {new Date(w.deletedAt).toLocaleString()}
+                    {w.deletedByName ? ` by ${w.deletedByName}` : ""}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => restore.mutate({ id: w.id })}
+                  disabled={restore.isPending}
+                  data-testid={`button-restore-${w.id}`}
+                >
+                  {restore.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Restore
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -36,6 +36,7 @@ import type {
   CsrRequest,
   CsrResponse,
   DashboardSummary,
+  DeletedWorkflow,
   Department,
   Document,
   ExportGtInvestPackageParams,
@@ -2100,6 +2101,14 @@ export const useUpdateWorkflow = <
   return useMutation(getUpdateWorkflowMutationOptions(options));
 };
 
+/**
+ * Marks the workflow as deleted by setting `deletedAt` instead of
+physically removing the row. Soft-deleted workflows are hidden
+from every list, dashboard, and export, but can be restored
+from Settings → Trash by an admin.
+
+ * @summary Soft-delete a workflow (admin only)
+ */
 export const getDeleteWorkflowUrl = (id: number) => {
   return `/api/workflows/${id}`;
 };
@@ -2158,6 +2167,9 @@ export type DeleteWorkflowMutationResult = NonNullable<
 
 export type DeleteWorkflowMutationError = ErrorType<unknown>;
 
+/**
+ * @summary Soft-delete a workflow (admin only)
+ */
 export const useDeleteWorkflow = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -2176,6 +2188,90 @@ export const useDeleteWorkflow = <
   TContext
 > => {
   return useMutation(getDeleteWorkflowMutationOptions(options));
+};
+
+/**
+ * @summary Restore a soft-deleted workflow (admin only)
+ */
+export const getRestoreWorkflowUrl = (id: number) => {
+  return `/api/workflows/${id}/restore`;
+};
+
+export const restoreWorkflow = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Workflow> => {
+  return customFetch<Workflow>(getRestoreWorkflowUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRestoreWorkflowMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreWorkflow>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreWorkflow>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["restoreWorkflow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreWorkflow>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return restoreWorkflow(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreWorkflow>>
+>;
+
+export type RestoreWorkflowMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Restore a soft-deleted workflow (admin only)
+ */
+export const useRestoreWorkflow = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreWorkflow>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreWorkflow>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRestoreWorkflowMutationOptions(options));
 };
 
 export const getAdvanceWorkflowUrl = (id: number) => {
@@ -4140,6 +4236,81 @@ export const useDeleteGtInvestResult = <
 > => {
   return useMutation(getDeleteGtInvestResultMutationOptions(options));
 };
+
+/**
+ * @summary List soft-deleted workflows (admin only)
+ */
+export const getListDeletedWorkflowsUrl = () => {
+  return `/api/admin/deleted-workflows`;
+};
+
+export const listDeletedWorkflows = async (
+  options?: RequestInit,
+): Promise<DeletedWorkflow[]> => {
+  return customFetch<DeletedWorkflow[]>(getListDeletedWorkflowsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDeletedWorkflowsQueryKey = () => {
+  return [`/api/admin/deleted-workflows`] as const;
+};
+
+export const getListDeletedWorkflowsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDeletedWorkflows>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDeletedWorkflows>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDeletedWorkflowsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDeletedWorkflows>>
+  > = ({ signal }) => listDeletedWorkflows({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDeletedWorkflows>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDeletedWorkflowsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDeletedWorkflows>>
+>;
+export type ListDeletedWorkflowsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List soft-deleted workflows (admin only)
+ */
+
+export function useListDeletedWorkflows<
+  TData = Awaited<ReturnType<typeof listDeletedWorkflows>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDeletedWorkflows>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDeletedWorkflowsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Runs a real LDAP search (and optional user bind) against the

@@ -709,8 +709,112 @@ export const UpdateWorkflowResponse = zod.object({
   updatedAt: zod.coerce.date(),
 });
 
+/**
+ * Marks the workflow as deleted by setting `deletedAt` instead of
+physically removing the row. Soft-deleted workflows are hidden
+from every list, dashboard, and export, but can be restored
+from Settings → Trash by an admin.
+
+ * @summary Soft-delete a workflow (admin only)
+ */
 export const DeleteWorkflowParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary Restore a soft-deleted workflow (admin only)
+ */
+export const RestoreWorkflowParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RestoreWorkflowResponse = zod.object({
+  id: zod.number(),
+  reference: zod.string(),
+  title: zod.string(),
+  departmentId: zod.number(),
+  departmentName: zod.string(),
+  createdById: zod.number(),
+  createdByName: zod.string(),
+  priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
+  currentStep: zod.enum([
+    "NEW",
+    "QUOTATION",
+    "VALIDATING_QUOTE_FINANCIAL",
+    "VALIDATING_BY_FINANCIAL",
+    "GT_INVEST",
+    "ORDERING",
+    "DELIVERY",
+    "INVOICE",
+    "VALIDATING_INVOICE",
+    "PAYMENT",
+    "DONE",
+    "REJECTED",
+  ]),
+  branch: zod
+    .union([
+      zod.literal("K_ORDER"),
+      zod.literal("GT_INVEST"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  ageDays: zod.number(),
+  isStalled: zod.boolean(),
+  description: zod.string().nullish(),
+  category: zod.string().nullish(),
+  estimatedAmount: zod.number().nullish(),
+  currency: zod.string().nullish(),
+  neededBy: zod.coerce.date().nullish(),
+  quotes: zod.array(
+    zod.object({
+      companyId: zod.number().nullish(),
+      companyName: zod.string().nullish(),
+      contactId: zod.number().nullish(),
+      amount: zod.number().nullish(),
+      currency: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      winning: zod.boolean(),
+      documentIds: zod.array(zod.number()).optional(),
+    }),
+  ),
+  threeQuoteRequired: zod.boolean(),
+  managerApproved: zod.boolean().nullish(),
+  managerComment: zod.string().nullish(),
+  financialApproved: zod.boolean().nullish(),
+  financialComment: zod.string().nullish(),
+  gtInvestDateId: zod.number().nullish(),
+  gtInvestResultId: zod.number().nullish(),
+  gtInvestComment: zod.string().nullish(),
+  orderNumber: zod.string().nullish(),
+  orderDate: zod.coerce.date().nullish(),
+  deliveredOn: zod.coerce.date().nullish(),
+  deliveryNotes: zod.string().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  invoiceAmount: zod.number().nullish(),
+  invoiceDate: zod.coerce.date().nullish(),
+  invoiceValidated: zod.boolean().nullish(),
+  invoiceSignedBy: zod.string().nullish(),
+  invoiceSignedAt: zod.coerce.date().nullish(),
+  paymentDate: zod.coerce.date().nullish(),
+  paymentReference: zod.string().nullish(),
+  previousStep: zod
+    .enum([
+      "NEW",
+      "QUOTATION",
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "GT_INVEST",
+      "ORDERING",
+      "DELIVERY",
+      "INVOICE",
+      "VALIDATING_INVOICE",
+      "PAYMENT",
+      "DONE",
+      "REJECTED",
+    ])
+    .optional(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
 });
 
 export const AdvanceWorkflowParams = zod.object({
@@ -1513,6 +1617,36 @@ export const CreateGtInvestResultBody = zod.object({
 export const DeleteGtInvestResultParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * @summary List soft-deleted workflows (admin only)
+ */
+export const ListDeletedWorkflowsResponseItem = zod.object({
+  id: zod.number(),
+  reference: zod.string(),
+  title: zod.string(),
+  departmentId: zod.number(),
+  departmentName: zod.string(),
+  currentStep: zod.enum([
+    "NEW",
+    "QUOTATION",
+    "VALIDATING_QUOTE_FINANCIAL",
+    "VALIDATING_BY_FINANCIAL",
+    "GT_INVEST",
+    "ORDERING",
+    "DELIVERY",
+    "INVOICE",
+    "VALIDATING_INVOICE",
+    "PAYMENT",
+    "DONE",
+    "REJECTED",
+  ]),
+  deletedAt: zod.coerce.date(),
+  deletedByName: zod.string(),
+});
+export const ListDeletedWorkflowsResponse = zod.array(
+  ListDeletedWorkflowsResponseItem,
+);
 
 /**
  * Runs a real LDAP search (and optional user bind) against the

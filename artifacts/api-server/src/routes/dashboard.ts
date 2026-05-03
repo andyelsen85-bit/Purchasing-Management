@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { db, workflowsTable, historyTable, usersTable } from "@workspace/db";
 import { requireAuth, getUser } from "../middlewares/auth";
 import { canSeeWorkflow } from "../lib/permissions";
@@ -13,7 +13,10 @@ const STEPS = [
 
 router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> => {
   const user = getUser(req);
-  const all = await db.select().from(workflowsTable);
+  const all = await db
+    .select()
+    .from(workflowsTable)
+    .where(isNull(workflowsTable.deletedAt));
   const visible = all.filter((w) => canSeeWorkflow(user, w.departmentId));
   const counts = new Map<string, number>(STEPS.map((s) => [s, 0]));
   let stalled = 0;

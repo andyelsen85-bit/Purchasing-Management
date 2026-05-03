@@ -151,11 +151,21 @@ export const workflowsTable = pgTable(
     lastStepChangeAt: timestamp("last_step_change_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Soft-delete marker. Admins "delete" workflows by setting this
+    // timestamp; every list / detail / dashboard / export query filters
+    // `deletedAt IS NULL` so deleted workflows simply disappear from
+    // operational views. The Settings → Backup & Trash tab lets admins
+    // restore them by clearing the column. The row (and its docs /
+    // notes / history) is never physically removed unless the operator
+    // explicitly purges from the database.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedById: integer("deleted_by_id"),
   },
   (t) => [
     uniqueIndex("workflows_reference_uniq").on(t.reference),
     index("workflows_dept_idx").on(t.departmentId),
     index("workflows_step_idx").on(t.currentStep),
+    index("workflows_deleted_idx").on(t.deletedAt),
   ],
 );
 export type DbWorkflow = typeof workflowsTable.$inferSelect;

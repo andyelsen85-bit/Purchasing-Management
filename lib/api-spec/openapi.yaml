@@ -385,8 +385,27 @@ paths:
     delete:
       operationId: deleteWorkflow
       tags: [workflows]
+      summary: Soft-delete a workflow (admin only)
+      description: |
+        Marks the workflow as deleted by setting `deletedAt` instead of
+        physically removing the row. Soft-deleted workflows are hidden
+        from every list, dashboard, and export, but can be restored
+        from Settings → Trash by an admin.
       responses:
-        "204": { description: Deleted }
+        "204": { description: Soft-deleted }
+  /workflows/{id}/restore:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: restoreWorkflow
+      tags: [workflows]
+      summary: Restore a soft-deleted workflow (admin only)
+      responses:
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
   /workflows/{id}/advance:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -782,6 +801,21 @@ paths:
       responses:
         "204": { description: Deleted }
 
+  # ---------------- ADMIN / TRASH ----------------
+  /admin/deleted-workflows:
+    get:
+      operationId: listDeletedWorkflows
+      tags: [admin]
+      summary: List soft-deleted workflows (admin only)
+      responses:
+        "200":
+          description: Trash listing
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DeletedWorkflow" }
+
   # ---------------- ADMIN / LDAP TEST ----------------
   /admin/ldap-test:
     post:
@@ -1152,6 +1186,27 @@ components:
         - createdByName
         - createdAt
         - updatedAt
+
+    DeletedWorkflow:
+      type: object
+      properties:
+        id: { type: integer }
+        reference: { type: string }
+        title: { type: string }
+        departmentId: { type: integer }
+        departmentName: { type: string }
+        currentStep: { $ref: "#/components/schemas/WorkflowStep" }
+        deletedAt: { type: string, format: date-time }
+        deletedByName: { type: string }
+      required:
+        - id
+        - reference
+        - title
+        - departmentId
+        - departmentName
+        - currentStep
+        - deletedAt
+        - deletedByName
 
     WorkflowsByStepGroup:
       type: object

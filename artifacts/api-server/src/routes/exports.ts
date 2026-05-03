@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, isNull } from "drizzle-orm";
 import {
   db,
   workflowsTable,
@@ -29,7 +29,7 @@ router.get(
   async (req, res): Promise<void> => {
     const user = getUser(req);
     const format = (req.query.format as string | undefined) === "csv" ? "csv" : "xlsx";
-    const conditions = [];
+    const conditions = [isNull(workflowsTable.deletedAt)];
     const departmentId = req.query.departmentId
       ? Number(req.query.departmentId)
       : null;
@@ -54,7 +54,7 @@ router.get(
         eq(departmentsTable.id, workflowsTable.departmentId),
       )
       .leftJoin(usersTable, eq(usersTable.id, workflowsTable.createdById))
-      .where(conditions.length ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .orderBy(desc(workflowsTable.createdAt));
 
     const visible = rows.filter((r) => canSeeWorkflow(user, r.w.departmentId));

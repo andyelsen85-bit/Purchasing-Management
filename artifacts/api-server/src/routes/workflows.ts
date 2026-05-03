@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, isNull, isNotNull } from "drizzle-orm";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   db,
@@ -56,7 +56,7 @@ async function generateReference(): Promise<string> {
   return `PO-${year}-${String((count ?? 0) + 1).padStart(5, "0")}`;
 }
 
-async function loadWorkflowFull(id: number) {
+async function loadWorkflowFull(id: number, includeDeleted = false) {
   const [w] = await db
     .select({
       w: workflowsTable,
@@ -66,7 +66,11 @@ async function loadWorkflowFull(id: number) {
     .from(workflowsTable)
     .leftJoin(departmentsTable, eq(departmentsTable.id, workflowsTable.departmentId))
     .leftJoin(usersTable, eq(usersTable.id, workflowsTable.createdById))
-    .where(eq(workflowsTable.id, id));
+    .where(
+      includeDeleted
+        ? eq(workflowsTable.id, id)
+        : and(eq(workflowsTable.id, id), isNull(workflowsTable.deletedAt)),
+    );
   if (!w) return null;
   const wf = w.w;
   const ageDays = computeAge(wf.lastStepChangeAt);
@@ -91,7 +95,7 @@ router.get("/workflows", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const conditions = [];
+  const conditions = [isNull(workflowsTable.deletedAt)];
   if (params.data.departmentId)
     conditions.push(eq(workflowsTable.departmentId, params.data.departmentId));
   if (params.data.step)
@@ -106,7 +110,7 @@ router.get("/workflows", requireAuth, async (req, res): Promise<void> => {
     .from(workflowsTable)
     .leftJoin(departmentsTable, eq(departmentsTable.id, workflowsTable.departmentId))
     .leftJoin(usersTable, eq(usersTable.id, workflowsTable.createdById))
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(desc(workflowsTable.updatedAt));
 
   const filtered = rows.filter((r) => canSeeWorkflow(user, r.w.departmentId));
@@ -143,6 +147,7 @@ router.get("/workflows/by-step", requireAuth, async (req, res): Promise<void> =>
     })
     .from(workflowsTable)
     .leftJoin(departmentsTable, eq(departmentsTable.id, workflowsTable.departmentId))
+    .where(isNull(workflowsTable.deletedAt))
     .orderBy(desc(workflowsTable.updatedAt));
   const filtered = rows.filter((r) => canSeeWorkflow(user, r.w.departmentId));
   const grouped = new Map<string, Array<Record<string, unknown>>>();
@@ -805,6 +810,14 @@ router.get(
   },
 );
 
+/**
+ * Admin-only soft delete. We *flag* the workflow as deleted
+ * (`deletedAt` / `deletedById`) instead of removing the row, so the
+ * full audit trail (history, notes, documents) is preserved and an
+ * admin can restore it from Settings → Trash. Every list/detail
+ * query filters `deletedAt IS NULL`, so a soft-deleted workflow
+ * disappears from operational views as if it had been deleted.
+ */
 router.delete("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   const params = DeleteWorkflowParams.safeParse(req.params);
   if (!params.success) {
@@ -816,12 +829,106 @@ router.delete("/workflows/:id", requireAuth, async (req, res): Promise<void> => 
     res.status(403).json({ error: "Only admins can delete workflows" });
     return;
   }
-  await db.delete(notesTable).where(eq(notesTable.workflowId, params.data.id));
-  await db.delete(historyTable).where(eq(historyTable.workflowId, params.data.id));
-  await db.delete(documentsTable).where(eq(documentsTable.workflowId, params.data.id));
-  await db.delete(workflowsTable).where(eq(workflowsTable.id, params.data.id));
+  const [existing] = await db
+    .select({ id: workflowsTable.id, deletedAt: workflowsTable.deletedAt })
+    .from(workflowsTable)
+    .where(eq(workflowsTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (existing.deletedAt) {
+    // Idempotent — already in the trash.
+    res.sendStatus(204);
+    return;
+  }
+  await db
+    .update(workflowsTable)
+    .set({ deletedAt: new Date(), deletedById: user.id })
+    .where(eq(workflowsTable.id, params.data.id));
   await audit(user.id, "WORKFLOW_DELETE", "workflow", params.data.id);
   res.sendStatus(204);
 });
+
+/**
+ * GET /api/admin/deleted-workflows — admin-only listing of every
+ * soft-deleted workflow, used by the Settings → Trash panel to
+ * offer restore.
+ */
+router.get(
+  "/admin/deleted-workflows",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const user = getUser(req);
+    if (!user.roles.includes("ADMIN")) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const rows = await db
+      .select({
+        w: workflowsTable,
+        deptName: departmentsTable.name,
+        deletedByName: usersTable.displayName,
+      })
+      .from(workflowsTable)
+      .leftJoin(
+        departmentsTable,
+        eq(departmentsTable.id, workflowsTable.departmentId),
+      )
+      .leftJoin(usersTable, eq(usersTable.id, workflowsTable.deletedById))
+      .where(isNotNull(workflowsTable.deletedAt))
+      .orderBy(desc(workflowsTable.deletedAt));
+    res.json(
+      rows.map((r) => ({
+        id: r.w.id,
+        reference: r.w.reference,
+        title: r.w.title,
+        departmentId: r.w.departmentId,
+        departmentName: r.deptName ?? "",
+        currentStep: r.w.currentStep,
+        deletedAt: r.w.deletedAt,
+        deletedByName: r.deletedByName ?? "",
+      })),
+    );
+  },
+);
+
+/**
+ * POST /api/workflows/:id/restore — admin-only. Clears the
+ * soft-delete flags and bumps `updatedAt` so the workflow re-appears
+ * at the top of the active list.
+ */
+router.post(
+  "/workflows/:id/restore",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = DeleteWorkflowParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const user = getUser(req);
+    if (!user.roles.includes("ADMIN")) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const wf = await loadWorkflowFull(params.data.id, true);
+    if (!wf) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!wf.deletedAt) {
+      // Nothing to do — already active.
+      res.json(wf);
+      return;
+    }
+    await db
+      .update(workflowsTable)
+      .set({ deletedAt: null, deletedById: null, updatedAt: new Date() })
+      .where(eq(workflowsTable.id, params.data.id));
+    await audit(user.id, "WORKFLOW_RESTORE", "workflow", params.data.id);
+    res.json(await loadWorkflowFull(params.data.id));
+  },
+);
 
 export default router;
