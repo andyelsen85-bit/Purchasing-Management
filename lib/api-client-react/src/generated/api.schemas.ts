@@ -294,6 +294,8 @@ export interface WorkflowSummary {
   createdByName: string;
   createdAt: string;
   updatedAt: string;
+  /** @nullable */
+  gtInvestDateId?: number | null;
 }
 
 export interface DeletedWorkflow {

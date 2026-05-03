@@ -61,6 +61,7 @@ router.get("/gt-invest/workflows", requireAuth, async (req, res): Promise<void> 
         createdByName: userById.get(r.w.createdById) ?? "",
         createdAt: r.w.createdAt,
         updatedAt: r.w.updatedAt ?? r.w.lastStepChangeAt,
+        gtInvestDateId: r.w.gtInvestDateId ?? null,
       };
     }),
   );

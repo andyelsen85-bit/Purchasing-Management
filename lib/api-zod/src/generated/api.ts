@@ -409,6 +409,7 @@ export const ListWorkflowsResponseItem = zod.object({
   createdByName: zod.string(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  gtInvestDateId: zod.number().nullish(),
 });
 export const ListWorkflowsResponse = zod.array(ListWorkflowsResponseItem);
 
@@ -474,6 +475,7 @@ export const ListWorkflowsByStepResponseItem = zod.object({
       createdByName: zod.string(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
+      gtInvestDateId: zod.number().nullish(),
     }),
   ),
 });
@@ -1344,6 +1346,7 @@ export const ListGtInvestWorkflowsResponseItem = zod.object({
   createdByName: zod.string(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  gtInvestDateId: zod.number().nullish(),
 });
 export const ListGtInvestWorkflowsResponse = zod.array(
   ListGtInvestWorkflowsResponseItem,

@@ -28,4 +28,6 @@ export interface WorkflowSummary {
   createdByName: string;
   createdAt: Date;
   updatedAt: Date;
+  /** @nullable */
+  gtInvestDateId?: number | null;
 }

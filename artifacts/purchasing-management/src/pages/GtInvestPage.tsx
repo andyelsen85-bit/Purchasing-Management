@@ -23,6 +23,27 @@ import {
   useDeleteGtInvestDate,
 } from "@/lib/api";
 
+function formatMeetingDate(date: string, label: string | null | undefined) {
+  // The API stores meeting dates as ISO date strings (YYYY-MM-DD).
+  // Render them in a friendly long form, but keep the raw date as a
+  // fallback if parsing fails for any reason.
+  let pretty = date;
+  try {
+    const d = new Date(`${date}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      pretty = d.toLocaleDateString(undefined, {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    }
+  } catch {
+    /* fall back to raw date string */
+  }
+  return label ? `${pretty} — ${label}` : pretty;
+}
+
 export function GtInvestPage() {
   return (
     <div className="space-y-6 p-6">
@@ -59,6 +80,42 @@ export function GtInvestPage() {
 
 function QueuePanel() {
   const { data: rows } = useListGtInvestWorkflows();
+  const { data: dates } = useListGtInvestDates();
+
+  // Group workflows by their assigned GT Invest meeting date. Anything
+  // not yet assigned to a date lands in a dedicated "Unassigned" bucket
+  // so reviewers can quickly spot what still needs scheduling.
+  const dateById = new Map((dates ?? []).map((d) => [d.id, d]));
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      sortKey: string;
+      title: string;
+      workflows: NonNullable<typeof rows>;
+    }
+  >();
+  for (const w of rows ?? []) {
+    const dateId = w.gtInvestDateId ?? null;
+    const meeting = dateId != null ? dateById.get(dateId) : undefined;
+    const key = meeting ? `d-${meeting.id}` : "unassigned";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        // Unassigned bucket sorts last; otherwise sort chronologically.
+        sortKey: meeting ? `0-${meeting.date}` : "9",
+        title: meeting
+          ? formatMeetingDate(meeting.date, meeting.label)
+          : "Unassigned",
+        workflows: [],
+      });
+    }
+    groups.get(key)!.workflows.push(w);
+  }
+  const orderedGroups = Array.from(groups.values()).sort((a, b) =>
+    a.sortKey.localeCompare(b.sortKey),
+  );
+
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
@@ -80,32 +137,40 @@ function QueuePanel() {
             No workflows currently in GT Invest.
           </p>
         ) : (
-          <div className="divide-y">
-            {(rows ?? []).map((w) => (
-              <Link key={w.id} href={`/workflows/${w.id}`}>
-                <a
-                  className="flex items-center justify-between gap-3 py-3 hover-elevate rounded-md px-2"
-                  data-testid={`gt-row-${w.id}`}
-                >
-                  <div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {w.reference}
-                    </div>
-                    <div className="text-sm font-medium">{w.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {w.departmentName}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant="secondary">
-                      {w.estimatedAmount ?? "—"} {w.currency ?? ""}
-                    </Badge>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {w.ageDays}d old
-                    </div>
-                  </div>
-                </a>
-              </Link>
+          <div className="space-y-6">
+            {orderedGroups.map((g) => (
+              <section key={g.key} data-testid={`gt-group-${g.key}`}>
+                <div className="mb-2 flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold">{g.title}</h3>
+                  <Badge variant="outline" className="text-[10px]">
+                    {g.workflows.length}
+                  </Badge>
+                </div>
+                <div className="divide-y rounded-md border">
+                  {g.workflows.map((w) => (
+                    <Link key={w.id} href={`/workflows/${w.id}`}>
+                      <a
+                        className="flex items-center justify-between gap-3 py-3 hover-elevate rounded-md px-3"
+                        data-testid={`gt-row-${w.id}`}
+                      >
+                        <div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            {w.reference}
+                          </div>
+                          <div className="text-sm font-medium">{w.title}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {w.departmentName}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          {w.ageDays}d old
+                        </div>
+                      </a>
+                    </Link>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
