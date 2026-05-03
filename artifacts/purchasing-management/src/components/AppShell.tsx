@@ -7,7 +7,6 @@ import {
   Banknote,
   Building2,
   Settings,
-  ScrollText,
   LogOut,
   Moon,
   Sun,
@@ -61,7 +60,6 @@ const NAV: NavItem[] = [
     roles: ["ADMIN", "GT_INVEST", "FINANCIAL_ALL"],
   },
   { to: "/companies", label: "Companies", icon: Building2 },
-  { to: "/audit-log", label: "Audit Log", icon: ScrollText, roles: ["ADMIN"] },
   { to: "/settings", label: "Settings", icon: Settings, roles: ["ADMIN"] },
 ];
 

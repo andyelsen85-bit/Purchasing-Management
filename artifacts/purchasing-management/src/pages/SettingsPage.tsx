@@ -51,9 +51,11 @@ import {
   useListDeletedWorkflows,
   useRestoreWorkflow,
   useListUsers,
+  useListAuditLog,
   getListUsersQueryKey,
   getListDeletedWorkflowsQueryKey,
 } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Users, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { HttpsSettingsPanel } from "@/pages/settings/HttpsSettingsPanel";
@@ -137,6 +139,7 @@ const TAB_VALUES = [
   "gt",
   "https",
   "backup",
+  "audit",
   "trash",
 ] as const;
 type SettingsTab = (typeof TAB_VALUES)[number];
@@ -230,6 +233,9 @@ export function SettingsPage() {
           <TabsTrigger value="backup" data-testid="tab-backup">
             Backup &amp; Restore
           </TabsTrigger>
+          <TabsTrigger value="audit" data-testid="tab-audit">
+            Audit Log
+          </TabsTrigger>
           <TabsTrigger value="trash" data-testid="tab-trash">
             Trash
           </TabsTrigger>
@@ -264,6 +270,9 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="backup">
           <BackupRestorePanel />
+        </TabsContent>
+        <TabsContent value="audit">
+          <AuditLogPanel />
         </TabsContent>
         <TabsContent value="trash">
           <DeletedWorkflowsPanel />
@@ -352,6 +361,61 @@ function DeletedWorkflowsPanel() {
                   )}
                   Restore
                 </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Settings → Audit Log. Mirrors the previous standalone Audit Log
+ * page but rendered as a tab so admins have a single Settings hub
+ * for every administrative concern (LDAP, SMTP, backup, audit, …).
+ * The legacy `/audit-log` URL still works — App.tsx redirects it to
+ * `?tab=audit` so any old bookmarks land here.
+ */
+function AuditLogPanel() {
+  const { data, isLoading } = useListAuditLog({ limit: 200 });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Recent events (last 200)</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12" />
+            ))}
+          </div>
+        ) : (data ?? []).length === 0 ? (
+          <p className="p-12 text-center text-sm text-muted-foreground">
+            No audit entries yet.
+          </p>
+        ) : (
+          <div className="divide-y">
+            {(data ?? []).map((e) => (
+              <div
+                key={e.id}
+                className="grid grid-cols-12 gap-3 px-4 py-3 text-sm"
+                data-testid={`audit-${e.id}`}
+              >
+                <div className="col-span-3 text-xs text-muted-foreground">
+                  {new Date(e.createdAt).toLocaleString()}
+                </div>
+                <div className="col-span-2 font-medium">{e.action}</div>
+                <div className="col-span-2 text-muted-foreground">
+                  {e.actorName ?? "—"}
+                </div>
+                <div className="col-span-2 text-muted-foreground">
+                  {e.target ? `${e.target}#${e.targetId ?? ""}` : "—"}
+                </div>
+                <div className="col-span-3 truncate text-muted-foreground">
+                  {e.details}
+                </div>
               </div>
             ))}
           </div>

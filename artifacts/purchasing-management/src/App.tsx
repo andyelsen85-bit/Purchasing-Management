@@ -18,7 +18,6 @@ import { WorkflowDetailPage } from "@/pages/WorkflowDetailPage";
 import { WorkflowsByStepPage } from "@/pages/WorkflowsByStepPage";
 import { GtInvestPage } from "@/pages/GtInvestPage";
 import { CompaniesPage } from "@/pages/CompaniesPage";
-import { AuditLogPage } from "@/pages/AuditLogPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import NotFound from "@/pages/not-found";
 
@@ -75,7 +74,18 @@ function App() {
                         />
                         <Route path="/gt-invest" component={GtInvestPage} />
                         <Route path="/companies" component={CompaniesPage} />
-                        <Route path="/audit-log" component={AuditLogPage} />
+                        <Route path="/audit-log">
+                          {() => {
+                            // Legacy URL — Audit Log now lives as a tab
+                            // inside the unified Settings page.
+                            window.history.replaceState(
+                              null,
+                              "",
+                              `${import.meta.env.BASE_URL}settings?tab=audit`,
+                            );
+                            return <SettingsPage />;
+                          }}
+                        </Route>
                         <Route path="/settings" component={SettingsPage} />
                         <Route path="/admin/https">
                           {() => {
