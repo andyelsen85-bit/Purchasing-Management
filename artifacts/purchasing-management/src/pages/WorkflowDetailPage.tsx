@@ -1580,6 +1580,10 @@ function InvoiceValidationPanel({
 }) {
   const [signedBy, setSignedBy] = useState(wf.invoiceSignedBy ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  // Build a merged PDF of every attached document (quote → order →
+  // delivery → invoice). The endpoint returns application/pdf which
+  // we hand off to the browser as a regular download.
+  const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
   const reject = useRejectWorkflow({
     mutation: {
       onSuccess: () => onChange(),
@@ -1598,7 +1602,9 @@ function InvoiceValidationPanel({
         <CardTitle>Validate Invoice</CardTitle>
         <p className="text-sm text-muted-foreground">
           Validate to advance to Payment, or reject to close the
-          workflow without paying.
+          workflow without paying. Use <em>Export merged PDF</em> to
+          download a single signing pack with every attachment from
+          quote through invoice.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -1612,6 +1618,12 @@ function InvoiceValidationPanel({
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" data-testid="button-export-merged-pdf">
+            <a href={exportHref} target="_blank" rel="noreferrer">
+              <Download className="mr-2 h-4 w-4" />
+              Export merged PDF
+            </a>
+          </Button>
           <Button
             onClick={() =>
               save.mutate({

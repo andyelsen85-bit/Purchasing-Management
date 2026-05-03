@@ -3168,6 +3168,101 @@ export function useExportGtInvestPackage<
 }
 
 /**
+ * Returns a single PDF concatenating a cover sheet plus every
+current attachment for the given workflow, ordered through the
+purchasing lifecycle:
+QUOTE → GT_INVEST_WINNER → ORDER → DELIVERY → INVOICE → OTHER.
+Non-PDF attachments are represented by a separator page so
+reviewers can see what's missing. Used by the Validate Invoice
+screen to produce a single signing pack.
+
+ * @summary Merged PDF of every attachment for one workflow
+ */
+export const getExportWorkflowPdfUrl = (id: number) => {
+  return `/api/workflows/${id}/export-pdf`;
+};
+
+export const exportWorkflowPdf = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getExportWorkflowPdfUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportWorkflowPdfQueryKey = (id: number) => {
+  return [`/api/workflows/${id}/export-pdf`] as const;
+};
+
+export const getExportWorkflowPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportWorkflowPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWorkflowPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportWorkflowPdfQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportWorkflowPdf>>
+  > = ({ signal }) => exportWorkflowPdf(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportWorkflowPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportWorkflowPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportWorkflowPdf>>
+>;
+export type ExportWorkflowPdfQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Merged PDF of every attachment for one workflow
+ */
+
+export function useExportWorkflowPdf<
+  TData = Awaited<ReturnType<typeof exportWorkflowPdf>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWorkflowPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportWorkflowPdfQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Export workflows as Excel or CSV
  */
 export const getExportWorkflowsUrl = (params: ExportWorkflowsParams) => {

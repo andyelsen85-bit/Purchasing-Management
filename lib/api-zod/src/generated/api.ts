@@ -1261,6 +1261,21 @@ export const ExportGtInvestPackageQueryParams = zod.object({
 });
 
 /**
+ * Returns a single PDF concatenating a cover sheet plus every
+current attachment for the given workflow, ordered through the
+purchasing lifecycle:
+QUOTE → GT_INVEST_WINNER → ORDER → DELIVERY → INVOICE → OTHER.
+Non-PDF attachments are represented by a separator page so
+reviewers can see what's missing. Used by the Validate Invoice
+screen to produce a single signing pack.
+
+ * @summary Merged PDF of every attachment for one workflow
+ */
+export const ExportWorkflowPdfParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Export workflows as Excel or CSV
  */
 export const ExportWorkflowsQueryParams = zod.object({

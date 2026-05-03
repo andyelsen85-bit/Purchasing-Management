@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, sql, desc } from "drizzle-orm";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   db,
   workflowsTable,
@@ -632,6 +633,177 @@ router.post("/workflows/:id/undo", requireAuth, async (req, res): Promise<void> 
   await audit(user.id, "WORKFLOW_UNDO", "workflow", wf.id, `${wf.currentStep}->${prev}`);
   res.json(await loadWorkflowFull(wf.id));
 });
+
+/**
+ * Merged-PDF export of a single workflow's attachments.
+ *
+ * Concatenates a cover sheet plus every *current* document attached to
+ * the workflow, ordered through the lifecycle:
+ *   QUOTE → GT_INVEST_WINNER → ORDER → DELIVERY → INVOICE → OTHER.
+ * Non-PDF attachments are represented by a separator page that records
+ * the filename and MIME type so reviewers can see what's missing.
+ *
+ * Available on any non-NEW step so the Validate Invoice screen can
+ * print a single signing pack, but also useful earlier in the flow.
+ */
+router.get(
+  "/workflows/:id/export-pdf",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetWorkflowParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const user = getUser(req);
+    const [wf] = await db
+      .select()
+      .from(workflowsTable)
+      .where(eq(workflowsTable.id, params.data.id));
+    if (!wf) {
+      res.status(404).json({ error: "Workflow not found" });
+      return;
+    }
+    if (!canSeeWorkflow(user, wf.departmentId)) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    // Load every current revision; we sort in-memory so the cover sheet
+    // and concatenation order are stable regardless of upload order.
+    const docs = (
+      await db
+        .select()
+        .from(documentsTable)
+        .where(eq(documentsTable.workflowId, wf.id))
+    ).filter((d) => d.isCurrent);
+
+    const KIND_ORDER: Record<string, number> = {
+      QUOTE: 0,
+      GT_INVEST_WINNER: 1,
+      ORDER: 2,
+      DELIVERY: 3,
+      INVOICE: 4,
+      OTHER: 5,
+    };
+    docs.sort((a, b) => {
+      const ka = KIND_ORDER[a.kind] ?? 99;
+      const kb = KIND_ORDER[b.kind] ?? 99;
+      if (ka !== kb) return ka - kb;
+      return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
+    });
+
+    const merged = await PDFDocument.create();
+    const font = await merged.embedFont(StandardFonts.Helvetica);
+    const fontBold = await merged.embedFont(StandardFonts.HelveticaBold);
+
+    // ---------------- cover sheet ----------------
+    const cover = merged.addPage([595.28, 841.89]); // A4 portrait
+    cover.drawText(`${wf.reference} — workflow pack`, {
+      x: 50,
+      y: 790,
+      size: 20,
+      font: fontBold,
+    });
+    cover.drawText(wf.title.slice(0, 90), {
+      x: 50,
+      y: 762,
+      size: 12,
+      font,
+    });
+    const meta: [string, string][] = [
+      ["Step", String(wf.currentStep)],
+      ["Priority", String(wf.priority)],
+      ["Estimated", `${wf.estimatedAmount ?? "?"} ${wf.currency ?? ""}`],
+      [
+        "Created",
+        new Date(wf.createdAt).toISOString().slice(0, 10),
+      ],
+      ["Documents", String(docs.length)],
+    ];
+    let y = 730;
+    for (const [k, v] of meta) {
+      cover.drawText(`${k}:`, { x: 50, y, size: 10, font: fontBold });
+      cover.drawText(v, { x: 130, y, size: 10, font });
+      y -= 16;
+    }
+    y -= 8;
+    cover.drawText("Contents", { x: 50, y, size: 12, font: fontBold });
+    y -= 18;
+    for (const d of docs) {
+      if (y < 60) break;
+      const line = `• [${d.kind}] ${d.filename} (v${d.version}, ${d.mimeType})`;
+      cover.drawText(line.slice(0, 95), { x: 50, y, size: 9, font });
+      y -= 14;
+    }
+
+    // ---------------- attachments ----------------
+    for (const d of docs) {
+      if (d.mimeType === "application/pdf") {
+        try {
+          const buf = Buffer.from(d.contentBase64, "base64");
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          for (const p of pages) merged.addPage(p);
+        } catch (err) {
+          req.log?.warn(
+            { err: String(err), workflowId: wf.id, documentId: d.id },
+            "Failed to merge PDF",
+          );
+          const sep = merged.addPage([595.28, 841.89]);
+          sep.drawText(`${d.kind} — ${d.filename}`, {
+            x: 50,
+            y: 780,
+            size: 14,
+            font: fontBold,
+          });
+          sep.drawText("This PDF could not be opened and was skipped.", {
+            x: 50,
+            y: 750,
+            size: 10,
+            font,
+          });
+        }
+      } else {
+        const sep = merged.addPage([595.28, 841.89]);
+        sep.drawText(`${d.kind} — ${d.filename}`, {
+          x: 50,
+          y: 780,
+          size: 14,
+          font: fontBold,
+        });
+        sep.drawText(`MIME type: ${d.mimeType}`, {
+          x: 50,
+          y: 754,
+          size: 10,
+          font,
+        });
+        sep.drawText("(Non-PDF attachment cannot be inlined.)", {
+          x: 50,
+          y: 736,
+          size: 10,
+          font,
+        });
+      }
+    }
+
+    const bytes = await merged.save();
+    await audit(
+      user.id,
+      "WORKFLOW_EXPORT_PDF",
+      "workflow",
+      wf.id,
+      `${docs.length} documents`,
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${wf.reference}-pack.pdf"`,
+    );
+    res.end(Buffer.from(bytes));
+  },
+);
 
 router.delete("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   const params = DeleteWorkflowParams.safeParse(req.params);
