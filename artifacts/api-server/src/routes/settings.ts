@@ -52,6 +52,12 @@ router.patch(
     const { smtp, ldap, gtInvestRecipients, ...top } = parsed.data;
     const patch: Parameters<typeof updateSettingsRecord>[0] = {
       ...dropNulls(top),
+      // `logoDataUrl: null` is the explicit "remove the logo" signal
+      // from the Settings page. dropNulls() above would otherwise
+      // drop it and the merge in updateSettingsRecord() would
+      // preserve the existing logo, so the Remove button silently
+      // did nothing across page reloads. Forward null through.
+      ...("logoDataUrl" in top ? { logoDataUrl: top.logoDataUrl ?? null } : {}),
       ...(gtInvestRecipients ? { gtInvestRecipients } : {}),
       ...(ldap ? { ldap: dropNulls(ldap) } : {}),
       ...(smtp
