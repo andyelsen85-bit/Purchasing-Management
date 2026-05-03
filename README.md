@@ -75,6 +75,9 @@ versioning, and complete audit logging.
   recycle bin (admin-only).
 - **Internal notes per step** — discussion thread scoped to each step.
 - **Resizable, persisted UI** — sidebar widths stored per user.
+- **In-app backup & restore** — admins can download a single self-
+  contained JSON dump of every persisted table (documents included as
+  base64) and restore it transactionally from the Settings page.
 
 ---
 
@@ -316,6 +319,10 @@ The API is served under `/api` and described by `lib/api-spec/openapi.yaml`
 - `POST   /api/tls/reload` — `reloadCert`
 - `GET    /api/tls/info` — `getCertInfo`
 - `GET    /api/health` — `healthCheck`
+- `GET    /api/admin/backup` — full DB dump as JSON (admin-only).
+- `POST   /api/admin/restore` — multipart upload of a backup JSON
+  (admin-only); transactional truncate + re-seed; sequences bumped
+  past restored ids; caller's session is destroyed on success.
 
 All operations are typed in the SPA via the generated React Query hooks
 (`useListWorkflows`, `useAdvanceWorkflow`, `useSetGtInvestDecision`, …).
@@ -385,12 +392,20 @@ the audit log. Available to Admins and Financial — All Departments.
     never via popup.
 - **Pages**
   - Dashboard (`/`)
-  - Workflows by step (`/workflows-by-step`)
+  - Workflows by step (`/workflows-by-step`) — honours the active
+    department picked in the sidebar (state is shared via a
+    localStorage-backed `DepartmentFilter` context, so jumping
+    between by-step view and a workflow detail keeps the same
+    department selected).
   - Workflow detail (`/workflows/:id`)
   - GT Invest queue (`/gt-invest`)
-  - Settings (`/settings`)
-  - Companies (`/companies`)
-  - Audit log (`/audit`, admin-only)
+  - Reseller (`/companies`) — sidebar label "Reseller"; the `/companies`
+    route is preserved for backwards-compatible bookmarks and APIs.
+  - Settings (`/settings`) — tabbed page covering App, Users,
+    Departments, GT Invest catalogs, HTTPS, LDAP/Kerberos, SMTP,
+    Signing agent, **Backup / Restore**, and **Audit Log** (the audit
+    log is no longer a separate top-level page — admins reach it via
+    the Settings → Audit tab).
   - Login (`/login`)
 
 ---
@@ -445,19 +460,71 @@ imported, `HTTPS_PORT` becomes active and HTTP traffic is redirected.
 
 ## Windows Local Signing Agent
 
-A standalone Node.js binary (separate `.exe` distribution) used by the
-**Validating Invoice** step when PKI signing is enabled in Settings.
+A standalone Node.js HTTPS service used by the **Validating Invoice**
+step when PKI signing is enabled in Settings. Source lives in
+`tools/signing-agent/` (outside the pnpm workspace — Windows-only).
 
-- Runs as a Windows Service (NSSM), auto-starts at boot.
-- Listens on `wss://localhost:27443`.
-- Origin allow-list configured in `config.json` (`allowedOrigins`).
-- Reads certificates from the user's Windows Personal store; expired
-  certs are hidden by default; multiple matches show a picker.
-- Silent install: `SigningAgent-Setup.exe /S`.
+**What it does**
 
-The web UI talks to the agent over the local WebSocket; the signed
-payload is sent back to the server and stored alongside the validation
-event in the audit log.
+- Runs as a Windows Service (`PurchasingSigningAgent`, registered via
+  the bundled NSSM), auto-starts at boot.
+- Listens on `https://<host>:<port>` (default port `9443`, configurable
+  per host at install time and stored in **Settings → Signing Agent**)
+  plus a local-only `ws://127.0.0.1:27443` for the in-browser cert
+  picker.
+- Reads certificates from the operator's Windows Personal store via
+  PowerShell — private keys never leave the host. Expired certs are
+  hidden by default; multiple matches surface a picker in the web UI.
+- Endpoints (all behind a shared bearer token):
+  - `GET  /healthz`
+  - `POST /sign` — submit CSR PEM, returns issued cert via
+    `certreq.exe` (Enterprise CA flow).
+  - `POST /list-certs`
+  - `POST /sign-data` — RSA-SHA256 signature with a chosen cert.
+
+**Settings tie-in**
+
+The Settings page exposes a "Use Windows signing agent" toggle plus an
+**Agent port** number field (no URL — the agent only listens on each
+operator's PC, so the URL is implicit `localhost:<port>`). The port is
+persisted as `signingAgentPort` on the singleton settings row.
+
+**Installer**
+
+A pre-built single-file installer is produced from `tools/signing-agent/`
+on Linux (no Windows VM required) using NSIS' cross-compiler:
+
+```bash
+cd tools/signing-agent/installer
+./build.sh
+# → dist/SigningAgent-Setup-<version>.exe (Authenticode-signed,
+#   timestamped; ~18 MB; bundles a pinned Node.js + NSSM)
+```
+
+Required tools on the build host (already present in the Replit
+environment): `makensis`, `npm`, `curl`, `unzip`, `openssl`,
+`osslsigncode`. Set `SIGN_PFX` / `SIGN_PFX_PASS` for a real
+code-signing cert; without them, the build self-generates a test PFX
+and SmartScreen will reject the result on production hosts. Build
+artefacts (`dist/`, `payload/`, `build-cache/`) are git-ignored.
+
+**Operator install**
+
+```powershell
+# Interactive
+SigningAgent-Setup-0.2.0.exe
+
+# Silent — switches all optional; missing values are defaulted, and
+# a self-signed TLS PFX + random 32-byte token are generated if absent.
+SigningAgent-Setup-0.2.0.exe /S /TOKEN=<hex> /PORT=9443 `
+  /CERT="C:\certs\agent.crt" /KEY="C:\certs\agent.key"
+```
+
+The installer writes config + TLS material to
+`C:\ProgramData\PurchasingSigningAgent\` (ACL'd to Administrators +
+SYSTEM), opens the firewall, and rolls back if the service does not
+reach `Running`. See `tools/signing-agent/README.md` for the full
+operator + build reference.
 
 ---
 
@@ -468,11 +535,41 @@ event in the audit log.
 - **Document version history** — replacing a document keeps the previous
   file in `document_versions` with timestamps and uploader.
 - **Audit log** — `audit_log` table; logins, mutations, undo, deletes,
-  permission changes. Admin-only via `/audit`.
+  permission changes, plus `BACKUP` and `RESTORE` events. Admin-only
+  view, accessed from **Settings → Audit Log**.
 - **Soft-delete + restore** — deleting a workflow flags it; admins can
   restore it from `/api/workflows/deleted`.
-- **Database backup** — handled at the Postgres / volume level (the
-  `db-data` Docker volume can be snapshotted or `pg_dump`'d).
+- **In-app database backup & restore** — admin-only, served from
+  Settings:
+  - **`GET /api/admin/backup`** dumps every persisted table to one JSON
+    file (`purchasing-backup-<iso-timestamp>.json`). Document blobs are
+    already stored base64 in `documents` / `document_versions`, so the
+    dump is fully self-contained — no separate uploads tarball.
+    Tables included (17 of the 18 in the schema):
+
+        users, departments, user_departments, companies, contacts,
+        workflows, documents, document_versions, workflow_steps,
+        notes, history, audit_log, settings, gt_invest_dates,
+        gt_invest_results, notifications, tls_state
+
+    `sessions` is intentionally excluded — it's transient and would
+    expose other admins' cookies. The `settings` row is a JSONB column,
+    so any new field added to `AppSettings` (e.g. `signingAgentPort`)
+    is automatically captured without code changes.
+  - **`POST /api/admin/restore`** uploads that JSON, validates the
+    backup version + that every known table is present (refuses partial
+    dumps so nothing is silently truncated), then in a single
+    transaction `TRUNCATE … RESTART IDENTITY CASCADE`s all backed-up
+    tables, re-seeds them, and bumps each serial sequence past the
+    largest restored id. Sessions are also cleared so pre-restore
+    cookies stop working, and the caller's own session is destroyed on
+    success — every signed-in user must re-authenticate against the
+    restored `users` table. A failure mid-restore rolls the whole
+    transaction back, leaving the previous data intact.
+  - 256 MiB upload ceiling on `/restore`; raise via the multer config
+    in `artifacts/api-server/src/routes/backup.ts` if needed.
+- **Volume-level backup** — for OS-level recovery the `db-data` Docker
+  volume can still be snapshotted or `pg_dump`'d; see `DEPLOY.md`.
 
 ---
 
