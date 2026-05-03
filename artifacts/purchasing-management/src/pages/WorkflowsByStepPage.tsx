@@ -1,29 +1,25 @@
-import { useState } from "react";
 import { Link } from "wouter";
-import { Filter } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useListWorkflowsByStep, useListDepartments } from "@/lib/api";
 import { STEP_LABEL, PRIORITY_TONE, type Step } from "@/lib/steps";
+import { useDepartmentFilter } from "@/lib/department-filter";
 
 export function WorkflowsByStepPage() {
-  // Department filter mirrors the one on the Workflows list so the
-  // kanban view responds to the same scoping. Sentinel "ALL" means
-  // no filter — drop the query param entirely so the server returns
-  // every visible workflow.
-  const [departmentId, setDepartmentId] = useState<string>("ALL");
+  // The kanban honors the global department selection from the
+  // sidebar — picking a department there now scopes this view too,
+  // matching the behavior of the workflows mini-sidebar.
+  const { selectedDeptId } = useDepartmentFilter();
   const params =
-    departmentId !== "ALL" ? { departmentId: Number(departmentId) } : {};
+    selectedDeptId !== "ALL" ? { departmentId: selectedDeptId } : {};
   const { data, isLoading } = useListWorkflowsByStep(params);
   const { data: departments } = useListDepartments();
+  const deptName =
+    selectedDeptId === "ALL"
+      ? "All departments"
+      : (departments ?? []).find((d) => d.id === selectedDeptId)?.name ??
+        "Department";
 
   return (
     <div className="space-y-6 p-6">
@@ -33,31 +29,10 @@ export function WorkflowsByStepPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Kanban view: every workflow grouped by its current step
+          {" "}
+          <span data-testid="text-dept-scope">· {deptName}</span>
         </p>
       </header>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Filter className="h-4 w-4" /> Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <Select value={departmentId} onValueChange={setDepartmentId}>
-            <SelectTrigger data-testid="select-department">
-              <SelectValue placeholder="Department" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All departments</SelectItem>
-              {(departments ?? []).map((d) => (
-                <SelectItem key={d.id} value={String(d.id)}>
-                  {d.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

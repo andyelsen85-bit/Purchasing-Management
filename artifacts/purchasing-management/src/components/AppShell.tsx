@@ -36,6 +36,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@/components/AuthGate";
 import { STEP_LABEL, PRIORITY_TONE } from "@/lib/steps";
+import { useDepartmentFilter } from "@/lib/department-filter";
 
 interface NavItem {
   to: string;
@@ -81,8 +82,9 @@ export function AppShell({ user, children }: Props) {
     );
   });
 
-  // Selected department for the second sidebar (workflows panel).
-  const [selectedDeptId, setSelectedDeptId] = useState<number | "ALL">("ALL");
+  // Selected department — shared via context so other pages
+  // (Workflows, By Step, …) react to the sidebar selection too.
+  const { selectedDeptId, setSelectedDeptId } = useDepartmentFilter();
   const departmentsList = useMemo(() => departments ?? [], [departments]);
   useEffect(() => {
     if (

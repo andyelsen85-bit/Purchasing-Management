@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthGate } from "@/components/AuthGate";
 import { AppShell } from "@/components/AppShell";
+import { DepartmentFilterProvider } from "@/lib/department-filter";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { WorkflowsPage } from "@/pages/WorkflowsPage";
@@ -52,6 +53,7 @@ function App() {
                 <Route path="/login" component={LoginPage} />
                 <Route>
                   {() => (
+                    <DepartmentFilterProvider>
                     <AppShell user={user}>
                       <Switch>
                         <Route path="/" component={DashboardPage} />
@@ -102,6 +104,7 @@ function App() {
                         <Route component={NotFound} />
                       </Switch>
                     </AppShell>
+                    </DepartmentFilterProvider>
                   )}
                 </Route>
               </Switch>
