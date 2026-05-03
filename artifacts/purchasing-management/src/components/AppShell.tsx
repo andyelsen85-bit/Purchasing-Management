@@ -59,7 +59,7 @@ const NAV: NavItem[] = [
     icon: Banknote,
     roles: ["ADMIN", "GT_INVEST", "FINANCIAL_ALL"],
   },
-  { to: "/companies", label: "Companies", icon: Building2 },
+  { to: "/companies", label: "Reseller", icon: Building2 },
   { to: "/settings", label: "Settings", icon: Settings, roles: ["ADMIN"] },
 ];
 
