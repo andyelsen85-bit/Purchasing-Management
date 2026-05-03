@@ -432,6 +432,13 @@ export const CreateWorkflowBody = zod.object({
   neededBy: zod.coerce.date().nullish(),
 });
 
+export const ListWorkflowsByStepQueryParams = zod.object({
+  departmentId: zod.coerce
+    .number()
+    .optional()
+    .describe("Limit the kanban to a single department."),
+});
+
 export const ListWorkflowsByStepResponseItem = zod.object({
   step: zod.enum([
     "NEW",

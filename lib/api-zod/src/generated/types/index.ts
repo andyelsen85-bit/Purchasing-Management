@@ -57,6 +57,7 @@ export * from "./ldapTestResultStage";
 export * from "./listAuditLogParams";
 export * from "./listNotificationsParams";
 export * from "./listNotificationsStatus";
+export * from "./listWorkflowsByStepParams";
 export * from "./listWorkflowsParams";
 export * from "./loginRequest";
 export * from "./note";

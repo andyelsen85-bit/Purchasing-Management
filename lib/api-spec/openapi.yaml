@@ -348,6 +348,12 @@ paths:
     get:
       operationId: listWorkflowsByStep
       tags: [workflows]
+      parameters:
+        - name: departmentId
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Limit the kanban to a single department.
       responses:
         "200":
           description: Grouped by step

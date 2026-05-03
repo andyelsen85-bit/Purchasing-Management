@@ -1015,6 +1015,13 @@ export type ListWorkflowsParams = {
   q?: string;
 };
 
+export type ListWorkflowsByStepParams = {
+  /**
+   * Limit the kanban to a single department.
+   */
+  departmentId?: number;
+};
+
 export type UploadWorkflowDocumentBodyTwo = {
   file: Blob;
   step: string;

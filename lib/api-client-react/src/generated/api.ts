@@ -52,6 +52,7 @@ import type {
   LdapTestResult,
   ListAuditLogParams,
   ListNotificationsParams,
+  ListWorkflowsByStepParams,
   ListWorkflowsParams,
   LoginRequest,
   Note,
@@ -1877,41 +1878,66 @@ export const useCreateWorkflow = <
   return useMutation(getCreateWorkflowMutationOptions(options));
 };
 
-export const getListWorkflowsByStepUrl = () => {
-  return `/api/workflows/by-step`;
+export const getListWorkflowsByStepUrl = (
+  params?: ListWorkflowsByStepParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/workflows/by-step?${stringifiedParams}`
+    : `/api/workflows/by-step`;
 };
 
 export const listWorkflowsByStep = async (
+  params?: ListWorkflowsByStepParams,
   options?: RequestInit,
 ): Promise<WorkflowsByStepGroup[]> => {
-  return customFetch<WorkflowsByStepGroup[]>(getListWorkflowsByStepUrl(), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<WorkflowsByStepGroup[]>(
+    getListWorkflowsByStepUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
-export const getListWorkflowsByStepQueryKey = () => {
-  return [`/api/workflows/by-step`] as const;
+export const getListWorkflowsByStepQueryKey = (
+  params?: ListWorkflowsByStepParams,
+) => {
+  return [`/api/workflows/by-step`, ...(params ? [params] : [])] as const;
 };
 
 export const getListWorkflowsByStepQueryOptions = <
   TData = Awaited<ReturnType<typeof listWorkflowsByStep>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listWorkflowsByStep>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListWorkflowsByStepParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWorkflowsByStep>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListWorkflowsByStepQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getListWorkflowsByStepQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listWorkflowsByStep>>
-  > = ({ signal }) => listWorkflowsByStep({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    listWorkflowsByStep(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listWorkflowsByStep>>,
@@ -1928,15 +1954,18 @@ export type ListWorkflowsByStepQueryError = ErrorType<unknown>;
 export function useListWorkflowsByStep<
   TData = Awaited<ReturnType<typeof listWorkflowsByStep>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listWorkflowsByStep>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListWorkflowsByStepQueryOptions(options);
+>(
+  params?: ListWorkflowsByStepParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWorkflowsByStep>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWorkflowsByStepQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

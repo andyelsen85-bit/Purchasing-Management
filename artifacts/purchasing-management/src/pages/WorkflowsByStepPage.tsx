@@ -1,12 +1,29 @@
+import { useState } from "react";
 import { Link } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
+import { Filter } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useListWorkflowsByStep } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useListWorkflowsByStep, useListDepartments } from "@/lib/api";
 import { STEP_LABEL, PRIORITY_TONE, type Step } from "@/lib/steps";
 
 export function WorkflowsByStepPage() {
-  const { data, isLoading } = useListWorkflowsByStep();
+  // Department filter mirrors the one on the Workflows list so the
+  // kanban view responds to the same scoping. Sentinel "ALL" means
+  // no filter — drop the query param entirely so the server returns
+  // every visible workflow.
+  const [departmentId, setDepartmentId] = useState<string>("ALL");
+  const params =
+    departmentId !== "ALL" ? { departmentId: Number(departmentId) } : {};
+  const { data, isLoading } = useListWorkflowsByStep(params);
+  const { data: departments } = useListDepartments();
 
   return (
     <div className="space-y-6 p-6">
@@ -18,6 +35,29 @@ export function WorkflowsByStepPage() {
           Kanban view: every workflow grouped by its current step
         </p>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Filter className="h-4 w-4" /> Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <Select value={departmentId} onValueChange={setDepartmentId}>
+            <SelectTrigger data-testid="select-department">
+              <SelectValue placeholder="Department" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All departments</SelectItem>
+              {(departments ?? []).map((d) => (
+                <SelectItem key={d.id} value={String(d.id)}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

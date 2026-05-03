@@ -142,6 +142,12 @@ router.get("/workflows", requireAuth, async (req, res): Promise<void> => {
 
 router.get("/workflows/by-step", requireAuth, async (req, res): Promise<void> => {
   const user = getUser(req);
+  // Optional department filter — matches the dropdown on the By Step
+  // page so the kanban responds to the same filter as the Workflows
+  // list. Invalid values are ignored rather than 400'd to keep the
+  // page resilient to stale query strings.
+  const deptParam = Number(req.query.departmentId);
+  const departmentId = Number.isFinite(deptParam) && deptParam > 0 ? deptParam : null;
   const rows = await db
     .select({
       w: workflowsTable,
@@ -149,7 +155,11 @@ router.get("/workflows/by-step", requireAuth, async (req, res): Promise<void> =>
     })
     .from(workflowsTable)
     .leftJoin(departmentsTable, eq(departmentsTable.id, workflowsTable.departmentId))
-    .where(isNull(workflowsTable.deletedAt))
+    .where(
+      departmentId
+        ? and(isNull(workflowsTable.deletedAt), eq(workflowsTable.departmentId, departmentId))
+        : isNull(workflowsTable.deletedAt),
+    )
     .orderBy(desc(workflowsTable.updatedAt));
   const filtered = rows.filter((r) => canSeeWorkflow(user, r.w.departmentId));
   const grouped = new Map<string, Array<Record<string, unknown>>>();
