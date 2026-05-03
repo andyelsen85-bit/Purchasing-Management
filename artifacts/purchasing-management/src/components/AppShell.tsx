@@ -83,8 +83,18 @@ export function AppShell({ user, children }: Props) {
     }
   }, [departmentsList, selectedDeptId]);
 
-  const { data: deptWorkflows } = useListWorkflows(
+  const { data: deptWorkflowsRaw } = useListWorkflows(
     selectedDeptId === "ALL" ? {} : { departmentId: selectedDeptId },
+  );
+  // The grey "second sidebar" is a quick navigator for in-flight work.
+  // Hide terminal workflows (DONE / REJECTED) — they're still reachable
+  // from the All Workflows page via the status filter.
+  const deptWorkflows = useMemo(
+    () =>
+      (deptWorkflowsRaw ?? []).filter(
+        (w) => w.currentStep !== "DONE" && w.currentStep !== "REJECTED",
+      ),
+    [deptWorkflowsRaw],
   );
 
   useEffect(() => {
