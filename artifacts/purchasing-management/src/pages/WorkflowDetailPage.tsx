@@ -146,7 +146,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
       <Tabs defaultValue="step" className="space-y-4">
         <TabsList>
           <TabsTrigger value="step" data-testid="tab-step">
-            Current step
+            Details
           </TabsTrigger>
           <TabsTrigger value="docs" data-testid="tab-documents">
             <FileText className="mr-1 h-3.5 w-3.5" /> Documents
