@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import {
-  Plus,
-  Trash2,
   FileDown,
   CalendarDays,
   Gavel,
@@ -13,11 +11,9 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -34,16 +30,8 @@ import {
 } from "@/components/ui/select";
 import { extractErrorMessage } from "@/lib/utils";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   useListGtInvestWorkflows,
   useListGtInvestDates,
-  useCreateGtInvestDate,
-  useDeleteGtInvestDate,
   useSetGtInvestDecision,
   getListGtInvestWorkflowsQueryKey,
 } from "@/lib/api";
@@ -139,23 +127,7 @@ export function GtInvestPage() {
         </p>
       </header>
 
-      <Tabs defaultValue="queue">
-        <TabsList>
-          <TabsTrigger value="queue" data-testid="tab-queue">
-            Queue
-          </TabsTrigger>
-          <TabsTrigger value="dates" data-testid="tab-dates">
-            <CalendarDays className="mr-1 h-3.5 w-3.5" /> Dates
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="queue">
-          <QueuePanel />
-        </TabsContent>
-        <TabsContent value="dates">
-          <DatesPanel />
-        </TabsContent>
-      </Tabs>
+      <QueuePanel />
     </div>
   );
 }
@@ -290,7 +262,9 @@ function QueuePanel() {
 
   // Group workflows by their assigned GT Invest meeting date. Anything
   // not yet assigned to a date lands in a dedicated "Unassigned" bucket
-  // so reviewers can quickly spot what still needs scheduling.
+  // so reviewers can quickly spot what still needs scheduling. We also
+  // pre-seed a group per known meeting date so empty meetings still
+  // show up in the overview — handy for planning the next session.
   const dateById = new Map((dates ?? []).map((d) => [d.id, d]));
   const groups = new Map<
     string,
@@ -301,6 +275,14 @@ function QueuePanel() {
       workflows: NonNullable<typeof rows>;
     }
   >();
+  for (const d of dates ?? []) {
+    groups.set(`d-${d.id}`, {
+      key: `d-${d.id}`,
+      sortKey: `0-${d.date}`,
+      title: formatMeetingDate(d.date, d.label),
+      workflows: [],
+    });
+  }
   for (const w of rows ?? []) {
     const dateId = w.gtInvestDateId ?? null;
     const meeting = dateId != null ? dateById.get(dateId) : undefined;
@@ -338,9 +320,9 @@ function QueuePanel() {
         </Button>
       </CardHeader>
       <CardContent>
-        {(rows ?? []).length === 0 ? (
+        {orderedGroups.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No workflows currently in GT Invest.
+            No GT Invest meeting dates yet — add some on the Settings page.
           </p>
         ) : (
           <div className="space-y-6">
@@ -353,6 +335,11 @@ function QueuePanel() {
                     {g.workflows.length}
                   </Badge>
                 </div>
+                {g.workflows.length === 0 ? (
+                  <p className="rounded-md border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                    No workflows assigned to this meeting yet.
+                  </p>
+                ) : (
                 <div className="divide-y rounded-md border">
                   {g.workflows.map((w) => (
                     <div
@@ -385,108 +372,11 @@ function QueuePanel() {
                     </div>
                   ))}
                 </div>
+                )}
               </section>
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function DatesPanel() {
-  const { data: dates } = useListGtInvestDates();
-  const qc = useQueryClient();
-  const create = useCreateGtInvestDate({
-    mutation: { onSuccess: () => qc.invalidateQueries() },
-  });
-  const del = useDeleteGtInvestDate({
-    mutation: { onSuccess: () => qc.invalidateQueries() },
-  });
-  const [date, setDate] = useState("");
-  const [label, setLabel] = useState("");
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Meeting dates</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="space-y-1">
-            <Label>Date</Label>
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              data-testid="input-gt-date-add"
-            />
-          </div>
-          <div className="space-y-1 flex-1 min-w-48">
-            <Label>Label (optional)</Label>
-            <Input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Q3 review"
-              data-testid="input-gt-date-label"
-            />
-          </div>
-          <Button
-            onClick={() => {
-              if (!date) return;
-              create.mutate(
-                { data: { date, label: label || null } },
-                {
-                  onSuccess: () => {
-                    setDate("");
-                    setLabel("");
-                  },
-                },
-              );
-            }}
-            disabled={!date || create.isPending}
-            data-testid="button-add-gt-date"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add
-          </Button>
-        </div>
-        {create.error && (
-          <Alert variant="destructive" data-testid="alert-gt-date-error">
-            <AlertDescription>
-              {extractErrorMessage(create.error)}
-            </AlertDescription>
-          </Alert>
-        )}
-        <Separator />
-        <div className="divide-y">
-          {(dates ?? []).map((d) => (
-            <div
-              key={d.id}
-              className="flex items-center justify-between py-2"
-              data-testid={`row-gt-date-${d.id}`}
-            >
-              <div>
-                <div className="text-sm font-medium">{d.date}</div>
-                {d.label && (
-                  <div className="text-xs text-muted-foreground">{d.label}</div>
-                )}
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => del.mutate({ id: d.id })}
-                data-testid={`button-del-gt-date-${d.id}`}
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          ))}
-          {(dates ?? []).length === 0 && (
-            <p className="py-4 text-sm text-muted-foreground">
-              No dates configured.
-            </p>
-          )}
-        </div>
       </CardContent>
     </Card>
   );
