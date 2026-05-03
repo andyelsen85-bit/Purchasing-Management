@@ -460,6 +460,8 @@ function StepPanel({ wf, onChange }: { wf: Workflow; onChange: () => void }) {
       return <InvoiceValidationPanel wf={wf} onChange={onChange} />;
     case "PAYMENT":
       return <PaymentPanel wf={wf} onChange={onChange} />;
+    case "DONE":
+      return <DoneSummaryPanel wf={wf} />;
     case "REJECTED":
       return <RejectedPanel wf={wf} />;
     default:
@@ -472,6 +474,218 @@ function StepPanel({ wf, onChange }: { wf: Workflow; onChange: () => void }) {
         </Card>
       );
   }
+}
+
+function DoneSummaryPanel({ wf }: { wf: Workflow }) {
+  // Terminal "completed" panel — read-only recap of every field
+  // captured across the 9-step workflow plus a flat list of all
+  // attached documents (current versions). Mirrors the merged-PDF
+  // export on the Validate Invoice step but viewed in-app.
+  const { data: docs } = useListWorkflowDocuments(wf.id);
+  const { data: dates } = useListGtInvestDates();
+  const { data: results } = useListGtInvestResults();
+  const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
+
+  const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
+  const gtResult =
+    results?.find((r) => r.id === wf.gtInvestResultId)?.label ?? null;
+
+  const fmtDate = (s: string | null | undefined) =>
+    s ? new Date(s).toLocaleDateString() : "—";
+  const fmtDateTime = (s: string | null | undefined) =>
+    s ? new Date(s).toLocaleString() : "—";
+  const fmtMoney = (n: number | null | undefined, c: string | null | undefined) =>
+    n != null ? `${n} ${c ?? ""}`.trim() : "—";
+  const fmtBool = (b: boolean | null | undefined) =>
+    b == null ? "—" : b ? "Yes" : "No";
+  const orDash = (v: string | null | undefined) => (v && v.length > 0 ? v : "—");
+
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="grid grid-cols-[180px_1fr] gap-3 py-1 text-sm">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="break-words">{value}</div>
+    </div>
+  );
+  const Section = ({
+    title,
+    children,
+  }: {
+    title: string;
+    children: React.ReactNode;
+  }) => (
+    <div className="rounded-md border bg-muted/20 p-3">
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      <div className="divide-y">{children}</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-emerald-500/40">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+          <CardTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 className="h-5 w-5" />
+            Workflow completed
+          </CardTitle>
+          <Button asChild variant="outline" size="sm">
+            <a
+              href={exportHref}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="button-export-pdf-done"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export merged PDF
+            </a>
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Section title="General">
+            <Row label="Reference" value={<span className="font-mono">{wf.reference}</span>} />
+            <Row label="Title" value={wf.title} />
+            <Row label="Department" value={wf.departmentName} />
+            <Row label="Requested by" value={wf.createdByName} />
+            <Row label="Priority" value={wf.priority} />
+            <Row label="Branch" value={orDash(wf.branch)} />
+            <Row label="Created" value={fmtDateTime(wf.createdAt)} />
+            <Row label="Last update" value={fmtDateTime(wf.updatedAt)} />
+          </Section>
+
+          <Section title="1 · New request">
+            <Row label="Description" value={orDash(wf.description)} />
+            <Row label="Category" value={orDash(wf.category)} />
+            <Row label="Estimated amount" value={fmtMoney(wf.estimatedAmount, wf.currency)} />
+            <Row label="Needed by" value={fmtDate(wf.neededBy)} />
+          </Section>
+
+          <Section title="2 · Quotation">
+            <Row label="3 quotes required" value={fmtBool(wf.threeQuoteRequired)} />
+            <div className="py-1">
+              {wf.quotes && wf.quotes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-muted-foreground">
+                        <th className="px-2 py-1">Company</th>
+                        <th className="px-2 py-1">Amount</th>
+                        <th className="px-2 py-1">Notes</th>
+                        <th className="px-2 py-1">Winning</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wf.quotes.map((q, i) => (
+                        <tr key={i} className="border-t">
+                          <td className="px-2 py-1">{orDash(q.companyName)}</td>
+                          <td className="px-2 py-1">{fmtMoney(q.amount, q.currency)}</td>
+                          <td className="px-2 py-1">{orDash(q.notes)}</td>
+                          <td className="px-2 py-1">{q.winning ? "★" : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <span className="text-sm text-muted-foreground">—</span>
+              )}
+            </div>
+          </Section>
+
+          <Section title="3 · Manager approval">
+            <Row label="Approved" value={fmtBool(wf.managerApproved)} />
+            <Row label="Comment" value={orDash(wf.managerComment)} />
+          </Section>
+
+          <Section title="4 · Financial approval">
+            <Row label="Approved" value={fmtBool(wf.financialApproved)} />
+            <Row label="Comment" value={orDash(wf.financialComment)} />
+          </Section>
+
+          {wf.branch === "GT_INVEST" || wf.gtInvestDateId || wf.gtInvestResultId ? (
+            <Section title="GT Invest">
+              <Row label="Session date" value={fmtDate(gtDate)} />
+              <Row label="Result" value={orDash(gtResult)} />
+              <Row label="Comment" value={orDash(wf.gtInvestComment)} />
+            </Section>
+          ) : null}
+
+          <Section title="5 · Ordering">
+            <Row label="Order number" value={orDash(wf.orderNumber)} />
+            <Row label="Order date" value={fmtDate(wf.orderDate)} />
+          </Section>
+
+          <Section title="6 · Delivery">
+            <Row label="Delivered on" value={fmtDate(wf.deliveredOn)} />
+            <Row label="Notes" value={orDash(wf.deliveryNotes)} />
+          </Section>
+
+          <Section title="7 · Invoice">
+            <Row label="Invoice number" value={orDash(wf.invoiceNumber)} />
+            <Row label="Invoice amount" value={fmtMoney(wf.invoiceAmount, wf.currency)} />
+            <Row label="Invoice date" value={fmtDate(wf.invoiceDate)} />
+          </Section>
+
+          <Section title="8 · Validate invoice">
+            <Row label="Validated" value={fmtBool(wf.invoiceValidated)} />
+            <Row label="Signed by" value={orDash(wf.invoiceSignedBy)} />
+            <Row label="Signed at" value={fmtDateTime(wf.invoiceSignedAt)} />
+          </Section>
+
+          <Section title="9 · Payment">
+            <Row label="Payment date" value={fmtDate(wf.paymentDate)} />
+            <Row label="Payment reference" value={orDash(wf.paymentReference)} />
+          </Section>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Documents ({docs?.length ?? 0})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {docs && docs.length > 0 ? (
+            <ul className="divide-y">
+              {docs.map((d) => (
+                <li
+                  key={d.id}
+                  className="flex items-center gap-3 py-2"
+                  data-testid={`done-doc-${d.id}`}
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {d.filename}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {d.kind} · v{d.version} · {STEP_LABEL[d.step as Step]} ·{" "}
+                      {formatBytes(d.sizeBytes)} · {d.uploadedByName}
+                    </div>
+                  </div>
+                  <Button asChild variant="ghost" size="icon">
+                    <a
+                      href={`/api/documents/${d.id}/download`}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-testid={`button-done-download-${d.id}`}
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              No documents attached.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function RejectedPanel({ wf }: { wf: Workflow }) {
