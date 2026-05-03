@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLogin, useGetSettings, getGetSessionQueryKey } from "@/lib/api";
+import { extractErrorMessage } from "@/lib/utils";
 
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -90,11 +91,12 @@ export function LoginPage() {
         setLocation("/");
       },
       onError: (err) => {
-        const msg =
-          (err as { data?: { message?: string } }).data?.message ??
-          (err as Error).message ??
-          "Login failed";
-        setError(msg);
+        // The server returns { error: "<detailed reason>" } in the
+        // response body — extractErrorMessage knows to read `.data.error`
+        // first so AD bind diagnostics (raw codes, locked / expired
+        // accounts, "user not found" hints) actually reach the user
+        // instead of being collapsed to "HTTP 401 Unauthorized".
+        setError(extractErrorMessage(err));
       },
     },
   });
