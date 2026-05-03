@@ -306,6 +306,27 @@ router.get("/auth/setup-status", async (_req, res): Promise<void> => {
   res.json({ needsSetup: n === 0 });
 });
 
+/**
+ * Public, unauthenticated subset of the app settings needed by the
+ * login page (logo, app name, whether AD/LDAP and Kerberos are
+ * enabled). The full GET /settings endpoint requires auth, but the
+ * login form must know whether to show the "Use Active Directory"
+ * toggle and the SSO probe before the user has signed in. Only
+ * non-sensitive fields are returned — no host, base DN, bind DN,
+ * passwords, or group mappings.
+ */
+router.get("/auth/public-config", async (_req, res): Promise<void> => {
+  const s = await getSettings();
+  res.json({
+    appName: s.appName,
+    logoDataUrl: s.logoDataUrl ?? null,
+    ldap: {
+      enabled: !!s.ldap?.enabled,
+      kerberosEnabled: !!s.ldap?.kerberosEnabled,
+    },
+  });
+});
+
 router.post("/auth/setup", async (req, res): Promise<void> => {
   const username = String(req.body?.username ?? "").trim();
   const password = String(req.body?.password ?? "");

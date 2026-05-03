@@ -8,15 +8,31 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useLogin, useGetSettings, getGetSessionQueryKey } from "@/lib/api";
+import { useLogin, getGetSessionQueryKey } from "@/lib/api";
 import { extractErrorMessage } from "@/lib/utils";
+
+interface PublicConfig {
+  appName: string;
+  logoDataUrl: string | null;
+  ldap: { enabled: boolean; kerberosEnabled: boolean };
+}
 
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 export function LoginPage() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
-  const { data: settings } = useGetSettings();
+  // Public bootstrap config — must work BEFORE the user signs in, so
+  // we hit the unauthenticated /auth/public-config endpoint instead of
+  // /settings (which requires auth and otherwise leaves ldapEnabled
+  // false on this page, hiding the AD toggle entirely).
+  const [settings, setSettings] = useState<PublicConfig | null>(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/auth/public-config`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: PublicConfig | null) => setSettings(j))
+      .catch(() => setSettings(null));
+  }, []);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   // Default the AD toggle to ON whenever LDAP is enabled in Settings.
