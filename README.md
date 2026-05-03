@@ -557,17 +557,28 @@ operator + build reference.
     so any new field added to `AppSettings` (e.g. `signingAgentPort`)
     is automatically captured without code changes.
   - **`POST /api/admin/restore`** uploads that JSON, validates the
-    backup version + that every known table is present (refuses partial
-    dumps so nothing is silently truncated), then in a single
-    transaction `TRUNCATE … RESTART IDENTITY CASCADE`s all backed-up
-    tables, re-seeds them, and bumps each serial sequence past the
+    backup version up front, then in a single transaction
+    `TRUNCATE … RESTART IDENTITY CASCADE`s all backed-up tables,
+    streams the dump table-by-table back into Postgres in 1 000-row
+    batches (under PG's 65 535 prepared-statement parameter cap),
+    refuses partial dumps + unknown tables (so nothing is silently
+    truncated), and finally bumps each serial sequence past the
     largest restored id. Sessions are also cleared so pre-restore
     cookies stop working, and the caller's own session is destroyed on
     success — every signed-in user must re-authenticate against the
-    restored `users` table. A failure mid-restore rolls the whole
-    transaction back, leaving the previous data intact.
-  - 256 MiB upload ceiling on `/restore`; raise via the multer config
-    in `artifacts/api-server/src/routes/backup.ts` if needed.
+    restored `users` table. Any failure mid-restore (validation,
+    insert, or sequence bump) rolls the whole transaction back,
+    leaving the previous data intact.
+  - **10 GiB upload ceiling** on `/restore`. Multer streams the upload
+    to a temp file under `os.tmpdir()/purchasing-restore/`, and
+    `stream-json` parses it incrementally from disk — the dump is
+    never materialised in memory, so multi-gigabyte snapshots no
+    longer hit V8's ~512 MB string limit. The temp file is cleaned up
+    in a `finally` block whether the restore succeeds or fails. Raise
+    the cap via `TEN_GIB` in
+    `artifacts/api-server/src/routes/backup.ts` if your snapshot
+    grows past it; the real bottleneck at that point is host disk
+    space, not the parser.
 - **Volume-level backup** — for OS-level recovery the `db-data` Docker
   volume can still be snapshotted or `pg_dump`'d; see `DEPLOY.md`.
 

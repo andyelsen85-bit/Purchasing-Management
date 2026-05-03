@@ -214,6 +214,9 @@ importers:
       pino-http:
         specifier: ^10
         version: 10.5.0
+      stream-json:
+        specifier: ^2.1.0
+        version: 2.1.0
       ws:
         specifier: ^8.20.0
         version: 8.20.0
@@ -3349,6 +3352,12 @@ packages:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
 
+  stream-chain@3.6.1:
+    resolution: {integrity: sha512-M4BQpNPI71uumkVXjl4y+mIormQXdo4R0pSR23mcLbn6D+kpvu7Kx2g1hf0jRB76Zb1IT1M06OIGghMTAtZdyQ==}
+
+  stream-json@2.1.0:
+    resolution: {integrity: sha512-9gV/ywtebMn3DdKnNKYCb9iESvgR1dHbucNV+bRGvdvy+jV4c9FFgYKmENhpKv58jSwvs90Wk80RhfKk1KxHPg==}
+
   streamsearch@1.1.0:
     resolution: {integrity: sha512-Mcc5wHehp9aXz1ax6bZUyY5afg9u2rv5cqQI3mRrYkGC8rW2hM02jWuwjtL++LS5qinSyhj2QfLyNsuc+VsExg==}
     engines: {node: '>=10.0.0'}
@@ -6453,6 +6462,12 @@ snapshots:
   split2@4.2.0: {}
 
   statuses@2.0.2: {}
+
+  stream-chain@3.6.1: {}
+
+  stream-json@2.1.0:
+    dependencies:
+      stream-chain: 3.6.1
 
   streamsearch@1.1.0: {}
 

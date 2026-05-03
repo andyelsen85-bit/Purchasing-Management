@@ -25,6 +25,7 @@
     "pdf-lib": "^1.17.1",
     "pino": "^9",
     "pino-http": "^10",
+    "stream-json": "^2.1.0",
     "ws": "^8.20.0"
   },
   "devDependencies": {
