@@ -134,9 +134,29 @@ export function canCreateInDepartment(
   return false;
 }
 
-/** Master-data (companies, contacts) mutations are admin-only by default. */
+/**
+ * Full master-data control: edit company fields, delete companies,
+ * delete contacts. Admin / FINANCIAL_ALL only.
+ */
 export function canEditMasterData(user: SessionUser): boolean {
   return hasRole(user, "ADMIN", "FINANCIAL_ALL");
+}
+
+/**
+ * Adding a supplier (company) and adding/editing its contacts is
+ * available to anyone who actually contributes to workflows — i.e.
+ * everybody except the read-only roles. Department users frequently
+ * onboard new suppliers themselves and need to keep contact info up
+ * to date; deletion / company-field edits remain admin-only.
+ */
+export function canAddSupplier(user: SessionUser): boolean {
+  if (canEditMasterData(user)) return true;
+  return !hasRole(user, "READ_ONLY_DEPT", "READ_ONLY_ALL");
+}
+
+/** Add or update a contact. Same audience as `canAddSupplier`. */
+export function canEditContact(user: SessionUser): boolean {
+  return canAddSupplier(user);
 }
 
 export function nextStep(

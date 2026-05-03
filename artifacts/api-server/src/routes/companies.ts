@@ -14,21 +14,45 @@ import {
   DeleteContactParams,
 } from "@workspace/api-zod";
 import { requireAuth, getUser } from "../middlewares/auth";
-import { canEditMasterData } from "../lib/permissions";
+import {
+  canAddSupplier,
+  canEditContact,
+  canEditMasterData,
+} from "../lib/permissions";
 import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
 
 /**
- * Master-data guard for company / contact mutations. Anyone authenticated
- * may *read* the catalog, but only ADMIN or FINANCIAL_ALL may modify it
- * (matches the spec: read-only roles must not be able to add/edit/delete
- * suppliers or contacts).
+ * Full master-data guard (admin-only): edit company fields, delete
+ * a company, delete a contact.
  */
 function requireMasterDataEditor(req: Request, res: Response): boolean {
   if (!canEditMasterData(getUser(req))) {
     res.status(403).json({
-      error: "Forbidden — only administrators may edit master data",
+      error: "Forbidden — only administrators may edit or delete master data",
+    });
+    return false;
+  }
+  return true;
+}
+
+/** Add a new supplier or contact. Open to all non-read-only users. */
+function requireSupplierAdder(req: Request, res: Response): boolean {
+  if (!canAddSupplier(getUser(req))) {
+    res.status(403).json({
+      error: "Forbidden — read-only users cannot add suppliers or contacts",
+    });
+    return false;
+  }
+  return true;
+}
+
+/** Edit an existing contact. Open to all non-read-only users. */
+function requireContactEditor(req: Request, res: Response): boolean {
+  if (!canEditContact(getUser(req))) {
+    res.status(403).json({
+      error: "Forbidden — read-only users cannot edit contacts",
     });
     return false;
   }
@@ -44,7 +68,7 @@ router.get("/companies", requireAuth, async (_req, res): Promise<void> => {
 });
 
 router.post("/companies", requireAuth, async (req, res): Promise<void> => {
-  if (!requireMasterDataEditor(req, res)) return;
+  if (!requireSupplierAdder(req, res)) return;
   const parsed = CreateCompanyBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -130,7 +154,7 @@ router.post(
   "/companies/:id/contacts",
   requireAuth,
   async (req, res): Promise<void> => {
-    if (!requireMasterDataEditor(req, res)) return;
+    if (!requireSupplierAdder(req, res)) return;
     const params = CreateContactParams.safeParse(req.params);
     const body = CreateContactBody.safeParse(req.body);
     if (!params.success || !body.success) {
@@ -150,7 +174,7 @@ router.patch(
   "/contacts/:id",
   requireAuth,
   async (req, res): Promise<void> => {
-    if (!requireMasterDataEditor(req, res)) return;
+    if (!requireContactEditor(req, res)) return;
     const params = UpdateContactParams.safeParse(req.params);
     const body = UpdateContactBody.safeParse(req.body);
     if (!params.success || !body.success) {

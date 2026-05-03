@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { Plus, Building2, Loader2, Mail, Phone, Trash2 } from "lucide-react";
+import {
+  Plus,
+  Building2,
+  Loader2,
+  Mail,
+  Phone,
+  Trash2,
+  Pencil,
+  Save,
+  X,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,18 +30,24 @@ import {
   useCreateCompany,
   useGetCompany,
   useCreateContact,
+  useUpdateContact,
   useDeleteContact,
   useDeleteCompany,
   useGetSession,
   type Company,
+  type Contact,
 } from "@/lib/api";
 
 /**
- * Master-data editing (create/edit/delete companies and contacts) is
- * restricted server-side to ADMIN and FINANCIAL_ALL via
- * `canEditMasterData` in `artifacts/api-server/src/lib/permissions.ts`.
- * Mirror that here so read-only roles don't see buttons that just
- * 403 when clicked.
+ * Permission helpers — mirror the server-side rules in
+ * `artifacts/api-server/src/lib/permissions.ts` so we don't show
+ * buttons that would just 403 when clicked.
+ *
+ * - canEditMasterData (ADMIN, FINANCIAL_ALL): full control — edit
+ *   company fields, delete companies, delete contacts.
+ * - canAddSupplier (everyone except read-only roles): may add
+ *   suppliers, add contacts, and edit contacts. Department users
+ *   onboard their own suppliers and keep contact info up to date.
  */
 function useCanEditMasterData(): boolean {
   const { data: session } = useGetSession();
@@ -39,10 +55,19 @@ function useCanEditMasterData(): boolean {
   return roles.includes("ADMIN") || roles.includes("FINANCIAL_ALL");
 }
 
+function useCanAddSupplier(): boolean {
+  const { data: session } = useGetSession();
+  const roles = session?.user?.roles ?? [];
+  if (roles.includes("ADMIN") || roles.includes("FINANCIAL_ALL")) return true;
+  if (roles.includes("READ_ONLY_DEPT") || roles.includes("READ_ONLY_ALL"))
+    return false;
+  return roles.length > 0;
+}
+
 export function CompaniesPage() {
   const { data: companies } = useListCompanies();
   const [selected, setSelected] = useState<Company | null>(null);
-  const canEdit = useCanEditMasterData();
+  const canAdd = useCanAddSupplier();
 
   return (
     <div className="space-y-6 p-6">
@@ -55,7 +80,7 @@ export function CompaniesPage() {
             Suppliers and their contacts
           </p>
         </div>
-        {canEdit && <NewCompanyDialog />}
+        {canAdd && <NewCompanyDialog />}
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -200,6 +225,7 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
   const qc = useQueryClient();
   const { data: company } = useGetCompany(companyId);
   const canEdit = useCanEditMasterData();
+  const canAdd = useCanAddSupplier();
   const delCompany = useDeleteCompany({
     mutation: { onSuccess: () => qc.invalidateQueries() },
   });
@@ -251,49 +277,19 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
           ) : (
             <div className="divide-y">
               {(company.contacts ?? []).map((c) => (
-                <div
+                <ContactRow
                   key={c.id}
-                  className="flex items-start justify-between py-2"
-                  data-testid={`contact-${c.id}`}
-                >
-                  <div>
-                    <div className="text-sm font-medium">{c.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {c.role}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs">
-                      {c.email && (
-                        <a
-                          href={`mailto:${c.email}`}
-                          className="flex items-center gap-1 text-primary hover:underline"
-                        >
-                          <Mail className="h-3 w-3" /> {c.email}
-                        </a>
-                      )}
-                      {c.phone && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Phone className="h-3 w-3" /> {c.phone}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => delContact.mutate({ id: c.id })}
-                      data-testid={`button-del-contact-${c.id}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </div>
+                  contact={c}
+                  canEditContact={canAdd}
+                  canDeleteContact={canEdit}
+                  onDelete={() => delContact.mutate({ id: c.id })}
+                />
               ))}
             </div>
           )}
         </div>
-        {canEdit && <Separator />}
-        {canEdit && (
+        {canAdd && <Separator />}
+        {canAdd && (
         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
           <h3 className="text-sm font-medium">Add contact</h3>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -358,5 +354,157 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ContactRow({
+  contact,
+  canEditContact,
+  canDeleteContact,
+  onDelete,
+}: {
+  contact: Contact;
+  canEditContact: boolean;
+  canDeleteContact: boolean;
+  onDelete: () => void;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(contact.name);
+  const [role, setRole] = useState(contact.role ?? "");
+  const [email, setEmail] = useState(contact.email ?? "");
+  const [phone, setPhone] = useState(contact.phone ?? "");
+  const update = useUpdateContact({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries();
+        setEditing(false);
+      },
+    },
+  });
+
+  if (editing) {
+    return (
+      <div
+        className="space-y-2 py-2"
+        data-testid={`contact-${contact.id}-edit`}
+      >
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name *"
+            data-testid={`input-edit-contact-name-${contact.id}`}
+          />
+          <Input
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            placeholder="Role"
+            data-testid={`input-edit-contact-role-${contact.id}`}
+          />
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            data-testid={`input-edit-contact-email-${contact.id}`}
+          />
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Phone"
+            data-testid={`input-edit-contact-phone-${contact.id}`}
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setName(contact.name);
+              setRole(contact.role ?? "");
+              setEmail(contact.email ?? "");
+              setPhone(contact.phone ?? "");
+              setEditing(false);
+            }}
+            data-testid={`button-cancel-edit-contact-${contact.id}`}
+          >
+            <X className="mr-2 h-4 w-4" /> Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={!name.trim() || update.isPending}
+            onClick={() =>
+              update.mutate({
+                id: contact.id,
+                data: {
+                  name,
+                  role: role || null,
+                  email: email || null,
+                  phone: phone || null,
+                },
+              })
+            }
+            data-testid={`button-save-contact-${contact.id}`}
+          >
+            {update.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-start justify-between py-2"
+      data-testid={`contact-${contact.id}`}
+    >
+      <div>
+        <div className="text-sm font-medium">{contact.name}</div>
+        <div className="text-xs text-muted-foreground">{contact.role}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-3 text-xs">
+          {contact.email && (
+            <a
+              href={`mailto:${contact.email}`}
+              className="flex items-center gap-1 text-primary hover:underline"
+            >
+              <Mail className="h-3 w-3" /> {contact.email}
+            </a>
+          )}
+          {contact.phone && (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Phone className="h-3 w-3" /> {contact.phone}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        {canEditContact && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setEditing(true)}
+            data-testid={`button-edit-contact-${contact.id}`}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        )}
+        {canDeleteContact && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            data-testid={`button-del-contact-${contact.id}`}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
