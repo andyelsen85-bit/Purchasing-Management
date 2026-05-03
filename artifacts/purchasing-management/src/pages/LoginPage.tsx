@@ -19,7 +19,13 @@ export function LoginPage() {
   const { data: settings } = useGetSettings();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  // Default the AD toggle to ON whenever LDAP is enabled in Settings.
+  // Otherwise operators with an AD account silently land on the local
+  // path and get "Invalid credentials" because their AD username has
+  // no row in the local users table. They can still flip it off for
+  // the local admin account (e.g. break-glass "admin/admin").
   const [useLdap, setUseLdap] = useState(false);
+  const [ldapToggleTouched, setLdapToggleTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tryingSso, setTryingSso] = useState(true);
   const ssoTried = useRef(false);
@@ -44,6 +50,9 @@ export function LoginPage() {
   }, []);
 
   const ldapEnabled = Boolean(settings?.ldap?.enabled);
+  useEffect(() => {
+    if (ldapEnabled && !ldapToggleTouched) setUseLdap(true);
+  }, [ldapEnabled, ldapToggleTouched]);
 
   // Silent Kerberos / SPNEGO attempt: when the browser is on a domain-joined
   // machine and configured to send Negotiate tokens for this host, the call
@@ -311,7 +320,10 @@ export function LoginPage() {
                 <Switch
                   id="useLdap"
                   checked={useLdap}
-                  onCheckedChange={setUseLdap}
+                  onCheckedChange={(v) => {
+                    setLdapToggleTouched(true);
+                    setUseLdap(v);
+                  }}
                   data-testid="switch-useldap"
                 />
               </div>

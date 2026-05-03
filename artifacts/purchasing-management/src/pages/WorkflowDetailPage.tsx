@@ -240,15 +240,6 @@ function ActionBar({
       {!inlineAdvanceStep && (
         <Button
           onClick={() => {
-            // Reminder: advancing the workflow doesn't auto-save form
-            // edits in the panels above. Confirm so a click on Next
-            // Step doesn't silently leave unsaved typing behind.
-            if (
-              !confirm(
-                "Did you save your changes? Next Step does not save the fields above — click Cancel and Save first if needed.",
-              )
-            )
-              return;
             advance.mutate({
               id: wf.id,
               data: { branch: branch ? branch : null },
