@@ -250,7 +250,7 @@ function ActionBar({
           ) : (
             <ArrowRight className="mr-2 h-4 w-4" />
           )}
-          Advance
+          Next Step
         </Button>
       )}
       {!isTerminal && (
