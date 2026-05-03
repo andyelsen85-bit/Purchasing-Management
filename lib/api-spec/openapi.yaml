@@ -1594,7 +1594,7 @@ components:
         limitX: { type: number }
         currency: { type: string }
         certSigningEnabled: { type: boolean }
-        signingAgentUrl: { type: ["string", "null"] }
+        signingAgentPort: { type: ["integer", "null"] }
         gtInvestRecipients:
           type: array
           items: { type: string }
@@ -1617,7 +1617,7 @@ components:
         limitX: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         certSigningEnabled: { type: ["boolean", "null"] }
-        signingAgentUrl: { type: ["string", "null"] }
+        signingAgentPort: { type: ["integer", "null"] }
         gtInvestRecipients:
           type: array
           items: { type: string }

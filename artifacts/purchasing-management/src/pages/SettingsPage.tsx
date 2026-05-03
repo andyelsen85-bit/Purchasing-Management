@@ -636,7 +636,7 @@ function AppSettingsPanel() {
   const [limitX, setLimitX] = useState<number>(10000);
   const [currency, setCurrency] = useState("EUR");
   const [signingEnabled, setSigningEnabled] = useState(false);
-  const [signingUrl, setSigningUrl] = useState("");
+  const [signingPort, setSigningPort] = useState<number>(9443);
 
   useEffect(() => {
     if (!s) return;
@@ -645,7 +645,7 @@ function AppSettingsPanel() {
     setLimitX(s.limitX);
     setCurrency(s.currency);
     setSigningEnabled(s.certSigningEnabled);
-    setSigningUrl(s.signingAgentUrl ?? "");
+    setSigningPort(s.signingAgentPort ?? 9443);
   }, [s]);
 
   function onLogo(e: React.ChangeEvent<HTMLInputElement>) {
@@ -737,8 +737,13 @@ function AppSettingsPanel() {
             <div>
               <Label>Enable Windows signing agent</Label>
               <p className="text-xs text-muted-foreground">
-                If enabled, certificate signing requests are forwarded to the
-                Windows agent at the URL below.
+                When enabled, validating an invoice posts the merged
+                PDF to the Windows signing agent installed on the
+                operator's own PC at
+                {" "}
+                <code className="font-mono">http://localhost:&lt;port&gt;/sign</code>.
+                Only the port (set during agent installation) needs to
+                be configured here.
               </p>
             </div>
             <Switch
@@ -748,12 +753,17 @@ function AppSettingsPanel() {
             />
           </div>
           {signingEnabled && (
-            <Input
-              placeholder="https://signing-agent.lan:9443"
-              value={signingUrl}
-              onChange={(e) => setSigningUrl(e.target.value)}
-              data-testid="input-signing-url"
-            />
+            <div className="space-y-1">
+              <Label>Agent port</Label>
+              <Input
+                type="number"
+                min={1}
+                max={65535}
+                value={signingPort}
+                onChange={(e) => setSigningPort(Number(e.target.value))}
+                data-testid="input-signing-port"
+              />
+            </div>
           )}
         </div>
 
@@ -767,7 +777,10 @@ function AppSettingsPanel() {
                   limitX,
                   currency,
                   certSigningEnabled: signingEnabled,
-                  signingAgentUrl: signingUrl || null,
+                  signingAgentPort:
+                    signingEnabled && Number.isFinite(signingPort) && signingPort > 0
+                      ? signingPort
+                      : null,
                 },
               })
             }

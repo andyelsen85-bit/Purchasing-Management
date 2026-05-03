@@ -691,7 +691,7 @@ export interface AppSettings {
   currency: string;
   certSigningEnabled: boolean;
   /** @nullable */
-  signingAgentUrl?: string | null;
+  signingAgentPort?: number | null;
   gtInvestRecipients: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
@@ -796,7 +796,7 @@ export interface UpdateSettingsInput {
   /** @nullable */
   certSigningEnabled?: boolean | null;
   /** @nullable */
-  signingAgentUrl?: string | null;
+  signingAgentPort?: number | null;
   gtInvestRecipients?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;

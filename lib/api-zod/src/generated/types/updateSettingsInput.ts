@@ -20,7 +20,7 @@ export interface UpdateSettingsInput {
   /** @nullable */
   certSigningEnabled?: boolean | null;
   /** @nullable */
-  signingAgentUrl?: string | null;
+  signingAgentPort?: number | null;
   gtInvestRecipients?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;

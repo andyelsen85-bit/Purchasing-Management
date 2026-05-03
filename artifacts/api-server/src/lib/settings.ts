@@ -98,7 +98,11 @@ export interface AppSettings {
   limitX: number;
   currency: string;
   certSigningEnabled: boolean;
-  signingAgentUrl?: string | null;
+  // Port on which the Windows signing agent listens on each
+  // operator's workstation. The browser always contacts
+  // http://localhost:<port>/sign, so the URL is implicit and only
+  // the port (defined at agent install time) needs to be configured.
+  signingAgentPort?: number | null;
   gtInvestRecipients: string[];
   ldap: LdapConfigStored;
   smtp: SmtpConfigStored;
@@ -110,7 +114,7 @@ const DEFAULT: AppSettings = {
   limitX: 10000,
   currency: "EUR",
   certSigningEnabled: false,
-  signingAgentUrl: null,
+  signingAgentPort: 9443,
   gtInvestRecipients: [],
   ldap: {
     enabled: false,
@@ -160,7 +164,7 @@ export function toPublicSettings(s: AppSettings) {
     limitX: s.limitX,
     currency: s.currency,
     certSigningEnabled: s.certSigningEnabled,
-    signingAgentUrl: s.signingAgentUrl ?? null,
+    signingAgentPort: s.signingAgentPort ?? null,
     gtInvestRecipients: s.gtInvestRecipients ?? [],
     ldap: {
       enabled: !!s.ldap?.enabled,

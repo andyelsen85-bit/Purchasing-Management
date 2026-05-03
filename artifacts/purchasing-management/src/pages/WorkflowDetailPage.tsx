@@ -2254,10 +2254,60 @@ function InvoiceValidationPanel({
     wf.invoiceSignedBy ?? user.displayName ?? "",
   );
   const save = useSaveWorkflow(wf, onChange);
+  const { data: settings } = useGetSettings();
+  const [signing, setSigning] = useState(false);
   // Build a merged PDF of every attached document (quote → order →
   // delivery → invoice). The endpoint returns application/pdf which
   // we hand off to the browser as a regular download.
   const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
+
+  // When the admin enables the Windows signing agent, the browser
+  // (running on the operator's own PC) is responsible for sending
+  // the merged invoice pack to the local agent at
+  // http://localhost:<port>/sign before the workflow is allowed to
+  // advance. The server never reaches out to the agent — it could
+  // not, since the agent only listens on each user's loopback
+  // interface and the port is defined at agent install time.
+  async function signWithLocalAgent(): Promise<true | string> {
+    const port = settings?.signingAgentPort;
+    if (!port) return "Signing agent port is not configured in Settings.";
+    try {
+      const pdf = await fetch(exportHref, { credentials: "include" });
+      if (!pdf.ok) return `Could not fetch the merged PDF (${pdf.status}).`;
+      const blob = await pdf.blob();
+      const r = await fetch(`http://localhost:${port}/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf" },
+        body: blob,
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
+        return `Signing agent rejected the request (${r.status}). ${txt}`.trim();
+      }
+      return true;
+    } catch (e) {
+      return `Could not reach the signing agent on localhost:${port}. Make sure the Windows agent service is running. (${(e as Error).message})`;
+    }
+  }
+
+  async function onValidate() {
+    if (settings?.certSigningEnabled) {
+      setSigning(true);
+      const result = await signWithLocalAgent();
+      setSigning(false);
+      if (result !== true) {
+        alert(result);
+        return;
+      }
+    }
+    save.mutate({
+      id: wf.id,
+      data: {
+        invoiceValidated: true,
+        invoiceSignedBy: signedBy || null,
+      },
+    });
+  }
   const reject = useRejectWorkflow({
     mutation: {
       onSuccess: () => onChange(),
@@ -2269,7 +2319,7 @@ function InvoiceValidationPanel({
       },
     },
   });
-  const busy = save.isPending || reject.isPending;
+  const busy = save.isPending || reject.isPending || signing;
   return (
     <div className="space-y-4">
       <PriorStepsRecap wf={wf} throughStep="VALIDATING_INVOICE" />
@@ -2301,24 +2351,20 @@ function InvoiceValidationPanel({
             </a>
           </Button>
           <Button
-            onClick={() =>
-              save.mutate({
-                id: wf.id,
-                data: {
-                  invoiceValidated: true,
-                  invoiceSignedBy: signedBy || null,
-                },
-              })
-            }
+            onClick={onValidate}
             disabled={busy}
             data-testid="button-invoice-validate"
           >
-            {save.isPending ? (
+            {save.isPending || signing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Save className="mr-2 h-4 w-4" />
             )}
-            Validate
+            {signing
+              ? "Signing on local agent…"
+              : settings?.certSigningEnabled
+                ? "Sign & validate"
+                : "Validate"}
           </Button>
           <Button
             variant="destructive"

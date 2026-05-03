@@ -16,7 +16,7 @@ export interface AppSettings {
   currency: string;
   certSigningEnabled: boolean;
   /** @nullable */
-  signingAgentUrl?: string | null;
+  signingAgentPort?: number | null;
   gtInvestRecipients: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;

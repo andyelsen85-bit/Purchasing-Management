@@ -1656,7 +1656,7 @@ export const GetSettingsResponse = zod.object({
   limitX: zod.number(),
   currency: zod.string(),
   certSigningEnabled: zod.boolean(),
-  signingAgentUrl: zod.string().nullish(),
+  signingAgentPort: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()),
   ldap: zod.object({
     enabled: zod.boolean(),
@@ -1704,7 +1704,7 @@ export const UpdateSettingsBody = zod.object({
   limitX: zod.number().nullish(),
   currency: zod.string().nullish(),
   certSigningEnabled: zod.boolean().nullish(),
-  signingAgentUrl: zod.string().nullish(),
+  signingAgentPort: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()).optional(),
   ldap: zod
     .object({
@@ -1757,7 +1757,7 @@ export const UpdateSettingsResponse = zod.object({
   limitX: zod.number(),
   currency: zod.string(),
   certSigningEnabled: zod.boolean(),
-  signingAgentUrl: zod.string().nullish(),
+  signingAgentPort: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()),
   ldap: zod.object({
     enabled: zod.boolean(),
