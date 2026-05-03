@@ -615,11 +615,29 @@ router.post("/workflows/:id/undo", requireAuth, async (req, res): Promise<void> 
     res.status(404).json({ error: "Not found" });
     return;
   }
-  if (!wf.previousStep) {
+  // Multi-step undo: derive the previous step from history rather than
+  // relying on the (single-slot) `previousStep` column. We look for the
+  // most recent forward transition (ADVANCE / REJECT) whose toStep is
+  // the current step and rewind to its fromStep. This lets an admin
+  // undo as many steps as they like, one click at a time, instead of
+  // being limited to the single most-recent ADVANCE.
+  const recent = await db
+    .select()
+    .from(historyTable)
+    .where(eq(historyTable.workflowId, wf.id))
+    .orderBy(desc(historyTable.createdAt))
+    .limit(50);
+  const lastForward = recent.find(
+    (h) =>
+      (h.action === "ADVANCE" || h.action === "REJECT") &&
+      h.toStep === wf.currentStep &&
+      h.fromStep,
+  );
+  if (!lastForward || !lastForward.fromStep) {
     res.status(400).json({ error: "No previous step to undo to" });
     return;
   }
-  const prev = wf.previousStep;
+  const prev = lastForward.fromStep;
   await db
     .update(workflowsTable)
     .set({

@@ -475,7 +475,29 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
   const { data: docs } = useListWorkflowDocuments(wf.id);
   const { data: dates } = useListGtInvestDates();
   const { data: results } = useListGtInvestResults();
+  const { data: hist } = useListWorkflowHistory(wf.id);
   const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
+
+  // Build a `step -> {actor, at}` map for "who completed this step",
+  // using the most recent ADVANCE row whose fromStep matches the
+  // step. We sort history descending and keep the first hit per
+  // fromStep so re-advances after an Undo show the *latest* actor.
+  const stepActor = (() => {
+    const map = new Map<string, { name: string; at: string }>();
+    const sorted = [...(hist ?? [])].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    for (const h of sorted) {
+      if (h.action !== "ADVANCE" || !h.fromStep) continue;
+      if (!map.has(h.fromStep))
+        map.set(h.fromStep, {
+          name: h.actorName || "—",
+          at: h.createdAt,
+        });
+    }
+    return map;
+  })();
 
   const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
   const gtResult =
@@ -499,18 +521,35 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
   );
   const Section = ({
     title,
+    step,
     children,
   }: {
     title: string;
+    step?: Step;
     children: React.ReactNode;
-  }) => (
-    <div className="rounded-md border bg-muted/20 p-3">
-      <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
+  }) => {
+    const meta = step ? stepActor.get(step) : undefined;
+    return (
+      <div className="rounded-md border bg-muted/20 p-3">
+        <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {title}
+          </div>
+          {meta && (
+            <div
+              className="text-[11px] text-muted-foreground"
+              data-testid={`step-actor-${step}`}
+            >
+              by <span className="font-medium text-foreground">{meta.name}</span>
+              {" · "}
+              {fmtDateTime(meta.at)}
+            </div>
+          )}
+        </div>
+        <div className="divide-y">{children}</div>
       </div>
-      <div className="divide-y">{children}</div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -544,14 +583,14 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
             <Row label="Last update" value={fmtDateTime(wf.updatedAt)} />
           </Section>
 
-          <Section title="1 · New request">
+          <Section title="1 · New request" step="NEW">
             <Row label="Description" value={orDash(wf.description)} />
             <Row label="Category" value={orDash(wf.category)} />
             <Row label="Estimated amount" value={fmtMoney(wf.estimatedAmount, wf.currency)} />
             <Row label="Needed by" value={fmtDate(wf.neededBy)} />
           </Section>
 
-          <Section title="2 · Quotation">
+          <Section title="2 · Quotation" step="QUOTATION">
             <Row label="3 quotes required" value={fmtBool(wf.threeQuoteRequired)} />
             <div className="py-1">
               {wf.quotes && wf.quotes.length > 0 ? (
@@ -583,47 +622,56 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
             </div>
           </Section>
 
-          <Section title="3 · Manager approval">
+          <Section
+            title="3 · Manager approval"
+            step="VALIDATING_QUOTE_FINANCIAL"
+          >
             <Row label="Approved" value={fmtBool(wf.managerApproved)} />
             <Row label="Comment" value={orDash(wf.managerComment)} />
           </Section>
 
-          <Section title="4 · Financial approval">
+          <Section
+            title="4 · Financial approval"
+            step="VALIDATING_BY_FINANCIAL"
+          >
             <Row label="Approved" value={fmtBool(wf.financialApproved)} />
             <Row label="Comment" value={orDash(wf.financialComment)} />
           </Section>
 
           {wf.branch === "GT_INVEST" || wf.gtInvestDateId || wf.gtInvestResultId ? (
-            <Section title="GT Invest">
+            <Section title="GT Invest" step="GT_INVEST">
               <Row label="Session date" value={fmtDate(gtDate)} />
               <Row label="Result" value={orDash(gtResult)} />
               <Row label="Comment" value={orDash(wf.gtInvestComment)} />
             </Section>
           ) : null}
 
-          <Section title="5 · Ordering">
+          <Section title="5 · Ordering" step="ORDERING">
             <Row label="Order number" value={orDash(wf.orderNumber)} />
             <Row label="Order date" value={fmtDate(wf.orderDate)} />
           </Section>
 
-          <Section title="6 · Delivery">
+          <Section title="6 · Delivery" step="DELIVERY">
             <Row label="Delivered on" value={fmtDate(wf.deliveredOn)} />
             <Row label="Notes" value={orDash(wf.deliveryNotes)} />
           </Section>
 
-          <Section title="7 · Invoice">
+          <Section title="7 · Invoice" step="INVOICE">
             <Row label="Invoice number" value={orDash(wf.invoiceNumber)} />
             <Row label="Invoice amount" value={fmtMoney(wf.invoiceAmount, wf.currency)} />
             <Row label="Invoice date" value={fmtDate(wf.invoiceDate)} />
           </Section>
 
-          <Section title="8 · Validate invoice">
+          <Section
+            title="8 · Validate invoice"
+            step="VALIDATING_INVOICE"
+          >
             <Row label="Validated" value={fmtBool(wf.invoiceValidated)} />
             <Row label="Signed by" value={orDash(wf.invoiceSignedBy)} />
             <Row label="Signed at" value={fmtDateTime(wf.invoiceSignedAt)} />
           </Section>
 
-          <Section title="9 · Payment">
+          <Section title="9 · Payment" step="PAYMENT">
             <Row label="Payment date" value={fmtDate(wf.paymentDate)} />
             <Row label="Payment reference" value={orDash(wf.paymentReference)} />
           </Section>
