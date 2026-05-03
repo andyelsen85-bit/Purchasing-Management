@@ -101,15 +101,23 @@ export function AppShell({ user, children }: Props) {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem("sidebar-show-terminal", showTerminal ? "1" : "0");
   }, [showTerminal]);
-  const deptWorkflows = useMemo(
-    () =>
-      showTerminal
-        ? (deptWorkflowsRaw ?? [])
-        : (deptWorkflowsRaw ?? []).filter(
-            (w) => w.currentStep !== "DONE" && w.currentStep !== "REJECTED",
-          ),
-    [deptWorkflowsRaw, showTerminal],
-  );
+  const deptWorkflows = useMemo(() => {
+    const all = deptWorkflowsRaw ?? [];
+    const isTerminal = (s: string) => s === "DONE" || s === "REJECTED";
+    const active = all.filter((w) => !isTerminal(w.currentStep));
+    if (!showTerminal) return active;
+    // Closed/done items are listed AFTER active ones, sorted by their
+    // last update time descending so the most recently closed/rejected
+    // workflow surfaces at the top of the terminal group.
+    const terminal = all
+      .filter((w) => isTerminal(w.currentStep))
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+    return [...active, ...terminal];
+  }, [deptWorkflowsRaw, showTerminal]);
   const hiddenTerminalCount = useMemo(
     () =>
       (deptWorkflowsRaw ?? []).filter(
