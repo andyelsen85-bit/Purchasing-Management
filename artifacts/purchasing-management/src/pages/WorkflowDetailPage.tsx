@@ -63,6 +63,13 @@ import {
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
 import { GT_DECISION_OPTIONS, gtDecisionLabel } from "@/pages/GtInvestPage";
+import {
+  MissingFieldsProvider,
+  RequiredMark,
+  missingInputCls,
+  useMissingFields,
+} from "@/components/MissingFields";
+import { computeMissingFields } from "@/lib/workflowValidation";
 import type { SessionUser } from "@/components/AuthGate";
 import { useToast } from "@/hooks/use-toast";
 import { extractErrorMessage } from "@/lib/utils";
@@ -104,6 +111,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
   }
 
   return (
+    <MissingFieldsProvider>
     <div className="space-y-6 p-6">
       <Button
         variant="ghost"
@@ -174,6 +182,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
         </TabsContent>
       </Tabs>
     </div>
+    </MissingFieldsProvider>
   );
 }
 
@@ -187,14 +196,31 @@ function ActionBar({
   onChange: () => void;
 }) {
   const [branch, setBranch] = useState<keyof typeof AdvanceWorkflowInputBranch | "">("");
+  const { setMissing } = useMissingFields();
+  const { data: docs } = useListWorkflowDocuments(wf.id);
   const advance = useAdvanceWorkflow({
     mutation: {
-      onSuccess: () => onChange(),
+      onSuccess: () => {
+        setMissing(new Set());
+        onChange();
+      },
       onError: (err) => {
-        const msg =
-          (err as { data?: { message?: string } }).data?.message ??
-          (err as Error).message;
-        alert(`Cannot advance: ${msg}`);
+        // Server-side validation may still flag fields the client
+        // didn't catch (e.g. a stale doc list). Re-run the local
+        // checker so the user still gets visual highlights instead
+        // of just a console error. We *intentionally* swallow the
+        // error message here — the user asked for highlights only,
+        // no popup.
+        const missing = computeMissingFields(
+          wf,
+          (docs ?? []).map((d) => ({
+            kind: d.kind,
+            isCurrent: (d as unknown as { isCurrent?: boolean }).isCurrent,
+          })),
+          branch ? branch : null,
+        );
+        setMissing(missing);
+        void err;
       },
     },
   });
@@ -241,6 +267,24 @@ function ActionBar({
       {!inlineAdvanceStep && (
         <Button
           onClick={() => {
+            // Pre-validate locally and highlight missing fields
+            // instead of firing a request that will surface as an
+            // error popup. Only call the server when the client-side
+            // checks pass — the server still runs the same checks
+            // as a safety net.
+            const missing = computeMissingFields(
+              wf,
+              (docs ?? []).map((d) => ({
+                kind: d.kind,
+                isCurrent: (d as unknown as { isCurrent?: boolean }).isCurrent,
+              })),
+              branch ? branch : null,
+            );
+            if (missing.size > 0) {
+              setMissing(missing);
+              return;
+            }
+            setMissing(new Set());
             advance.mutate({
               id: wf.id,
               data: { branch: branch ? branch : null },
@@ -309,16 +353,21 @@ function StepDocumentUploader({
   kind,
   step,
   label,
+  required = false,
 }: {
   wf: Workflow;
   kind: keyof typeof UploadDocumentInputKind;
   step: Step;
   label: string;
+  required?: boolean;
 }) {
   const { data: docs } = useListWorkflowDocuments(wf.id);
   const upload = useUploadWorkflowDocument();
   const del = useDeleteDocument();
   const qc = useQueryClient();
+  const { missing, clearKey } = useMissingFields();
+  const fieldKey = `doc:${kind}`;
+  const isMissing = required && missing.has(fieldKey);
   // The server returns all versions (incl. demoted ones), with an
   // extra `isCurrent` flag that isn't in the generated OpenAPI type.
   // Filter to current-only via a runtime cast so old versions don't
@@ -347,6 +396,8 @@ function StepDocumentUploader({
           replacesDocumentId: null,
         },
       });
+      // Clear the highlight as soon as the missing doc is provided.
+      if (required) clearKey(fieldKey);
     } finally {
       e.target.value = "";
       qc.invalidateQueries();
@@ -354,9 +405,16 @@ function StepDocumentUploader({
   }
 
   return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+    <div
+      className={`space-y-2 rounded-md border bg-muted/20 p-3 ${
+        isMissing ? "border-destructive ring-1 ring-destructive" : ""
+      }`}
+    >
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">{label}</Label>
+        <Label className="text-sm font-medium">
+          {label}
+          {required && <RequiredMark />}
+        </Label>
         {upload.isPending && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
@@ -921,10 +979,22 @@ function QuotationPanel({
     );
   }
 
+  const { missing } = useMissingFields();
+  const quotesMissing =
+    missing.has("quotes") ||
+    missing.has("quotes-winning") ||
+    missing.has("doc:QUOTE");
+
   return (
-    <Card>
+    <Card
+      className={
+        quotesMissing ? "border-destructive ring-1 ring-destructive" : ""
+      }
+    >
       <CardHeader>
-        <CardTitle>Quotations</CardTitle>
+        <CardTitle>
+          Quotations{quotesMissing && <RequiredMark />}
+        </CardTitle>
         <p className="text-sm text-muted-foreground">
           {threeQuotesRequired
             ? "Collect quotes from suppliers. Mark one as winning before advancing."
@@ -1308,12 +1378,11 @@ function ManagerApprovePanel({
   const advance = useAdvanceWorkflow({
     mutation: {
       onSuccess: () => onChange(),
-      onError: (err) => {
-        const msg =
-          (err as { data?: { message?: string } }).data?.message ??
-          (err as Error).message;
-        alert(`Cannot advance: ${msg}`);
-      },
+      // Server-side errors are intentionally swallowed here — the
+      // approve button only fires once managerApproved is set, so
+      // any remaining failure is rare. We don't want the popup that
+      // contradicts the new "highlight only" UX.
+      onError: () => {},
     },
   });
   // Reject is a *closing* action — it transitions to the terminal
@@ -1426,12 +1495,9 @@ function FinancialApprovePanel({
   const advance = useAdvanceWorkflow({
     mutation: {
       onSuccess: () => onChange(),
-      onError: (err) => {
-        const msg =
-          (err as { data?: { message?: string } }).data?.message ??
-          (err as Error).message;
-        alert(`Cannot advance: ${msg}`);
-      },
+      // Highlight-only UX — the missing branch is already surfaced
+      // via the field highlight, no popup needed.
+      onError: () => {},
     },
   });
   const reject = useRejectWorkflow({
@@ -1446,9 +1512,16 @@ function FinancialApprovePanel({
     },
   });
   const busy = save.isPending || advance.isPending || reject.isPending;
+  const { missing, setMissing, clearKey } = useMissingFields();
 
   function approveAndAdvance() {
-    if (!branch) return;
+    if (!branch) {
+      // Surface the missing branch as a highlight on the select
+      // instead of silently doing nothing, matching the global
+      // Next Step button's behaviour.
+      setMissing(new Set(["branch"]));
+      return;
+    }
     // Two-step: persist comment + financialApproved=true, then advance
     // with the chosen branch. Sequenced so the audit log records the
     // approval before the step transition.
@@ -1490,15 +1563,18 @@ function FinancialApprovePanel({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Routing branch *</Label>
+            <Label>
+              Routing branch<RequiredMark />
+            </Label>
             <Select
               value={branch}
-              onValueChange={(v) =>
-                setBranch(v as keyof typeof AdvanceWorkflowInputBranch)
-              }
+              onValueChange={(v) => {
+                setBranch(v as keyof typeof AdvanceWorkflowInputBranch);
+                if (v) clearKey("branch");
+              }}
             >
               <SelectTrigger
-                className="w-full sm:w-64"
+                className={`w-full sm:w-64 ${missingInputCls(missing.has("branch"))}`}
                 data-testid="select-fin-branch"
               >
                 <SelectValue placeholder="Choose K-Order or GT Invest…" />
@@ -1882,6 +1958,7 @@ function OrderingPanel({
   const [orderNumber, setOrderNumber] = useState(wf.orderNumber ?? "");
   const [orderDate, setOrderDate] = useState(wf.orderDate ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const { missing, clearKey } = useMissingFields();
   return (
     <div className="space-y-4">
       <PriorStepsRecap wf={wf} throughStep="ORDERING" />
@@ -1892,19 +1969,31 @@ function OrderingPanel({
       <CardContent className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label>Order number</Label>
+            <Label>
+              Order number<RequiredMark />
+            </Label>
             <Input
               value={orderNumber}
-              onChange={(e) => setOrderNumber(e.target.value)}
+              onChange={(e) => {
+                setOrderNumber(e.target.value);
+                if (e.target.value) clearKey("orderNumber");
+              }}
+              className={missingInputCls(missing.has("orderNumber"))}
               data-testid="input-order-number"
             />
           </div>
           <div className="space-y-1">
-            <Label>Order date</Label>
+            <Label>
+              Order date<RequiredMark />
+            </Label>
             <Input
               type="date"
               value={orderDate}
-              onChange={(e) => setOrderDate(e.target.value)}
+              onChange={(e) => {
+                setOrderDate(e.target.value);
+                if (e.target.value) clearKey("orderDate");
+              }}
+              className={missingInputCls(missing.has("orderDate"))}
               data-testid="input-order-date"
             />
           </div>
@@ -1926,6 +2015,7 @@ function OrderingPanel({
           kind="ORDER"
           step="ORDERING"
           label="Order document"
+          required
         />
       </CardContent>
     </Card>
@@ -1943,6 +2033,7 @@ function DeliveryPanel({
   const [deliveredOn, setDeliveredOn] = useState(wf.deliveredOn ?? "");
   const [deliveryNotes, setDeliveryNotes] = useState(wf.deliveryNotes ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const { missing, clearKey } = useMissingFields();
   return (
     <div className="space-y-4">
       <PriorStepsRecap wf={wf} throughStep="DELIVERY" />
@@ -1956,11 +2047,17 @@ function DeliveryPanel({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
-          <Label>Delivered on</Label>
+          <Label>
+            Delivered on<RequiredMark />
+          </Label>
           <Input
             type="date"
             value={deliveredOn}
-            onChange={(e) => setDeliveredOn(e.target.value)}
+            onChange={(e) => {
+              setDeliveredOn(e.target.value);
+              if (e.target.value) clearKey("deliveredOn");
+            }}
+            className={missingInputCls(missing.has("deliveredOn"))}
             data-testid="input-delivered-on"
           />
         </div>
@@ -2013,6 +2110,7 @@ function InvoicePanel({
   );
   const [invoiceDate, setInvoiceDate] = useState(wf.invoiceDate ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const { missing, clearKey } = useMissingFields();
   return (
     <Card>
       <CardHeader>
@@ -2021,29 +2119,47 @@ function InvoicePanel({
       <CardContent className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="space-y-1">
-            <Label>Invoice number</Label>
+            <Label>
+              Invoice number<RequiredMark />
+            </Label>
             <Input
               value={invoiceNumber}
-              onChange={(e) => setInvoiceNumber(e.target.value)}
+              onChange={(e) => {
+                setInvoiceNumber(e.target.value);
+                if (e.target.value) clearKey("invoiceNumber");
+              }}
+              className={missingInputCls(missing.has("invoiceNumber"))}
               data-testid="input-invoice-number"
             />
           </div>
           <div className="space-y-1">
-            <Label>Amount</Label>
+            <Label>
+              Amount<RequiredMark />
+            </Label>
             <Input
               type="number"
               step="0.01"
               value={invoiceAmount}
-              onChange={(e) => setInvoiceAmount(e.target.value)}
+              onChange={(e) => {
+                setInvoiceAmount(e.target.value);
+                if (e.target.value) clearKey("invoiceAmount");
+              }}
+              className={missingInputCls(missing.has("invoiceAmount"))}
               data-testid="input-invoice-amount"
             />
           </div>
           <div className="space-y-1">
-            <Label>Invoice date</Label>
+            <Label>
+              Invoice date<RequiredMark />
+            </Label>
             <Input
               type="date"
               value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.target.value)}
+              onChange={(e) => {
+                setInvoiceDate(e.target.value);
+                if (e.target.value) clearKey("invoiceDate");
+              }}
+              className={missingInputCls(missing.has("invoiceDate"))}
               data-testid="input-invoice-date"
             />
           </div>
@@ -2069,6 +2185,7 @@ function InvoicePanel({
           kind="INVOICE"
           step="INVOICE"
           label="Invoice document"
+          required
         />
       </CardContent>
     </Card>
