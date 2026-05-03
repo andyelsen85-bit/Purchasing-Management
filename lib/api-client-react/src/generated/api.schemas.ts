@@ -813,6 +813,24 @@ export interface GtInvestDate {
   preparedByName?: string | null;
 }
 
+export type LdapSyncRolesResultErrorsItem = {
+  username: string;
+  error: string;
+};
+
+export interface LdapSyncRolesResult {
+  ok: boolean;
+  /** Number of LDAP users iterated */
+  scanned: number;
+  /** Number of users whose roles or departments changed */
+  updated: number;
+  /** Number of users skipped (no AD groups returned */
+  skipped: number;
+  errors: LdapSyncRolesResultErrorsItem[];
+  /** @nullable */
+  message?: string | null;
+}
+
 export interface NotifyGtInvestMeetingResult {
   sent: boolean;
   recipients: string[];

@@ -45,13 +45,16 @@ import {
   useCreateGtInvestDate,
   useDeleteGtInvestDate,
   useTestLdap,
+  useSyncLdapRoles,
   useGetSession,
   useListDeletedWorkflows,
   useRestoreWorkflow,
   useListUsers,
+  getListUsersQueryKey,
   getListDeletedWorkflowsQueryKey,
 } from "@/lib/api";
-import { Users } from "lucide-react";
+import { Users, RefreshCw } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { HttpsSettingsPanel } from "@/pages/settings/HttpsSettingsPanel";
 
 /**
@@ -1910,6 +1913,26 @@ function GtRecipientsPanel() {
   const { data: s } = useGetSettings();
   const { data: users } = useListUsers();
   const save = useSaveSettings();
+  const qc = useQueryClient();
+  // Re-derive roles + departments from AD groups for every LDAP user.
+  // Without this the only way to pick up an AD group change is to wait
+  // for each affected user to log in again.
+  const sync = useSyncLdapRoles({
+    mutation: {
+      onSuccess: async (r) => {
+        await qc.invalidateQueries({ queryKey: getListUsersQueryKey() });
+        if (r.message) {
+          toast({ title: "Sync skipped", description: r.message, variant: "destructive" });
+          return;
+        }
+        const errSuffix = r.errors.length > 0 ? ` · ${r.errors.length} error(s)` : "";
+        toast({
+          title: "AD sync complete",
+          description: `Scanned ${r.scanned}, updated ${r.updated}, skipped ${r.skipped}${errSuffix}.`,
+        });
+      },
+    },
+  });
   const [recipients, setRecipients] = useState<string[]>([]);
   const [next, setNext] = useState("");
 
@@ -1949,6 +1972,26 @@ function GtRecipientsPanel() {
             via the LDAP tab&apos;s Group&nbsp;→&nbsp;Role mapping for AD users,
             or directly on the user record otherwise.
           </p>
+          <p className="text-xs text-muted-foreground">
+            AD-derived roles normally refresh the next time each user signs
+            in. Click <strong>Sync from AD</strong> to re-query the directory
+            now and apply the current Group&nbsp;→&nbsp;Role mapping to every
+            LDAP user immediately.
+          </p>
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sync.mutate()}
+              disabled={sync.isPending}
+              data-testid="button-sync-ldap-roles"
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${sync.isPending ? "animate-spin" : ""}`}
+              />
+              {sync.isPending ? "Syncing…" : "Sync from AD"}
+            </Button>
+          </div>
           {roleMembers.length === 0 ? (
             <p className="rounded-md border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
               No users currently have this role.

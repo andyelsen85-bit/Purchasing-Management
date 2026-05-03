@@ -47,6 +47,7 @@ import type {
   HealthStatus,
   HistoryEntry,
   ImportCertInput,
+  LdapSyncRolesResult,
   LdapTestInput,
   LdapTestResult,
   ListAuditLogParams,
@@ -4590,6 +4591,95 @@ export const useTestLdap = <
   TContext
 > => {
   return useMutation(getTestLdapMutationOptions(options));
+};
+
+/**
+ * Iterates every user with `source=LDAP`, queries the directory for
+their current group memberships, and re-applies the configured
+Group → Role and Group → Department mappings. Use this after
+changing AD group membership (e.g. assigning a new user to the
+GT Invest notifications group) so the change is reflected
+immediately instead of waiting for the user to log in again.
+Admin-only.
+
+ * @summary Re-derive roles + departments from AD groups for every LDAP user
+ */
+export const getSyncLdapRolesUrl = () => {
+  return `/api/admin/ldap-sync-roles`;
+};
+
+export const syncLdapRoles = async (
+  options?: RequestInit,
+): Promise<LdapSyncRolesResult> => {
+  return customFetch<LdapSyncRolesResult>(getSyncLdapRolesUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSyncLdapRolesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncLdapRoles>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof syncLdapRoles>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["syncLdapRoles"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof syncLdapRoles>>,
+    void
+  > = () => {
+    return syncLdapRoles(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SyncLdapRolesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof syncLdapRoles>>
+>;
+
+export type SyncLdapRolesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Re-derive roles + departments from AD groups for every LDAP user
+ */
+export const useSyncLdapRoles = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncLdapRoles>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof syncLdapRoles>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getSyncLdapRolesMutationOptions(options));
 };
 
 export const getGenerateCsrUrl = () => {

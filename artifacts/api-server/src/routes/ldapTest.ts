@@ -1,12 +1,16 @@
 import { Router, type IRouter } from "express";
-import { db, departmentsTable } from "@workspace/db";
-import { requireAuth, requireRole } from "../middlewares/auth";
+import { eq } from "drizzle-orm";
+import { db, departmentsTable, usersTable } from "@workspace/db";
+import { requireAuth, requireRole, getUser } from "../middlewares/auth";
 import { getSettings } from "../lib/settings";
-import { runLdapDiagnostics } from "../lib/ldap";
+import { runLdapDiagnostics, lookupLdapGroups } from "../lib/ldap";
 import {
   mapGroupsToRoles,
+  mapGroupsToDepartmentIds,
+  syncUserDepartments,
   hasMapping,
 } from "../lib/groupMapping";
+import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
 
@@ -102,5 +106,123 @@ async function resolveDeptCodes(
     .filter((d) => wanted.has(d.code.trim().toLowerCase()))
     .map((d) => d.code);
 }
+
+/**
+ * POST /api/admin/ldap-sync-roles
+ *
+ * Re-derives roles + department memberships from AD groups for every
+ * LDAP-sourced user. Normally this happens at sign-in, but operators
+ * who just edited an AD group (e.g. added a user to the GT Invest
+ * notifications group) want the change reflected without making the
+ * user log in again. Admin-only.
+ *
+ * Implementation:
+ *  - Reads the saved LDAP config (no-op + 400 if mapping is disabled).
+ *  - For each LDAP user, calls `lookupLdapGroups` (binds with the
+ *    service account, no user password needed).
+ *  - Re-applies `mapGroupsToRoles` and, if a department mapping is
+ *    configured, `mapGroupsToDepartmentIds` + `syncUserDepartments`.
+ *  - Returns a small summary (scanned / updated / skipped / errors)
+ *    so the UI can surface the result without forcing a refresh.
+ *  - Errors per user are collected, never thrown — one mis-configured
+ *    user must not abort the whole sync.
+ */
+router.post(
+  "/admin/ldap-sync-roles",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req, res): Promise<void> => {
+    const settings = await getSettings();
+    const cfg = settings.ldap ?? {};
+    if (!cfg.enabled) {
+      res
+        .status(400)
+        .json({ ok: false, scanned: 0, updated: 0, skipped: 0, errors: [], message: "LDAP is disabled in Settings." });
+      return;
+    }
+    const useRoleMap = hasMapping(cfg.groupRoleMap);
+    const useDeptMap = hasMapping(cfg.groupDepartmentMap);
+    if (!useRoleMap && !useDeptMap) {
+      res.status(400).json({
+        ok: false,
+        scanned: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [],
+        message:
+          "No Group → Role or Group → Department mapping is configured on the LDAP tab.",
+      });
+      return;
+    }
+
+    const ldapUsers = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.source, "LDAP"));
+
+    let updated = 0;
+    let skipped = 0;
+    const errors: { username: string; error: string }[] = [];
+
+    for (const u of ldapUsers) {
+      try {
+        const groups = await lookupLdapGroups(cfg, u.username);
+        if (groups.length === 0) {
+          // Could mean "user actually has no groups" *or* "we failed
+          // silently". Either way we have nothing to apply, so just
+          // skip — don't wipe roles based on an empty result.
+          skipped++;
+          continue;
+        }
+        let changed = false;
+        const patch: Record<string, unknown> = {};
+        if (useRoleMap) {
+          const derived = mapGroupsToRoles(groups, cfg.groupRoleMap);
+          const before = (u.roles ?? []).slice().sort().join(",");
+          const after = derived.slice().sort().join(",");
+          if (before !== after) {
+            patch.roles = derived;
+            changed = true;
+          }
+        }
+        if (Object.keys(patch).length > 0) {
+          await db.update(usersTable).set(patch).where(eq(usersTable.id, u.id));
+        }
+        if (useDeptMap) {
+          const desiredIds = await mapGroupsToDepartmentIds(
+            groups,
+            cfg.groupDepartmentMap,
+          );
+          // syncUserDepartments is unconditionally authoritative — only
+          // call it when a dept mapping is configured (matches the login
+          // path's behaviour, keeps manual assignments alive otherwise).
+          await syncUserDepartments(u.id, desiredIds);
+          changed = true;
+        }
+        if (changed) updated++;
+        else skipped++;
+      } catch (err) {
+        errors.push({ username: u.username, error: String(err) });
+      }
+    }
+
+    await audit(
+      getUser(req).id,
+      "LDAP_SYNC_ROLES",
+      "user",
+      undefined,
+      `scanned=${ldapUsers.length}, updated=${updated}, skipped=${skipped}, errors=${errors.length}`,
+    );
+
+    res.json({
+      ok: true,
+      scanned: ldapUsers.length,
+      updated,
+      skipped,
+      errors,
+      message: null,
+    });
+  },
+);
 
 export default router;

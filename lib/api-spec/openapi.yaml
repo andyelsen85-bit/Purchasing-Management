@@ -884,6 +884,26 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/LdapTestResult" }
 
+  /admin/ldap-sync-roles:
+    post:
+      operationId: syncLdapRoles
+      tags: [admin]
+      summary: Re-derive roles + departments from AD groups for every LDAP user
+      description: |
+        Iterates every user with `source=LDAP`, queries the directory for
+        their current group memberships, and re-applies the configured
+        Group → Role and Group → Department mappings. Use this after
+        changing AD group membership (e.g. assigning a new user to the
+        GT Invest notifications group) so the change is reflected
+        immediately instead of waiting for the user to log in again.
+        Admin-only.
+      responses:
+        "200":
+          description: Sync result summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LdapSyncRolesResult" }
+
   # ---------------- ADMIN / TLS ----------------
   /admin/csr:
     post:
@@ -1622,6 +1642,24 @@ components:
         preparedAt: { type: ["string", "null"], format: date-time }
         preparedByName: { type: ["string", "null"] }
       required: [id, date]
+
+    LdapSyncRolesResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        scanned: { type: integer, description: Number of LDAP users iterated }
+        updated: { type: integer, description: Number of users whose roles or departments changed }
+        skipped: { type: integer, description: Number of users skipped (no AD groups returned, mapping disabled, etc.) }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              username: { type: string }
+              error: { type: string }
+            required: [username, error]
+        message: { type: ["string", "null"] }
+      required: [ok, scanned, updated, skipped, errors]
 
     NotifyGtInvestMeetingResult:
       type: object

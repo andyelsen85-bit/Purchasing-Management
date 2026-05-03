@@ -1934,6 +1934,35 @@ export const TestLdapResponse = zod.object({
     ),
 });
 
+/**
+ * Iterates every user with `source=LDAP`, queries the directory for
+their current group memberships, and re-applies the configured
+Group → Role and Group → Department mappings. Use this after
+changing AD group membership (e.g. assigning a new user to the
+GT Invest notifications group) so the change is reflected
+immediately instead of waiting for the user to log in again.
+Admin-only.
+
+ * @summary Re-derive roles + departments from AD groups for every LDAP user
+ */
+export const SyncLdapRolesResponse = zod.object({
+  ok: zod.boolean(),
+  scanned: zod.number().describe("Number of LDAP users iterated"),
+  updated: zod
+    .number()
+    .describe("Number of users whose roles or departments changed"),
+  skipped: zod
+    .number()
+    .describe("Number of users skipped (no AD groups returned"),
+  errors: zod.array(
+    zod.object({
+      username: zod.string(),
+      error: zod.string(),
+    }),
+  ),
+  message: zod.string().nullish(),
+});
+
 export const GenerateCsrBody = zod.object({
   commonName: zod.string(),
   organization: zod.string().nullish(),

@@ -49,6 +49,8 @@ export * from "./ldapsSettingsDirectoryType";
 export * from "./ldapsSettingsEncryption";
 export * from "./ldapsSettingsGroupDepartmentMap";
 export * from "./ldapsSettingsGroupRoleMap";
+export * from "./ldapSyncRolesResult";
+export * from "./ldapSyncRolesResultErrorsItem";
 export * from "./ldapTestInput";
 export * from "./ldapTestResult";
 export * from "./ldapTestResultStage";
