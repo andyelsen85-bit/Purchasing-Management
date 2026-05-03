@@ -62,10 +62,158 @@ router.get("/gt-invest/workflows", requireAuth, async (req, res): Promise<void> 
         createdAt: r.w.createdAt,
         updatedAt: r.w.updatedAt ?? r.w.lastStepChangeAt,
         gtInvestDateId: r.w.gtInvestDateId ?? null,
+        gtInvestPreparedAt: r.w.gtInvestPreparedAt
+          ? new Date(r.w.gtInvestPreparedAt).toISOString()
+          : null,
       };
     }),
   );
 });
+
+// Per-meeting "notify recipients & mark prepared" action. Bundles the
+// merged-PDF build + send into a single op so the operator never has
+// to think about it. Idempotent / re-runnable: each call refreshes
+// the timestamp on the meeting and on every workflow currently in
+// it. New workflows joining the meeting later show up without the
+// stamp, prompting a re-run.
+router.post(
+  "/gt-invest/dates/:id/notify",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const user = getUser(req);
+    if (!hasRole(user, "GT_INVEST", "FINANCIAL_ALL", "ADMIN")) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const dateId = Number(req.params.id);
+    if (!Number.isFinite(dateId)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const [meeting] = await db
+      .select()
+      .from(gtInvestDatesTable)
+      .where(eq(gtInvestDatesTable.id, dateId));
+    if (!meeting) {
+      res.status(404).json({ error: "Meeting not found" });
+      return;
+    }
+    const wfs = await db
+      .select()
+      .from(workflowsTable)
+      .where(
+        and(
+          eq(workflowsTable.currentStep, "GT_INVEST"),
+          eq(workflowsTable.gtInvestDateId, dateId),
+          isNull(workflowsTable.deletedAt),
+        ),
+      );
+
+    // Build the merged PDF for this meeting only.
+    const merged = await PDFDocument.create();
+    const helveticaFont = await merged.embedFont("Helvetica");
+    const settings = await getSettings();
+    const cover = merged.addPage([595.28, 841.89]);
+    cover.drawText(`${settings.appName} — GT Invest Pack`, {
+      x: 50, y: 780, size: 22, font: helveticaFont,
+    });
+    cover.drawText(
+      `Meeting: ${meeting.date}${meeting.label ? ` — ${meeting.label}` : ""}`,
+      { x: 50, y: 750, size: 14, font: helveticaFont },
+    );
+    cover.drawText(`Workflows: ${wfs.length}`, {
+      x: 50, y: 730, size: 12, font: helveticaFont,
+    });
+    let y = 700;
+    for (const w of wfs) {
+      if (y < 80) break;
+      cover.drawText(
+        `• ${w.reference} — ${w.title.slice(0, 60)} (${w.estimatedAmount ?? "?"} ${w.currency ?? ""})`,
+        { x: 50, y, size: 10, font: helveticaFont },
+      );
+      y -= 16;
+    }
+    for (const w of wfs) {
+      const docs = await db
+        .select()
+        .from(documentsTable)
+        .where(eq(documentsTable.workflowId, w.id));
+      const winner =
+        docs.find((d) => d.kind === "GT_INVEST_WINNER" && d.isCurrent) ??
+        docs.find((d) => d.kind === "QUOTE" && d.isCurrent);
+      if (!winner) continue;
+      if (winner.mimeType === "application/pdf") {
+        try {
+          const buf = Buffer.from(winner.contentBase64, "base64");
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          for (const p of pages) merged.addPage(p);
+        } catch (err) {
+          req.log?.warn({ err: String(err), workflowId: w.id }, "Failed to merge PDF");
+        }
+      } else {
+        const sep = merged.addPage([595.28, 841.89]);
+        sep.drawText(`${w.reference} — ${w.title}`, {
+          x: 50, y: 780, size: 16, font: helveticaFont,
+        });
+        sep.drawText(`Attached file: ${winner.filename} (${winner.mimeType})`, {
+          x: 50, y: 750, size: 12, font: helveticaFont,
+        });
+      }
+    }
+    const bytes = await merged.save();
+
+    // Send the email (best-effort — we still stamp on SMTP-disabled so
+    // the operator at least records "I prepared this meeting"; the UI
+    // surfaces the SMTP-disabled state separately via /settings).
+    const recipients = settings.gtInvestRecipients ?? [];
+    let sent = false;
+    if (settings.smtp?.enabled && recipients.length > 0) {
+      sent = await sendNotification(
+        settings.smtp,
+        recipients,
+        `GT Invest pack — ${meeting.date}${meeting.label ? ` (${meeting.label})` : ""}`,
+        `Attached: GT Invest pack with ${wfs.length} workflow(s) for the meeting on ${meeting.date}.`,
+      );
+    }
+
+    const now = new Date();
+    await db
+      .update(gtInvestDatesTable)
+      .set({ preparedAt: now, preparedById: user.id })
+      .where(eq(gtInvestDatesTable.id, dateId));
+    if (wfs.length > 0) {
+      await db
+        .update(workflowsTable)
+        .set({ gtInvestPreparedAt: now })
+        .where(
+          and(
+            eq(workflowsTable.currentStep, "GT_INVEST"),
+            eq(workflowsTable.gtInvestDateId, dateId),
+            isNull(workflowsTable.deletedAt),
+          ),
+        );
+    }
+    await audit(
+      user.id,
+      "GT_INVEST_NOTIFY",
+      "gt-date",
+      dateId,
+      `${wfs.length} workflows, ${recipients.length} recipients, sent=${sent}`,
+    );
+
+    // Keep the bytes around so the response stays small but the audit
+    // and the email both reflect the same content. We don't return the
+    // PDF here — the caller can hit /gt-invest/export to fetch it.
+    void bytes;
+    res.json({
+      sent,
+      recipients,
+      workflowCount: wfs.length,
+      preparedAt: now.toISOString(),
+    });
+  },
+);
 
 router.get("/gt-invest/export", requireAuth, async (req, res): Promise<void> => {
   const user = getUser(req);

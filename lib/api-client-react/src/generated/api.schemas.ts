@@ -316,6 +316,8 @@ export interface WorkflowSummary {
   updatedAt: string;
   /** @nullable */
   gtInvestDateId?: number | null;
+  /** @nullable */
+  gtInvestPreparedAt?: string | null;
 }
 
 export interface DeletedWorkflow {
@@ -804,6 +806,17 @@ export interface GtInvestDate {
   date: string;
   /** @nullable */
   label?: string | null;
+  /** @nullable */
+  preparedAt?: string | null;
+  /** @nullable */
+  preparedByName?: string | null;
+}
+
+export interface NotifyGtInvestMeetingResult {
+  sent: boolean;
+  recipients: string[];
+  workflowCount: number;
+  preparedAt: string;
 }
 
 export interface CreateGtInvestDateInput {

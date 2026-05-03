@@ -8,6 +8,9 @@ import {
   X,
   Clock,
   HandshakeIcon,
+  Mail,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -33,7 +36,9 @@ import {
   useListGtInvestWorkflows,
   useListGtInvestDates,
   useSetGtInvestDecision,
+  useNotifyGtInvestMeeting,
   getListGtInvestWorkflowsQueryKey,
+  getListGtInvestDatesQueryKey,
 } from "@/lib/api";
 
 export type GtInvestDecisionValue =
@@ -266,12 +271,14 @@ function QueuePanel() {
   // pre-seed a group per known meeting date so empty meetings still
   // show up in the overview — handy for planning the next session.
   const dateById = new Map((dates ?? []).map((d) => [d.id, d]));
+  type GtMeeting = (NonNullable<typeof dates>)[number];
   const groups = new Map<
     string,
     {
       key: string;
       sortKey: string;
       title: string;
+      meeting: GtMeeting | null;
       workflows: NonNullable<typeof rows>;
     }
   >();
@@ -280,6 +287,7 @@ function QueuePanel() {
       key: `d-${d.id}`,
       sortKey: `0-${d.date}`,
       title: formatMeetingDate(d.date, d.label),
+      meeting: d,
       workflows: [],
     });
   }
@@ -295,6 +303,7 @@ function QueuePanel() {
         title: meeting
           ? formatMeetingDate(meeting.date, meeting.label)
           : "Unassigned",
+        meeting: meeting ?? null,
         workflows: [],
       });
     }
@@ -326,14 +335,46 @@ function QueuePanel() {
           </p>
         ) : (
           <div className="space-y-6">
-            {orderedGroups.map((g) => (
+            {orderedGroups.map((g) => {
+              // A meeting needs (re-)notify whenever it has at least one
+              // workflow currently lacking the prepared stamp. This covers
+              // both "never prepared" and "new workflows joined after the
+              // last send" cases without any extra bookkeeping.
+              const needsNotify =
+                g.meeting != null &&
+                g.workflows.length > 0 &&
+                g.workflows.some((w) => !w.gtInvestPreparedAt);
+              return (
               <section key={g.key} data-testid={`gt-group-${g.key}`}>
-                <div className="mb-2 flex items-center gap-2">
+                <div className="mb-2 flex items-center gap-2 flex-wrap">
                   <CalendarDays className="h-4 w-4 text-muted-foreground" />
                   <h3 className="text-sm font-semibold">{g.title}</h3>
                   <Badge variant="outline" className="text-[10px]">
                     {g.workflows.length}
                   </Badge>
+                  {g.meeting?.preparedAt && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] gap-1"
+                      data-testid={`gt-meeting-prepared-${g.meeting.id}`}
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Prepared {new Date(g.meeting.preparedAt).toLocaleString()}
+                      {g.meeting.preparedByName
+                        ? ` by ${g.meeting.preparedByName}`
+                        : ""}
+                    </Badge>
+                  )}
+                  {g.meeting && (
+                    <div className="ml-auto">
+                      <NotifyMeetingButton
+                        dateId={g.meeting.id}
+                        disabled={g.workflows.length === 0}
+                        needsNotify={needsNotify}
+                        alreadyPrepared={g.meeting.preparedAt != null}
+                      />
+                    </div>
+                  )}
                 </div>
                 {g.workflows.length === 0 ? (
                   <p className="rounded-md border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
@@ -360,6 +401,24 @@ function QueuePanel() {
                         </div>
                       </Link>
                       <div className="flex items-center gap-3">
+                        {w.gtInvestPreparedAt ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] gap-1"
+                            data-testid={`gt-prepared-${w.id}`}
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Prepared
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] border-amber-400 text-amber-600"
+                            data-testid={`gt-pending-${w.id}`}
+                          >
+                            Awaiting prep
+                          </Badge>
+                        )}
                         <div className="text-right text-xs text-muted-foreground">
                           {w.ageDays}d old
                         </div>
@@ -374,7 +433,8 @@ function QueuePanel() {
                 </div>
                 )}
               </section>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
@@ -382,3 +442,65 @@ function QueuePanel() {
   );
 }
 
+
+// Per-meeting "send the pack now & mark prepared" action. The button
+// changes color when there are unprepared workflows in the meeting,
+// nudging the operator to re-notify after late additions.
+function NotifyMeetingButton({
+  dateId,
+  disabled,
+  needsNotify,
+  alreadyPrepared,
+}: {
+  dateId: number;
+  disabled: boolean;
+  needsNotify: boolean;
+  alreadyPrepared: boolean;
+}) {
+  const qc = useQueryClient();
+  const mutation = useNotifyGtInvestMeeting({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: getListGtInvestWorkflowsQueryKey() }),
+          qc.invalidateQueries({ queryKey: getListGtInvestDatesQueryKey() }),
+        ]);
+      },
+    },
+  });
+  const result = mutation.data;
+  return (
+    <div className="flex items-center gap-2">
+      {mutation.isError && (
+        <span className="text-xs text-destructive">
+          {extractErrorMessage(mutation.error)}
+        </span>
+      )}
+      {result && (
+        <span className="text-xs text-muted-foreground">
+          {result.sent
+            ? `Sent to ${result.recipients.length} recipient(s)`
+            : "Stamped (SMTP disabled or no recipients)"}
+        </span>
+      )}
+      <Button
+        size="sm"
+        variant={needsNotify ? "default" : "outline"}
+        disabled={disabled || mutation.isPending}
+        onClick={() => mutation.mutate({ id: dateId })}
+        data-testid={`button-notify-meeting-${dateId}`}
+      >
+        {mutation.isPending ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Mail className="mr-2 h-4 w-4" />
+        )}
+        {alreadyPrepared
+          ? needsNotify
+            ? "Re-notify recipients"
+            : "Notify again"
+          : "Notify recipients & mark prepared"}
+      </Button>
+    </div>
+  );
+}

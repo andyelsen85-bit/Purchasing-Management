@@ -60,6 +60,7 @@ export * from "./loginRequest";
 export * from "./note";
 export * from "./notificationEntry";
 export * from "./notificationEntryStatus";
+export * from "./notifyGtInvestMeetingResult";
 export * from "./priority";
 export * from "./quoteEntry";
 export * from "./rejectWorkflowInput";

@@ -790,6 +790,27 @@ paths:
       tags: [settings]
       responses:
         "204": { description: Deleted }
+  /gt-invest/dates/{id}/notify:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: notifyGtInvestMeeting
+      tags: [gt-invest]
+      summary: Email the GT Invest pack to recipients and mark this meeting prepared
+      description: |
+        Builds the merged GT Invest PDF for the workflows currently
+        assigned to this meeting date, emails it to the recipients
+        configured in Settings, and stamps the meeting plus each
+        included workflow with the current timestamp. Workflows
+        joined to the meeting *after* this call will appear without
+        the "GT Invest prepared" stamp until the operator re-notifies.
+      responses:
+        "200":
+          description: Notification sent (or skipped if SMTP disabled) and timestamps updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifyGtInvestMeetingResult"
   /settings/gt-invest-results:
     get:
       operationId: listGtInvestResults
@@ -1200,6 +1221,7 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         gtInvestDateId: { type: ["integer", "null"] }
+        gtInvestPreparedAt: { type: ["string", "null"], format: date-time }
       required:
         - id
         - reference
@@ -1596,7 +1618,20 @@ components:
         id: { type: integer }
         date: { type: string, format: date }
         label: { type: ["string", "null"] }
+        preparedAt: { type: ["string", "null"], format: date-time }
+        preparedByName: { type: ["string", "null"] }
       required: [id, date]
+
+    NotifyGtInvestMeetingResult:
+      type: object
+      properties:
+        sent: { type: boolean }
+        recipients:
+          type: array
+          items: { type: string }
+        workflowCount: { type: integer }
+        preparedAt: { type: string, format: date-time }
+      required: [sent, recipients, workflowCount, preparedAt]
 
     CreateGtInvestDateInput:
       type: object

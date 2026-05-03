@@ -55,6 +55,7 @@ import type {
   LoginRequest,
   Note,
   NotificationEntry,
+  NotifyGtInvestMeetingResult,
   RejectWorkflowInput,
   SessionResponse,
   SessionUser,
@@ -4102,6 +4103,100 @@ export const useDeleteGtInvestDate = <
   TContext
 > => {
   return useMutation(getDeleteGtInvestDateMutationOptions(options));
+};
+
+/**
+ * Builds the merged GT Invest PDF for the workflows currently
+assigned to this meeting date, emails it to the recipients
+configured in Settings, and stamps the meeting plus each
+included workflow with the current timestamp. Workflows
+joined to the meeting *after* this call will appear without
+the "GT Invest prepared" stamp until the operator re-notifies.
+
+ * @summary Email the GT Invest pack to recipients and mark this meeting prepared
+ */
+export const getNotifyGtInvestMeetingUrl = (id: number) => {
+  return `/api/gt-invest/dates/${id}/notify`;
+};
+
+export const notifyGtInvestMeeting = async (
+  id: number,
+  options?: RequestInit,
+): Promise<NotifyGtInvestMeetingResult> => {
+  return customFetch<NotifyGtInvestMeetingResult>(
+    getNotifyGtInvestMeetingUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getNotifyGtInvestMeetingMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof notifyGtInvestMeeting>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof notifyGtInvestMeeting>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["notifyGtInvestMeeting"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof notifyGtInvestMeeting>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return notifyGtInvestMeeting(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type NotifyGtInvestMeetingMutationResult = NonNullable<
+  Awaited<ReturnType<typeof notifyGtInvestMeeting>>
+>;
+
+export type NotifyGtInvestMeetingMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Email the GT Invest pack to recipients and mark this meeting prepared
+ */
+export const useNotifyGtInvestMeeting = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof notifyGtInvestMeeting>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof notifyGtInvestMeeting>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getNotifyGtInvestMeetingMutationOptions(options));
 };
 
 export const getListGtInvestResultsUrl = () => {

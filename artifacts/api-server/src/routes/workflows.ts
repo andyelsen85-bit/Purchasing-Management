@@ -293,7 +293,15 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   if (b.managerComment !== undefined) update.managerComment = b.managerComment;
   if (b.financialApproved !== undefined) update.financialApproved = b.financialApproved;
   if (b.financialComment !== undefined) update.financialComment = b.financialComment;
-  if (b.gtInvestDateId !== undefined) update.gtInvestDateId = b.gtInvestDateId;
+  if (b.gtInvestDateId !== undefined) {
+    update.gtInvestDateId = b.gtInvestDateId;
+    // Reassigning to a different meeting invalidates any prior
+    // "prepared" stamp — the new meeting may not have been notified
+    // yet (or this workflow wasn't included in the previous send).
+    if (b.gtInvestDateId !== wf.gtInvestDateId) {
+      update.gtInvestPreparedAt = null;
+    }
+  }
   if (b.gtInvestResultId !== undefined) update.gtInvestResultId = b.gtInvestResultId;
   if (b.gtInvestComment !== undefined) update.gtInvestComment = b.gtInvestComment;
   if (b.orderNumber !== undefined) update.orderNumber = b.orderNumber;
@@ -729,6 +737,12 @@ router.post(
       gtInvestComment: comment,
       lastStepChangeAt: new Date(),
     };
+    // If the workflow is being moved to a different meeting (typical for
+    // POSTPONED / ACCORD_PRINCIPE), drop the prepared stamp so the new
+    // meeting visibly needs a (re-)notify.
+    if (dateId !== wf.gtInvestDateId) {
+      update.gtInvestPreparedAt = null;
+    }
     let historyAction: "ADVANCE" | "REJECT" | "EDIT" = "EDIT";
     if (nextStepValue !== wf.currentStep) {
       update.currentStep = nextStepValue;

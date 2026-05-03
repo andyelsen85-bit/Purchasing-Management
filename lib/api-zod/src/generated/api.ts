@@ -410,6 +410,7 @@ export const ListWorkflowsResponseItem = zod.object({
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
   gtInvestDateId: zod.number().nullish(),
+  gtInvestPreparedAt: zod.coerce.date().nullish(),
 });
 export const ListWorkflowsResponse = zod.array(ListWorkflowsResponseItem);
 
@@ -476,6 +477,7 @@ export const ListWorkflowsByStepResponseItem = zod.object({
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
       gtInvestDateId: zod.number().nullish(),
+      gtInvestPreparedAt: zod.coerce.date().nullish(),
     }),
   ),
 });
@@ -1542,6 +1544,7 @@ export const ListGtInvestWorkflowsResponseItem = zod.object({
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
   gtInvestDateId: zod.number().nullish(),
+  gtInvestPreparedAt: zod.coerce.date().nullish(),
 });
 export const ListGtInvestWorkflowsResponse = zod.array(
   ListGtInvestWorkflowsResponseItem,
@@ -1786,6 +1789,8 @@ export const ListGtInvestDatesResponseItem = zod.object({
   id: zod.number(),
   date: zod.coerce.date(),
   label: zod.string().nullish(),
+  preparedAt: zod.coerce.date().nullish(),
+  preparedByName: zod.string().nullish(),
 });
 export const ListGtInvestDatesResponse = zod.array(
   ListGtInvestDatesResponseItem,
@@ -1798,6 +1803,27 @@ export const CreateGtInvestDateBody = zod.object({
 
 export const DeleteGtInvestDateParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * Builds the merged GT Invest PDF for the workflows currently
+assigned to this meeting date, emails it to the recipients
+configured in Settings, and stamps the meeting plus each
+included workflow with the current timestamp. Workflows
+joined to the meeting *after* this call will appear without
+the "GT Invest prepared" stamp until the operator re-notifies.
+
+ * @summary Email the GT Invest pack to recipients and mark this meeting prepared
+ */
+export const NotifyGtInvestMeetingParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const NotifyGtInvestMeetingResponse = zod.object({
+  sent: zod.boolean(),
+  recipients: zod.array(zod.string()),
+  workflowCount: zod.number(),
+  preparedAt: zod.coerce.date(),
 });
 
 export const ListGtInvestResultsResponseItem = zod.object({

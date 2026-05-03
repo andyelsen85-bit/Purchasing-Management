@@ -11,4 +11,8 @@ export interface GtInvestDate {
   date: Date;
   /** @nullable */
   label?: string | null;
+  /** @nullable */
+  preparedAt?: Date | null;
+  /** @nullable */
+  preparedByName?: string | null;
 }

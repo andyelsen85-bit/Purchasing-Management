@@ -116,6 +116,11 @@ export const workflowsTable = pgTable(
     // GT Invest
     gtInvestDateId: integer("gt_invest_date_id"),
     gtInvestResultId: integer("gt_invest_result_id"),
+    // Set when the GT Invest meeting this workflow belongs to has been
+    // "prepared" (the merged PDF was sent to the recipients). Workflows
+    // joined to a meeting *after* the prep ran will have this NULL,
+    // which is the trigger for the UI to offer a re-notify.
+    gtInvestPreparedAt: timestamp("gt_invest_prepared_at", { withTimezone: true }),
     // Fixed enum decision recorded by the GT Invest committee.
     // One of: OK, REFUSED, POSTPONED, ACCORD_PRINCIPE.
     // OK advances to ORDERING; REFUSED closes the workflow; POSTPONED
@@ -257,6 +262,11 @@ export const gtInvestDatesTable = pgTable("gt_invest_dates", {
   id: serial("id").primaryKey(),
   date: date("date").notNull(),
   label: text("label"),
+  // Last time the operator hit "Notify recipients now" for this meeting.
+  // Null = never prepared. Updated again on every re-notify so the UI
+  // shows the most recent send timestamp.
+  preparedAt: timestamp("prepared_at", { withTimezone: true }),
+  preparedById: integer("prepared_by_id"),
 });
 export type DbGtInvestDate = typeof gtInvestDatesTable.$inferSelect;
 

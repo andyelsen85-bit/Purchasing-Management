@@ -30,7 +30,10 @@ const STEP_NOTIFY_ROLES: Record<WorkflowStep, string[]> = {
   QUOTATION: ["DEPT_MANAGER"],
   VALIDATING_QUOTE_FINANCIAL: ["DEPT_MANAGER"],
   VALIDATING_BY_FINANCIAL: ["FINANCIAL_ALL"],
-  GT_INVEST: ["GT_INVEST"],
+  // GT Invest recipients are NOT notified automatically when a workflow
+  // enters this step. The operator triggers a single combined email per
+  // meeting from the GT Invest page ("Notify recipients & mark prepared").
+  GT_INVEST: [],
   ORDERING: ["FINANCIAL_ALL"],
   DELIVERY: ["DEPT_MANAGER"],
   INVOICE: ["FINANCIAL_INVOICE"],

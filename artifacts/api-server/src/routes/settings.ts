@@ -4,6 +4,7 @@ import {
   db,
   gtInvestDatesTable,
   gtInvestResultsTable,
+  usersTable,
 } from "@workspace/db";
 import {
   UpdateSettingsBody,
@@ -77,8 +78,26 @@ router.get(
   "/settings/gt-invest-dates",
   requireAuth,
   async (_req, res): Promise<void> => {
-    const rows = await db.select().from(gtInvestDatesTable).orderBy(gtInvestDatesTable.date);
-    res.json(rows);
+    const rows = await db
+      .select({
+        id: gtInvestDatesTable.id,
+        date: gtInvestDatesTable.date,
+        label: gtInvestDatesTable.label,
+        preparedAt: gtInvestDatesTable.preparedAt,
+        preparedByName: usersTable.displayName,
+      })
+      .from(gtInvestDatesTable)
+      .leftJoin(usersTable, eq(usersTable.id, gtInvestDatesTable.preparedById))
+      .orderBy(gtInvestDatesTable.date);
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        date: r.date,
+        label: r.label,
+        preparedAt: r.preparedAt ? new Date(r.preparedAt).toISOString() : null,
+        preparedByName: r.preparedByName ?? null,
+      })),
+    );
   },
 );
 

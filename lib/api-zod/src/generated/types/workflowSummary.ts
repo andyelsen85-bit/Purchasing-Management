@@ -30,4 +30,6 @@ export interface WorkflowSummary {
   updatedAt: Date;
   /** @nullable */
   gtInvestDateId?: number | null;
+  /** @nullable */
+  gtInvestPreparedAt?: Date | null;
 }
