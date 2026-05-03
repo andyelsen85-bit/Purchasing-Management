@@ -5,6 +5,13 @@ dist
 tmp
 out-tsc
 *.tsbuildinfo
+
+# Exception: the prebuilt Windows signing agent installer ships in the
+# repo so operators can grab it from GitHub without rebuilding. The
+# nested .gitignore in tools/signing-agent/installer/ keeps the rest of
+# dist/ ignored.
+!tools/signing-agent/installer/dist/
+!tools/signing-agent/installer/dist/SigningAgent-Setup-*.exe
 .expo
 .expo-shared
 

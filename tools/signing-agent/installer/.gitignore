@@ -1,3 +1,7 @@
 build-cache/
-dist/
 payload/
+
+# We ignore the dist/ scratch tree but commit the built installer so it
+# syncs to GitHub and operators can grab it without rebuilding locally.
+dist/*
+!dist/SigningAgent-Setup-*.exe
