@@ -49,7 +49,7 @@ import {
   useDeleteGtInvestResult,
   useTestLdap,
 } from "@/lib/api";
-import { HttpsSettingsPanel } from "@/pages/HttpsPage";
+import { HttpsSettingsPanel } from "@/pages/settings/HttpsSettingsPanel";
 
 /**
  * Canonical list of app roles + a one-line description of what each role
@@ -115,7 +115,45 @@ const ROLE_DEFS: Array<{ role: string; label: string; description: string }> = [
   },
 ];
 
+const TAB_VALUES = [
+  "app",
+  "departments",
+  "roles",
+  "ldap",
+  "smtp",
+  "gt",
+  "https",
+  "backup",
+] as const;
+type SettingsTab = (typeof TAB_VALUES)[number];
+
+/**
+ * Read `?tab=` from the URL so other pages (and the legacy `/admin/https`
+ * redirect) can deep-link straight to a specific Settings tab.
+ */
+function useTabFromQuery(): [SettingsTab, (t: SettingsTab) => void] {
+  const initial = (() => {
+    if (typeof window === "undefined") return "app" as SettingsTab;
+    const q = new URLSearchParams(window.location.search).get("tab");
+    return (TAB_VALUES as readonly string[]).includes(q ?? "")
+      ? (q as SettingsTab)
+      : ("app" as SettingsTab);
+  })();
+  const [tab, setTabState] = useState<SettingsTab>(initial);
+  const setTab = (t: SettingsTab) => {
+    setTabState(t);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (t === "app") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", t);
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
+  return [tab, setTab];
+}
+
 export function SettingsPage() {
+  const [tab, setTab] = useTabFromQuery();
   return (
     <div className="space-y-6 p-6">
       <header>
@@ -123,10 +161,11 @@ export function SettingsPage() {
           Settings
         </h1>
         <p className="text-sm text-muted-foreground">
-          Application, branding, LDAP, SMTP, and GT Invest configuration
+          Application, branding, LDAP, SMTP, GT Invest, HTTPS, and backup
+          configuration
         </p>
       </header>
-      <Tabs defaultValue="app">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as SettingsTab)}>
         <TabsList>
           <TabsTrigger value="app" data-testid="tab-app">
             Application

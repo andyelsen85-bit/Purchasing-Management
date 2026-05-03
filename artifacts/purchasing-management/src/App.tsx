@@ -59,10 +59,12 @@ function App() {
                         <Route path="/settings" component={SettingsPage} />
                         <Route path="/admin/https">
                           {() => {
+                            // Legacy URL — HTTPS / TLS now lives as a tab
+                            // inside the unified Settings page.
                             window.history.replaceState(
                               null,
                               "",
-                              `${import.meta.env.BASE_URL}settings`,
+                              `${import.meta.env.BASE_URL}settings?tab=https`,
                             );
                             return <SettingsPage />;
                           }}
