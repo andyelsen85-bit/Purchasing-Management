@@ -958,8 +958,12 @@ function QuotationPanel({
     limitX != null && firstAmount != null
       ? firstAmount > limitX
       : wf.threeQuoteRequired;
+  // Match the server's predicate in `validateAdvancePrereqs` exactly,
+  // otherwise the counter and the advance-gate disagree (off-by-one
+  // when a row has `companyName` but no `companyId`, which can happen
+  // with legacy / imported quote data).
   const filledCount = quotes.filter(
-    (q) => q.amount != null && q.companyId,
+    (q) => q.amount != null && (q.companyId || q.companyName),
   ).length;
 
   async function onPickQuoteFile(
