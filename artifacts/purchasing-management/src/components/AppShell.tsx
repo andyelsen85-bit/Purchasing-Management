@@ -45,14 +45,24 @@ interface NavItem {
   roles?: string[];
 }
 
+// `roles` is a whitelist — when present, only users carrying at least
+// one of the listed roles see that nav entry. Items without `roles`
+// are visible to everyone signed in. Server-side enforcement still
+// runs on every endpoint; this is purely so that operators don't see
+// menu items that would 403 the moment they click something inside.
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/workflows", label: "Workflows", icon: ListChecks },
   { to: "/workflows-by-step", label: "By Step", icon: Columns3 },
-  { to: "/gt-invest", label: "GT Invest", icon: Banknote },
+  {
+    to: "/gt-invest",
+    label: "GT Invest",
+    icon: Banknote,
+    roles: ["ADMIN", "GT_INVEST", "FINANCIAL_ALL"],
+  },
   { to: "/companies", label: "Companies", icon: Building2 },
   { to: "/audit-log", label: "Audit Log", icon: ScrollText, roles: ["ADMIN"] },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/settings", label: "Settings", icon: Settings, roles: ["ADMIN"] },
 ];
 
 interface Props {

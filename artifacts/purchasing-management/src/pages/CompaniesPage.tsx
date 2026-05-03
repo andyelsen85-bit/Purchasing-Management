@@ -22,12 +22,27 @@ import {
   useCreateContact,
   useDeleteContact,
   useDeleteCompany,
+  useGetSession,
   type Company,
 } from "@/lib/api";
+
+/**
+ * Master-data editing (create/edit/delete companies and contacts) is
+ * restricted server-side to ADMIN and FINANCIAL_ALL via
+ * `canEditMasterData` in `artifacts/api-server/src/lib/permissions.ts`.
+ * Mirror that here so read-only roles don't see buttons that just
+ * 403 when clicked.
+ */
+function useCanEditMasterData(): boolean {
+  const { data: session } = useGetSession();
+  const roles = session?.user?.roles ?? [];
+  return roles.includes("ADMIN") || roles.includes("FINANCIAL_ALL");
+}
 
 export function CompaniesPage() {
   const { data: companies } = useListCompanies();
   const [selected, setSelected] = useState<Company | null>(null);
+  const canEdit = useCanEditMasterData();
 
   return (
     <div className="space-y-6 p-6">
@@ -40,7 +55,7 @@ export function CompaniesPage() {
             Suppliers and their contacts
           </p>
         </div>
-        <NewCompanyDialog />
+        {canEdit && <NewCompanyDialog />}
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -184,6 +199,7 @@ function NewCompanyDialog() {
 function CompanyDetailCard({ companyId }: { companyId: number }) {
   const qc = useQueryClient();
   const { data: company } = useGetCompany(companyId);
+  const canEdit = useCanEditMasterData();
   const delCompany = useDeleteCompany({
     mutation: { onSuccess: () => qc.invalidateQueries() },
   });
@@ -210,18 +226,20 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
             {company.address}
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => {
-            if (confirm(`Delete company "${company.name}"?`)) {
-              delCompany.mutate({ id: company.id });
-            }
-          }}
-          data-testid="button-delete-company"
-        >
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        {canEdit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (confirm(`Delete company "${company.name}"?`)) {
+                delCompany.mutate({ id: company.id });
+              }
+            }}
+            data-testid="button-delete-company"
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
@@ -259,20 +277,23 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
                       )}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => delContact.mutate({ id: c.id })}
-                    data-testid={`button-del-contact-${c.id}`}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => delContact.mutate({ id: c.id })}
+                      data-testid={`button-del-contact-${c.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
-        <Separator />
+        {canEdit && <Separator />}
+        {canEdit && (
         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
           <h3 className="text-sm font-medium">Add contact</h3>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -334,6 +355,7 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
             </Button>
           </div>
         </div>
+        )}
       </CardContent>
     </Card>
   );

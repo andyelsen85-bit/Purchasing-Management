@@ -48,6 +48,7 @@ import {
   useCreateGtInvestResult,
   useDeleteGtInvestResult,
   useTestLdap,
+  useGetSession,
 } from "@/lib/api";
 import { HttpsSettingsPanel } from "@/pages/settings/HttpsSettingsPanel";
 
@@ -154,6 +155,31 @@ function useTabFromQuery(): [SettingsTab, (t: SettingsTab) => void] {
 
 export function SettingsPage() {
   const [tab, setTab] = useTabFromQuery();
+  // Defense in depth — even though the side-nav now hides the
+  // Settings entry from non-admins, a user could still type the URL
+  // directly. Block the whole page (the underlying PATCH endpoints
+  // are already admin-gated, but every panel reads sensitive
+  // configuration like LDAP/SMTP host and bind DN that we don't want
+  // a regular DEPT_USER to see).
+  const { data: session } = useGetSession();
+  const isAdmin = !!session?.user?.roles.includes("ADMIN");
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6 p-6">
+        <header>
+          <h1 className="text-2xl font-semibold" data-testid="text-page-title">
+            Settings
+          </h1>
+        </header>
+        <Alert variant="destructive" data-testid="alert-forbidden">
+          <AlertDescription>
+            This area is restricted to administrators. Ask an
+            administrator if you need a setting changed.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
   return (
     <div className="space-y-6 p-6">
       <header>
