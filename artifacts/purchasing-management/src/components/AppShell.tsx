@@ -15,6 +15,8 @@ import {
   FolderTree,
   ChevronRight,
   Plus,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -86,14 +88,33 @@ export function AppShell({ user, children }: Props) {
   const { data: deptWorkflowsRaw } = useListWorkflows(
     selectedDeptId === "ALL" ? {} : { departmentId: selectedDeptId },
   );
-  // The grey "second sidebar" is a quick navigator for in-flight work.
-  // Hide terminal workflows (DONE / REJECTED) — they're still reachable
-  // from the All Workflows page via the status filter.
+  // The grey "second sidebar" defaults to in-flight work only, but the
+  // operator can flip the eye toggle in its header to also list
+  // terminal workflows (DONE / REJECTED). Persisted across reloads so
+  // a manager who likes seeing the full history doesn't have to re-flip
+  // it every time.
+  const [showTerminal, setShowTerminal] = useState<boolean>(() => {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem("sidebar-show-terminal") === "1";
+  });
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem("sidebar-show-terminal", showTerminal ? "1" : "0");
+  }, [showTerminal]);
   const deptWorkflows = useMemo(
     () =>
+      showTerminal
+        ? (deptWorkflowsRaw ?? [])
+        : (deptWorkflowsRaw ?? []).filter(
+            (w) => w.currentStep !== "DONE" && w.currentStep !== "REJECTED",
+          ),
+    [deptWorkflowsRaw, showTerminal],
+  );
+  const hiddenTerminalCount = useMemo(
+    () =>
       (deptWorkflowsRaw ?? []).filter(
-        (w) => w.currentStep !== "DONE" && w.currentStep !== "REJECTED",
-      ),
+        (w) => w.currentStep === "DONE" || w.currentStep === "REJECTED",
+      ).length,
     [deptWorkflowsRaw],
   );
 
@@ -323,17 +344,43 @@ export function AppShell({ user, children }: Props) {
                       {(deptWorkflows ?? []).length === 1 ? "" : "s"}
                     </div>
                   </div>
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-2"
-                    data-testid="button-new-workflow-side"
-                  >
-                    <Link href="/workflows/new">
-                      <Plus className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => setShowTerminal((v) => !v)}
+                      title={
+                        showTerminal
+                          ? "Hide closed and done workflows"
+                          : hiddenTerminalCount > 0
+                            ? `Show ${hiddenTerminalCount} closed/done workflow${
+                                hiddenTerminalCount === 1 ? "" : "s"
+                              }`
+                            : "Show closed and done workflows"
+                      }
+                      aria-pressed={showTerminal}
+                      data-testid="button-toggle-terminal-workflows"
+                    >
+                      {showTerminal ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-2"
+                      data-testid="button-new-workflow-side"
+                    >
+                      <Link href="/workflows/new">
+                        <Plus className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
                 <ScrollArea className="flex-1 px-2 py-2">
                   <div className="space-y-1">
