@@ -362,8 +362,16 @@ export async function ldapAuthenticate(
             finish({ ok: false, error: "LDAP search failed" }),
           );
           search.on("end", async () => {
-            if (!foundDn)
-              return finish({ ok: false, error: "User not found" });
+            if (!foundDn) {
+              logger.warn(
+                { username, baseDn: cfg.baseDn, filter, attribute: a.usernameAttr },
+                "LDAP user search returned no entries",
+              );
+              return finish({
+                ok: false,
+                error: `User "${username}" not found in directory under ${cfg.baseDn} using filter ${filter}. Check that the username matches the configured "${a.usernameAttr}" attribute and that the base DN is correct.`,
+              });
+            }
             // Bind as the user using a fresh connection so we don't
             // disturb the bind-DN session.
             const userConn = await connect(transport);
@@ -383,9 +391,20 @@ export async function ldapAuthenticate(
                   { username, foundDn, raw },
                   "LDAP user bind rejected",
                 );
+                // Always include the raw directory error in the
+                // response so operators (and the on-screen alert) can
+                // see what AD / the LDAP server actually said —
+                // otherwise every failure looks identical and is
+                // impossible to triage. The friendly explanation is
+                // prepended when we recognise the AD sub-code.
+                const friendly =
+                  explained ??
+                  (/InvalidCredentials/i.test(raw)
+                    ? "Invalid credentials"
+                    : "LDAP bind rejected");
                 return finish({
                   ok: false,
-                  error: explained ?? "Invalid credentials",
+                  error: `${friendly} (DN: ${foundDn}) — raw: ${raw}`,
                 });
               }
               const allGroups = await resolveNestedGroups(foundDn!, groups);
