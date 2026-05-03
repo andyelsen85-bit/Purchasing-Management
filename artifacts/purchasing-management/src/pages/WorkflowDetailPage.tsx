@@ -1017,6 +1017,20 @@ function ManagerApprovePanel({
 }) {
   const [comment, setComment] = useState<string>(wf.managerComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  // Approve here is a two-step action: persist managerApproved=true and
+  // the comment, then immediately advance the workflow to the next step
+  // (same effect as clicking the global "Next Step" button afterwards).
+  const advance = useAdvanceWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot advance: ${msg}`);
+      },
+    },
+  });
   // Reject is a *closing* action — it transitions to the terminal
   // REJECTED step on the server. We use the dedicated /reject hook
   // so the backend can record history, audit, and notifications in
@@ -1032,7 +1046,23 @@ function ManagerApprovePanel({
       },
     },
   });
-  const busy = save.isPending || reject.isPending;
+  const busy = save.isPending || advance.isPending || reject.isPending;
+
+  function approveAndAdvance() {
+    save.mutate(
+      {
+        id: wf.id,
+        data: {
+          managerApproved: true,
+          managerComment: comment || null,
+        },
+      },
+      {
+        onSuccess: () =>
+          advance.mutate({ id: wf.id, data: { branch: null } }),
+      },
+    );
+  }
   return (
     <div className="space-y-3">
       <WinningQuoteCard wf={wf} />
@@ -1056,22 +1086,14 @@ function ManagerApprovePanel({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              onClick={() =>
-                save.mutate({
-                  id: wf.id,
-                  data: {
-                    managerApproved: true,
-                    managerComment: comment || null,
-                  },
-                })
-              }
+              onClick={approveAndAdvance}
               disabled={busy}
               data-testid="button-approve"
             >
-              {save.isPending ? (
+              {save.isPending || advance.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Save className="mr-2 h-4 w-4" />
+                <ArrowRight className="mr-2 h-4 w-4" />
               )}
               Approve
             </Button>
