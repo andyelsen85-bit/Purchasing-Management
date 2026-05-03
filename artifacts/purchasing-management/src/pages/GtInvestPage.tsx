@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Plus, Trash2, FileDown, CalendarDays, ListChecks } from "lucide-react";
+import { Plus, Trash2, FileDown, CalendarDays } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +21,6 @@ import {
   useListGtInvestDates,
   useCreateGtInvestDate,
   useDeleteGtInvestDate,
-  useListGtInvestResults,
-  useCreateGtInvestResult,
-  useDeleteGtInvestResult,
 } from "@/lib/api";
 
 export function GtInvestPage() {
@@ -34,8 +31,8 @@ export function GtInvestPage() {
           GT Invest
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage GT Invest meeting dates, decision results, and the queue of
-          workflows pending decision.
+          Manage GT Invest meeting dates and the queue of workflows pending
+          decision.
         </p>
       </header>
 
@@ -47,9 +44,6 @@ export function GtInvestPage() {
           <TabsTrigger value="dates" data-testid="tab-dates">
             <CalendarDays className="mr-1 h-3.5 w-3.5" /> Dates
           </TabsTrigger>
-          <TabsTrigger value="results" data-testid="tab-results">
-            <ListChecks className="mr-1 h-3.5 w-3.5" /> Results
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="queue">
@@ -57,9 +51,6 @@ export function GtInvestPage() {
         </TabsContent>
         <TabsContent value="dates">
           <DatesPanel />
-        </TabsContent>
-        <TabsContent value="results">
-          <ResultsPanel />
         </TabsContent>
       </Tabs>
     </div>
@@ -221,72 +212,3 @@ function DatesPanel() {
   );
 }
 
-function ResultsPanel() {
-  const { data: results } = useListGtInvestResults();
-  const qc = useQueryClient();
-  const create = useCreateGtInvestResult({
-    mutation: { onSuccess: () => qc.invalidateQueries() },
-  });
-  const del = useDeleteGtInvestResult({
-    mutation: { onSuccess: () => qc.invalidateQueries() },
-  });
-  const [label, setLabel] = useState("");
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Decision results</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-end gap-2">
-          <div className="flex-1 space-y-1">
-            <Label>Label</Label>
-            <Input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Approved"
-              data-testid="input-gt-result-label"
-            />
-          </div>
-          <Button
-            onClick={() => {
-              if (!label.trim()) return;
-              create.mutate(
-                { data: { label } },
-                { onSuccess: () => setLabel("") },
-              );
-            }}
-            data-testid="button-add-gt-result"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add
-          </Button>
-        </div>
-        <Separator />
-        <div className="divide-y">
-          {(results ?? []).map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between py-2"
-              data-testid={`row-gt-result-${r.id}`}
-            >
-              <div className="text-sm">{r.label}</div>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => del.mutate({ id: r.id })}
-                data-testid={`button-del-gt-result-${r.id}`}
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          ))}
-          {(results ?? []).length === 0 && (
-            <p className="py-4 text-sm text-muted-foreground">
-              No results configured.
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
