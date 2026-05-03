@@ -153,6 +153,45 @@ function connect(transport: ResolvedTransport): Promise<ConnectResult> {
   });
 }
 
+/**
+ * Translate an Active Directory bind failure into a user-actionable
+ * message. AD encodes the *real* reason as `data NNN` inside the
+ * "AcceptSecurityContext error" string returned over LDAP — every
+ * outcome (wrong password, locked, expired, disabled, must-reset…)
+ * comes back as the same generic 49 / InvalidCredentials code unless
+ * we parse this sub-code.
+ *
+ * Returns null when no AD sub-code is recognised, so the caller can
+ * fall back to a generic "Invalid credentials" message.
+ */
+export function explainAdBindError(raw: string): string | null {
+  const m = raw.match(/data\s+([0-9a-fA-F]{2,4})/);
+  if (!m) return null;
+  const code = m[1].toLowerCase();
+  switch (code) {
+    case "525":
+      return "User not found in Active Directory.";
+    case "52e":
+      return "Invalid credentials — the password is wrong.";
+    case "530":
+      return "Not permitted to sign in at this time of day (AD logon hours restriction).";
+    case "531":
+      return "Not permitted to sign in from this workstation (AD workstation restriction).";
+    case "532":
+      return "Password has expired — change it in Active Directory and try again.";
+    case "533":
+      return "This Active Directory account is disabled.";
+    case "701":
+      return "This Active Directory account has expired.";
+    case "773":
+      return "Password must be changed on next sign-in — reset it in AD first.";
+    case "775":
+      return "This Active Directory account is locked out.";
+    default:
+      return null;
+  }
+}
+
 function friendlyError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   if (/ECONNRESET/i.test(raw)) {
@@ -337,8 +376,18 @@ export async function ldapAuthenticate(
               } catch {
                 /* ignore */
               }
-              if (bErr)
-                return finish({ ok: false, error: "Invalid credentials" });
+              if (bErr) {
+                const raw = (bErr as Error).message ?? String(bErr);
+                const explained = explainAdBindError(raw);
+                logger.warn(
+                  { username, foundDn, raw },
+                  "LDAP user bind rejected",
+                );
+                return finish({
+                  ok: false,
+                  error: explained ?? "Invalid credentials",
+                });
+              }
               const allGroups = await resolveNestedGroups(foundDn!, groups);
               finish({ ok: true, displayName, email, groups: allGroups });
             });
@@ -683,9 +732,14 @@ export async function runLdapDiagnostics(
       }
       if (err) {
         const raw = (err as Error).message ?? String(err);
-        resolve(/InvalidCredentials/i.test(raw)
-          ? `Invalid credentials for ${search.foundDn} — raw: ${raw}`
-          : friendlyError(err) + ` — raw: ${raw}`);
+        const explained = explainAdBindError(raw);
+        if (explained) {
+          resolve(`${explained} (DN: ${search.foundDn}) — raw: ${raw}`);
+        } else if (/InvalidCredentials/i.test(raw)) {
+          resolve(`Invalid credentials for ${search.foundDn} — raw: ${raw}`);
+        } else {
+          resolve(friendlyError(err) + ` — raw: ${raw}`);
+        }
       } else resolve(null);
     });
   });
