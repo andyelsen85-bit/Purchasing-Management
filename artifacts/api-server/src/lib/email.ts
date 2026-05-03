@@ -101,12 +101,19 @@ export interface NotificationContext {
   step: string;
 }
 
+export interface NotificationAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 export async function sendNotification(
   cfg: SmtpConfig,
   to: string | string[],
   subject: string,
   text: string,
   ctx?: NotificationContext,
+  attachments?: NotificationAttachment[],
 ): Promise<boolean> {
   const recipients = Array.isArray(to) ? to : [to];
 
@@ -154,6 +161,15 @@ export async function sendNotification(
       to: recipients.join(","),
       subject,
       text,
+      ...(attachments && attachments.length > 0
+        ? {
+            attachments: attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+              contentType: a.contentType,
+            })),
+          }
+        : {}),
     });
     if (notifId != null) {
       await db

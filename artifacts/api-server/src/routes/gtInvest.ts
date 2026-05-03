@@ -179,6 +179,10 @@ router.post(
           .map((e) => [e.toLowerCase(), e]),
       ).values(),
     );
+    // Attach the merged pack to the email so recipients have everything
+    // they need without logging in. Filename is meeting-dated for easy
+    // archiving on the recipient side.
+    const packFilename = `gt-invest-${meeting.date}${meeting.label ? "-" + meeting.label.replace(/[^A-Za-z0-9_-]+/g, "_") : ""}.pdf`;
     let sent = false;
     if (settings.smtp?.enabled && recipients.length > 0) {
       sent = await sendNotification(
@@ -186,6 +190,14 @@ router.post(
         recipients,
         `GT Invest pack — ${meeting.date}${meeting.label ? ` (${meeting.label})` : ""}`,
         `Attached: GT Invest pack with ${wfs.length} workflow(s) for the meeting on ${meeting.date}.`,
+        undefined,
+        [
+          {
+            filename: packFilename,
+            content: Buffer.from(bytes),
+            contentType: "application/pdf",
+          },
+        ],
       );
     }
 
@@ -214,10 +226,6 @@ router.post(
       `${wfs.length} workflows, ${recipients.length} recipients, sent=${sent}`,
     );
 
-    // Keep the bytes around so the response stays small but the audit
-    // and the email both reflect the same content. We don't return the
-    // PDF here — the caller can hit /gt-invest/export to fetch it.
-    void bytes;
     res.json({
       sent,
       recipients,
@@ -328,6 +336,14 @@ router.get("/gt-invest/export", requireAuth, async (req, res): Promise<void> => 
         exportRecipients,
         `GT Invest pack — ${nextDate ? String(nextDate.date) : "next meeting"}`,
         `Attached: GT Invest pack with ${wfs.length} workflows.`,
+        undefined,
+        [
+          {
+            filename: `gt-invest-${nextDate ? String(nextDate.date) : Date.now()}.pdf`,
+            content: Buffer.from(bytes),
+            contentType: "application/pdf",
+          },
+        ],
       );
     }
     // (No NotificationContext — this is an admin export, not a workflow event.)
