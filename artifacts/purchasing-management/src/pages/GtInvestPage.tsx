@@ -37,6 +37,7 @@ import {
   useListGtInvestDates,
   useSetGtInvestDecision,
   useNotifyGtInvestMeeting,
+  useUpdateWorkflow,
   getListGtInvestWorkflowsQueryKey,
   getListGtInvestDatesQueryKey,
 } from "@/lib/api";
@@ -422,6 +423,11 @@ function QueuePanel() {
                         <div className="text-right text-xs text-muted-foreground">
                           {w.ageDays}d old
                         </div>
+                        <AssignMeetingSelect
+                          workflowId={w.id}
+                          currentDateId={w.gtInvestDateId ?? null}
+                          dates={dates ?? []}
+                        />
                         <DecideButton
                           workflowId={w.id}
                           currentDateId={w.gtInvestDateId ?? null}
@@ -442,6 +448,65 @@ function QueuePanel() {
   );
 }
 
+
+// Per-row "Assign to meeting" Select. Lets a GT Invest reviewer move
+// a workflow into (or between) meeting buckets without making a
+// decision yet — covers the case where a workflow lands at GT_INVEST
+// with no meeting attached and the OK / Refused decisions otherwise
+// don't touch the date. Reassigning to a different meeting clears
+// the prior "prepared" stamp on the server (see PATCH /workflows/:id),
+// so the meeting will surface as "needs notify" again.
+function AssignMeetingSelect({
+  workflowId,
+  currentDateId,
+  dates,
+}: {
+  workflowId: number;
+  currentDateId: number | null;
+  dates: Array<{ id: number; date: string; label?: string | null }>;
+}) {
+  const qc = useQueryClient();
+  const update = useUpdateWorkflow({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListGtInvestWorkflowsQueryKey() });
+        qc.invalidateQueries({ queryKey: getListGtInvestDatesQueryKey() });
+      },
+    },
+  });
+  // We use a sentinel "none" value to represent "Unassigned" because
+  // shadcn's Select cannot use an empty string for an item value.
+  const value = currentDateId != null ? String(currentDateId) : "none";
+  return (
+    <Select
+      value={value}
+      onValueChange={(v) => {
+        const next = v === "none" ? null : Number(v);
+        if (next === currentDateId) return;
+        update.mutate({
+          id: workflowId,
+          data: { gtInvestDateId: next },
+        });
+      }}
+      disabled={update.isPending}
+    >
+      <SelectTrigger
+        className="h-8 w-[180px] text-xs"
+        data-testid={`select-assign-meeting-${workflowId}`}
+      >
+        <SelectValue placeholder="Assign to meeting" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">Unassigned</SelectItem>
+        {dates.map((d) => (
+          <SelectItem key={d.id} value={String(d.id)}>
+            {formatMeetingDate(d.date, d.label)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 // Per-meeting "send the pack now & mark prepared" action. The button
 // changes color when there are unprepared workflows in the meeting,
