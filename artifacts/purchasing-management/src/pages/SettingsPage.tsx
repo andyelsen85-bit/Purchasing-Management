@@ -48,8 +48,10 @@ import {
   useGetSession,
   useListDeletedWorkflows,
   useRestoreWorkflow,
+  useListUsers,
   getListDeletedWorkflowsQueryKey,
 } from "@/lib/api";
+import { Users } from "lucide-react";
 import { HttpsSettingsPanel } from "@/pages/settings/HttpsSettingsPanel";
 
 /**
@@ -101,6 +103,12 @@ const ROLE_DEFS: Array<{ role: string; label: string; description: string }> = [
     label: "GT Invest committee",
     description:
       "Acts on the GT Invest review step (step 4b) when a workflow is routed to GT Invest by financial validation.",
+  },
+  {
+    role: "GT_INVEST_NOTIFICATIONS",
+    label: "GT Invest notifications",
+    description:
+      "Receives the GT Invest meeting pack email when an admin clicks 'Notify recipients & mark prepared'. No additional permissions — purely a notification list. Assign by AD group on the LDAP tab, or add ad-hoc emails on the GT Invest tab.",
   },
   {
     role: "READ_ONLY_DEPT",
@@ -1900,6 +1908,7 @@ function GtDatesPanel() {
 
 function GtRecipientsPanel() {
   const { data: s } = useGetSettings();
+  const { data: users } = useListUsers();
   const save = useSaveSettings();
   const [recipients, setRecipients] = useState<string[]>([]);
   const [next, setNext] = useState("");
@@ -1909,73 +1918,140 @@ function GtRecipientsPanel() {
     setRecipients(s.gtInvestRecipients);
   }, [s]);
 
+  // Users carrying the GT_INVEST_NOTIFICATIONS role — they're added to
+  // the recipients list automatically at notify time, so we only need
+  // to surface them here for transparency. Typical source: AD group
+  // mapped on the LDAP tab.
+  const roleMembers = (users ?? []).filter((u) =>
+    (u.roles ?? []).includes("GT_INVEST_NOTIFICATIONS"),
+  );
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>GT Invest notification recipients</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Input
-            type="email"
-            placeholder="email@example.com"
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            data-testid="input-gt-recipient"
-          />
-          <Button
-            onClick={() => {
-              if (!next) return;
-              setRecipients((r) => Array.from(new Set([...r, next])));
-              setNext("");
-            }}
-            data-testid="button-add-recipient"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add
-          </Button>
-        </div>
-        <div className="space-y-1">
-          {recipients.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">
-              No recipients configured.
+      <CardContent className="space-y-6">
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">
+              From role &ldquo;GT Invest notifications&rdquo;
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              ({roleMembers.length})
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Users carrying the <code>GT_INVEST_NOTIFICATIONS</code> role are
+            included automatically when an admin clicks
+            &ldquo;Notify recipients &amp; mark prepared&rdquo;. Assign the role
+            via the LDAP tab&apos;s Group&nbsp;→&nbsp;Role mapping for AD users,
+            or directly on the user record otherwise.
+          </p>
+          {roleMembers.length === 0 ? (
+            <p className="rounded-md border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+              No users currently have this role.
             </p>
           ) : (
-            recipients.map((r) => (
-              <div
-                key={r}
-                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                data-testid={`recipient-${r}`}
-              >
-                <span>{r}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    setRecipients((rs) => rs.filter((x) => x !== r))
-                  }
+            <div className="divide-y rounded-md border">
+              {roleMembers.map((u) => (
+                <div
+                  key={u.id}
+                  className="flex items-center justify-between px-3 py-2 text-sm"
+                  data-testid={`gt-role-member-${u.id}`}
                 >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            ))
+                  <div>
+                    <div className="font-medium">{u.displayName}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {u.username}
+                      {u.source === "LDAP" ? " · LDAP" : ""}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    {u.email ? (
+                      <span className="text-muted-foreground">{u.email}</span>
+                    ) : (
+                      <span className="text-amber-600">no email on file</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-        </div>
-        <div className="flex justify-end">
-          <Button
-            onClick={() =>
-              save.mutate({
-                data: { gtInvestRecipients: recipients },
-              })
-            }
-            disabled={save.isPending}
-            data-testid="button-save-recipients"
-          >
-            {save.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        </section>
+
+        <Separator />
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">Manual email addresses</h3>
+          <p className="text-xs text-muted-foreground">
+            For people who aren&apos;t in Active Directory (external
+            stakeholders, shared mailboxes, etc.). These are merged with the
+            role-based list above and deduplicated by email.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              placeholder="email@example.com"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              data-testid="input-gt-recipient"
+            />
+            <Button
+              onClick={() => {
+                if (!next) return;
+                setRecipients((r) => Array.from(new Set([...r, next])));
+                setNext("");
+              }}
+              data-testid="button-add-recipient"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add
+            </Button>
+          </div>
+          <div className="space-y-1">
+            {recipients.length === 0 ? (
+              <p className="py-3 text-sm text-muted-foreground">
+                No manual recipients configured.
+              </p>
+            ) : (
+              recipients.map((r) => (
+                <div
+                  key={r}
+                  className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                  data-testid={`recipient-${r}`}
+                >
+                  <span>{r}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setRecipients((rs) => rs.filter((x) => x !== r))
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))
             )}
-            <Save className="mr-2 h-4 w-4" /> Save
-          </Button>
-        </div>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              onClick={() =>
+                save.mutate({
+                  data: { gtInvestRecipients: recipients },
+                })
+              }
+              disabled={save.isPending}
+              data-testid="button-save-recipients"
+            >
+              {save.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              <Save className="mr-2 h-4 w-4" /> Save
+            </Button>
+          </div>
+        </section>
       </CardContent>
     </Card>
   );

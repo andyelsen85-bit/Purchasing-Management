@@ -163,10 +163,22 @@ router.post(
     }
     const bytes = await merged.save();
 
-    // Send the email (best-effort — we still stamp on SMTP-disabled so
-    // the operator at least records "I prepared this meeting"; the UI
-    // surfaces the SMTP-disabled state separately via /settings).
-    const recipients = settings.gtInvestRecipients ?? [];
+    // Recipients = manual list from Settings + every user carrying the
+    // GT_INVEST_NOTIFICATIONS role who has an email on file (typically
+    // populated from AD via the Group → Role mapping). Deduped + lowercased
+    // so an AD-synced user listed manually doesn't get two copies.
+    const roleUsers = await db.select().from(usersTable);
+    const roleEmails = roleUsers
+      .filter((u) => (u.roles ?? []).includes("GT_INVEST_NOTIFICATIONS") && u.email)
+      .map((u) => u.email as string);
+    const recipients = Array.from(
+      new Map(
+        [...(settings.gtInvestRecipients ?? []), ...roleEmails]
+          .map((e) => e.trim())
+          .filter(Boolean)
+          .map((e) => [e.toLowerCase(), e]),
+      ).values(),
+    );
     let sent = false;
     if (settings.smtp?.enabled && recipients.length > 0) {
       sent = await sendNotification(
@@ -296,14 +308,28 @@ router.get("/gt-invest/export", requireAuth, async (req, res): Promise<void> => 
   const bytes = await merged.save();
   await audit(user.id, "GT_INVEST_EXPORT", "gt-invest", undefined, `${wfs.length} workflows`);
 
-  // Optionally email it
-  if (settings.smtp?.enabled && (settings.gtInvestRecipients?.length ?? 0) > 0) {
-    void sendNotification(
-      settings.smtp,
-      settings.gtInvestRecipients!,
-      `GT Invest pack — ${nextDate ? String(nextDate.date) : "next meeting"}`,
-      `Attached: GT Invest pack with ${wfs.length} workflows.`,
+  // Optionally email it (manual list + GT_INVEST_NOTIFICATIONS role members).
+  if (settings.smtp?.enabled) {
+    const roleUsers = await db.select().from(usersTable);
+    const roleEmails = roleUsers
+      .filter((u) => (u.roles ?? []).includes("GT_INVEST_NOTIFICATIONS") && u.email)
+      .map((u) => u.email as string);
+    const exportRecipients = Array.from(
+      new Map(
+        [...(settings.gtInvestRecipients ?? []), ...roleEmails]
+          .map((e) => e.trim())
+          .filter(Boolean)
+          .map((e) => [e.toLowerCase(), e]),
+      ).values(),
     );
+    if (exportRecipients.length > 0) {
+      void sendNotification(
+        settings.smtp,
+        exportRecipients,
+        `GT Invest pack — ${nextDate ? String(nextDate.date) : "next meeting"}`,
+        `Attached: GT Invest pack with ${wfs.length} workflows.`,
+      );
+    }
     // (No NotificationContext — this is an admin export, not a workflow event.)
   }
 

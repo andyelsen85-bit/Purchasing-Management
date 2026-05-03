@@ -10,6 +10,7 @@ const VALID_ROLES: ReadonlySet<Role> = new Set<Role>([
   "DEPT_MANAGER",
   "DEPT_USER",
   "GT_INVEST",
+  "GT_INVEST_NOTIFICATIONS",
   "READ_ONLY_DEPT",
   "READ_ONLY_ALL",
 ]);
