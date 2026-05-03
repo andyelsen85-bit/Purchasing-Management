@@ -1,5 +1,11 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
+import { toast } from "@/hooks/use-toast";
+import { extractApiError } from "@/lib/api-error";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthGate } from "@/components/AuthGate";
@@ -20,6 +26,20 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 5_000, refetchOnWindowFocus: false, retry: false },
   },
+  // Global fallback so backend rejections never look like "nothing
+  // happened" to the user. If a mutation already supplies its own
+  // onError (e.g. a contextual alert), we skip the global toast to
+  // avoid duplicate messages.
+  mutationCache: new MutationCache({
+    onError: (err, _vars, _ctx, mutation) => {
+      if (mutation.options.onError) return;
+      toast({
+        variant: "destructive",
+        title: "Action failed",
+        description: extractApiError(err, "The server rejected the request."),
+      });
+    },
+  }),
 });
 
 function App() {

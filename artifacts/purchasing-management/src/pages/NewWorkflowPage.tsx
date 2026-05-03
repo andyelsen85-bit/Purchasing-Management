@@ -19,6 +19,8 @@ import {
   useListDepartments,
   Priority,
 } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { extractApiError } from "@/lib/api-error";
 
 export function NewWorkflowPage() {
   const [, setLocation] = useLocation();
@@ -37,11 +39,22 @@ export function NewWorkflowPage() {
     }
   }, [departments, departmentId]);
 
+  const { toast } = useToast();
   const create = useCreateWorkflow({
     mutation: {
       onSuccess: (wf) => {
         qc.invalidateQueries();
         setLocation(`/workflows/${wf.id}`);
+      },
+      onError: (err) => {
+        // Surface backend rejections (e.g. 403 when the user picks a
+        // department they aren't assigned to) instead of silently
+        // swallowing them.
+        toast({
+          variant: "destructive",
+          title: "Cannot create workflow",
+          description: extractApiError(err, "Could not create workflow."),
+        });
       },
     },
   });
