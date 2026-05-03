@@ -404,6 +404,19 @@ export function AppShell({ user, children }: Props) {
                   <div className="space-y-1">
                     {(deptWorkflows ?? []).map((w) => {
                       const active = location === `/workflows/${w.id}`;
+                      // When the user has the closed/done group
+                      // visible, tint the rows so terminal items are
+                      // immediately distinguishable from in-flight
+                      // ones at a glance: green for DONE, red for
+                      // REJECTED. The active row keeps the regular
+                      // accent so the selected workflow stands out.
+                      const terminalTone = active
+                        ? ""
+                        : w.currentStep === "DONE"
+                          ? "bg-emerald-500/15 text-emerald-100 ring-1 ring-inset ring-emerald-400/30"
+                          : w.currentStep === "REJECTED"
+                            ? "bg-rose-500/15 text-rose-100 ring-1 ring-inset ring-rose-400/30"
+                            : "";
                       return (
                         <Link
                           key={w.id}
@@ -411,7 +424,7 @@ export function AppShell({ user, children }: Props) {
                           className={`block rounded-md p-2 text-xs transition-colors hover-elevate ${
                             active
                               ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                              : "text-sidebar-foreground/85"
+                              : `text-sidebar-foreground/85 ${terminalTone}`
                           }`}
                           data-testid={`link-side-workflow-${w.id}`}
                         >
