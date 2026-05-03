@@ -51,6 +51,7 @@ import {
   useAdvanceWorkflow,
   useRejectWorkflow,
   useUndoWorkflow,
+  useDeleteWorkflow,
   useUploadWorkflowDocument,
   useDeleteDocument,
   useCreateWorkflowNote,
@@ -235,6 +236,25 @@ function ActionBar({
       },
     },
   });
+  // Soft-delete: admin-only. Sends the workflow to the trash (visible
+  // and restorable from Settings → Trash). After success we navigate
+  // back to the workflows list since the current detail page is now
+  // hidden by every list query (they all filter `deletedAt IS NULL`).
+  const [, navigate] = useLocation();
+  const del = useDeleteWorkflow({
+    mutation: {
+      onSuccess: () => {
+        onChange();
+        navigate("/");
+      },
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(`Cannot delete: ${msg}`);
+      },
+    },
+  });
 
   // Close the workflow from any non-terminal step. The server enforces
   // the "any non-terminal" rule so the client mirrors it. Includes the
@@ -253,6 +273,7 @@ function ActionBar({
   });
   const canUndo =
     user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
+  const canDelete = user.roles.includes("ADMIN");
   // The branch picker AND the advance button are both moved INTO the
   // Financial Approval panel for VALIDATING_BY_FINANCIAL — that step
   // bundles "approve + route" into a single inline action, so we hide
@@ -335,6 +356,30 @@ function ActionBar({
           data-testid="button-undo"
         >
           <Undo2 className="mr-2 h-4 w-4" /> Undo
+        </Button>
+      )}
+      {canDelete && (
+        <Button
+          variant="outline"
+          className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => {
+            if (
+              !window.confirm(
+                "Move this workflow to the trash? Admins can restore it later from Settings → Trash.",
+              )
+            )
+              return;
+            del.mutate({ id: wf.id });
+          }}
+          disabled={del.isPending}
+          data-testid="button-delete-workflow"
+        >
+          {del.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="mr-2 h-4 w-4" />
+          )}
+          Move to trash
         </Button>
       )}
     </div>
