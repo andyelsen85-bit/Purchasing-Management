@@ -62,6 +62,8 @@ import {
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
 import type { SessionUser } from "@/components/AuthGate";
+import { useToast } from "@/hooks/use-toast";
+import { extractErrorMessage } from "@/lib/utils";
 
 interface Props {
   id: number;
@@ -503,9 +505,22 @@ function RejectedPanel({ wf }: { wf: Workflow }) {
   );
 }
 
-function useSaveWorkflow(wf: Workflow, onChange: () => void) {
+function useSaveWorkflow(_wf: Workflow, onChange: () => void) {
+  const { toast } = useToast();
   return useUpdateWorkflow({
-    mutation: { onSuccess: () => onChange() },
+    mutation: {
+      onSuccess: () => {
+        onChange();
+        toast({ title: "Saved", duration: 2000 });
+      },
+      onError: (err) => {
+        toast({
+          variant: "destructive",
+          title: "Save failed",
+          description: extractErrorMessage(err),
+        });
+      },
+    },
   });
 }
 
