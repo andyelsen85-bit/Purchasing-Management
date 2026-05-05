@@ -51,17 +51,17 @@ interface NavItem {
 // runs on every endpoint; this is purely so that operators don't see
 // menu items that would 403 the moment they click something inside.
 const NAV: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/workflows", label: "Workflows", icon: ListChecks },
-  { to: "/workflows-by-step", label: "By Step", icon: Columns3 },
+  { to: "/", label: "Tableau de bord", icon: LayoutDashboard },
+  { to: "/workflows", label: "Commandes", icon: ListChecks },
+  { to: "/workflows-by-step", label: "Par étape", icon: Columns3 },
   {
     to: "/gt-invest",
     label: "GT Invest",
     icon: Banknote,
     roles: ["ADMIN", "GT_INVEST", "FINANCIAL_ALL"],
   },
-  { to: "/companies", label: "Reseller", icon: Building2 },
-  { to: "/settings", label: "Settings", icon: Settings, roles: ["ADMIN"] },
+  { to: "/companies", label: "Fournisseurs", icon: Building2 },
+  { to: "/settings", label: "Paramètres", icon: Settings, roles: ["ADMIN"] },
 ];
 
 interface Props {
@@ -276,7 +276,7 @@ export function AppShell({ user, children }: Props) {
                   ) : (
                     <Moon className="mr-2 h-4 w-4" />
                   )}
-                  {dark ? "Light" : "Dark"}
+                  {dark ? "Clair" : "Sombre"}
                 </Button>
                 <Button
                   variant="ghost"

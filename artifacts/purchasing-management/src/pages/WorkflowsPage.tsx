@@ -50,16 +50,16 @@ export function WorkflowsPage() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-            Workflows
+            Commandes
           </h1>
           <p className="text-sm text-muted-foreground">
-            All purchasing workflows across the organization
+            Toutes les commandes d'achat de l'organisation
           </p>
         </div>
         <Link href="/workflows/new">
           <a>
             <Button data-testid="button-new-workflow">
-              <Plus className="mr-2 h-4 w-4" /> New workflow
+              <Plus className="mr-2 h-4 w-4" /> Nouvelle commande
             </Button>
           </a>
         </Link>
@@ -75,7 +75,7 @@ export function WorkflowsPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search title or reference…"
+              placeholder="Rechercher titre ou référence…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="pl-8"
@@ -84,10 +84,10 @@ export function WorkflowsPage() {
           </div>
           <Select value={step} onValueChange={setStep}>
             <SelectTrigger data-testid="select-step">
-              <SelectValue placeholder="Step" />
+              <SelectValue placeholder="Étape" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All steps</SelectItem>
+              <SelectItem value="ALL">Toutes les étapes</SelectItem>
               {Object.values(WorkflowStep).map((s) => (
                 <SelectItem key={s} value={s}>
                   {STEP_LABEL[s]}
@@ -100,21 +100,21 @@ export function WorkflowsPage() {
             onValueChange={(v) => setStatus(v as typeof status)}
           >
             <SelectTrigger data-testid="select-status">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder="Statut" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ACTIVE">Active only</SelectItem>
-              <SelectItem value="ALL">All workflows</SelectItem>
-              <SelectItem value="DONE">Done</SelectItem>
-              <SelectItem value="REJECTED">Rejected</SelectItem>
+              <SelectItem value="ACTIVE">Actives seulement</SelectItem>
+              <SelectItem value="ALL">Toutes les commandes</SelectItem>
+              <SelectItem value="DONE">Terminées</SelectItem>
+              <SelectItem value="REJECTED">Clôturées</SelectItem>
             </SelectContent>
           </Select>
           <Select value={departmentId} onValueChange={setDepartmentId}>
             <SelectTrigger data-testid="select-department">
-              <SelectValue placeholder="Department" />
+              <SelectValue placeholder="Service" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All departments</SelectItem>
+              <SelectItem value="ALL">Tous les services</SelectItem>
               {(departments ?? []).map((d) => (
                 <SelectItem key={d.id} value={String(d.id)}>
                   {d.name}
@@ -138,17 +138,17 @@ export function WorkflowsPage() {
               className="p-12 text-center text-sm text-muted-foreground"
               data-testid="status-no-workflows"
             >
-              No workflows found.
+              Aucune commande trouvée.
             </div>
           ) : (
             <div className="divide-y">
               <div className="grid grid-cols-12 gap-3 px-5 py-2 text-[11px] uppercase tracking-wider text-muted-foreground">
-                <div className="col-span-2">Reference</div>
-                <div className="col-span-4">Title</div>
-                <div className="col-span-2">Department</div>
-                <div className="col-span-2">Step</div>
-                <div className="col-span-1">Priority</div>
-                <div className="col-span-1 text-right">Age</div>
+                <div className="col-span-2">Référence</div>
+                <div className="col-span-4">Titre</div>
+                <div className="col-span-2">Service</div>
+                <div className="col-span-2">Étape</div>
+                <div className="col-span-1">Priorité</div>
+                <div className="col-span-1 text-right">Âge</div>
               </div>
               {workflows.map((w: WorkflowSummary) => (
                 <Link key={w.id} href={`/workflows/${w.id}`}>

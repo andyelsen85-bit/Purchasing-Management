@@ -25,10 +25,10 @@ export function WorkflowsByStepPage() {
     <div className="space-y-6 p-6">
       <header>
         <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-          Workflows by step
+          Commandes par étape
         </h1>
         <p className="text-sm text-muted-foreground">
-          Kanban view: every workflow grouped by its current step
+          Vue kanban : toutes les commandes regroupées par étape
           {" "}
           <span data-testid="text-dept-scope">· {deptName}</span>
         </p>
@@ -54,7 +54,7 @@ export function WorkflowsByStepPage() {
                 <div className="space-y-2">
                   {group.workflows.length === 0 && (
                     <p className="py-3 text-center text-xs text-muted-foreground">
-                      No workflows
+                      Aucune commande
                     </p>
                   )}
                   {group.workflows.map((w) => (

@@ -105,7 +105,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
       <div className="p-6">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>Workflow not found.</AlertDescription>
+          <AlertDescription>Commande introuvable.</AlertDescription>
         </Alert>
       </div>
     );
@@ -124,7 +124,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
         onClick={() => setLocation("/workflows")}
         data-testid="button-back"
       >
-        <ArrowLeft className="mr-2 h-4 w-4" /> Back to workflows
+        <ArrowLeft className="mr-2 h-4 w-4" /> Retour aux commandes
       </Button>
 
       <div className="flex items-start justify-between gap-4">
@@ -189,10 +189,10 @@ export function WorkflowDetailPage({ id, user }: Props) {
       <Tabs defaultValue="step" className="space-y-4">
         <TabsList>
           <TabsTrigger value="step" data-testid="tab-step">
-            Main
+            Principal
           </TabsTrigger>
           <TabsTrigger value="summary" data-testid="tab-summary">
-            Summary
+            Récapitulatif
           </TabsTrigger>
           <TabsTrigger value="form" data-testid="tab-form">
             <ClipboardList className="mr-1 h-3.5 w-3.5" /> Formulaire
@@ -204,7 +204,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
             <MessageSquare className="mr-1 h-3.5 w-3.5" /> Notes
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
-            <History className="mr-1 h-3.5 w-3.5" /> History
+            <History className="mr-1 h-3.5 w-3.5" /> Historique
           </TabsTrigger>
         </TabsList>
 
@@ -403,7 +403,7 @@ function ActionBar({
           ) : (
             <ArrowRight className="mr-2 h-4 w-4" />
           )}
-          Next Step
+          Étape suivante
         </Button>
       )}
       {!isTerminal && (
@@ -412,7 +412,7 @@ function ActionBar({
           className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={() => {
             const reason = window.prompt(
-              "Close this workflow? Optionally enter a reason — it will be saved with the close event.",
+              "Clôturer cette commande ? Vous pouvez saisir une raison facultative.",
               "",
             );
             if (reason === null) return;
@@ -429,7 +429,7 @@ function ActionBar({
           ) : (
             <Trash2 className="mr-2 h-4 w-4" />
           )}
-          Close workflow
+          Clôturer
         </Button>
       )}
       {canUndo && (
@@ -445,7 +445,7 @@ function ActionBar({
           }
           data-testid="button-undo"
         >
-          <Undo2 className="mr-2 h-4 w-4" /> Undo
+          <Undo2 className="mr-2 h-4 w-4" /> Annuler
         </Button>
       )}
       {canDelete && (
@@ -455,7 +455,7 @@ function ActionBar({
           onClick={() => {
             if (
               !window.confirm(
-                "Move this workflow to the trash? Admins can restore it later from Settings → Trash.",
+                "Déplacer cette commande vers la corbeille ? Les admins peuvent la restaurer depuis Paramètres → Corbeille.",
               )
             )
               return;
@@ -469,7 +469,7 @@ function ActionBar({
           ) : (
             <Trash2 className="mr-2 h-4 w-4" />
           )}
-          Move to trash
+          Corbeille
         </Button>
       )}
     </div>
@@ -552,7 +552,7 @@ function StepDocumentUploader({
         </Label>
         {upload.isPending && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+            <Loader2 className="h-3 w-3 animate-spin" /> Chargement…
           </span>
         )}
       </div>
@@ -561,7 +561,7 @@ function StepDocumentUploader({
           className="text-xs text-muted-foreground"
           data-testid={`text-no-doc-${kind}`}
         >
-          No file attached yet.
+          Aucun fichier joint.
         </p>
       ) : (
         <ul className="space-y-1">
@@ -707,10 +707,10 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
     s ? new Date(s).toLocaleDateString() : "—";
   const fmtDateTime = (s: string | null | undefined) =>
     s ? new Date(s).toLocaleString() : "—";
-  const fmtMoney = (n: number | null | undefined, c: string | null | undefined) =>
-    n != null ? `${n} ${c ?? ""}`.trim() : "—";
+  const fmtMoney = (n: number | null | undefined, _c?: string | null) =>
+    n != null ? `${n} €` : "—";
   const fmtBool = (b: boolean | null | undefined) =>
-    b == null ? "—" : b ? "Yes" : "No";
+    b == null ? "—" : b ? "Oui" : "Non";
   const orDash = (v: string | null | undefined) => (v && v.length > 0 ? v : "—");
 
   const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
@@ -740,7 +740,7 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
               className="text-[11px] text-muted-foreground"
               data-testid={`step-actor-${step}`}
             >
-              by <span className="font-medium text-foreground">{meta.name}</span>
+              par <span className="font-medium text-foreground">{meta.name}</span>
               {" · "}
               {fmtDateTime(meta.at)}
             </div>
@@ -757,7 +757,7 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-5 w-5" />
-            Workflow completed
+            Commande terminée
           </CardTitle>
           <Button asChild variant="outline" size="sm">
             <a
@@ -767,47 +767,43 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
               data-testid="button-export-pdf-done"
             >
               <Download className="mr-2 h-4 w-4" />
-              Export merged PDF
+              Exporter PDF groupé
             </a>
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Section title="General">
-            <Row label="Reference" value={<span className="font-mono">{wf.reference}</span>} />
-            <Row label="Title" value={wf.title} />
-            <Row label="Department" value={wf.departmentName} />
-            <Row label="Requested by" value={wf.createdByName} />
-            <Row label="Priority" value={wf.priority} />
-            <Row label="Branch" value={orDash(wf.branch)} />
-            {/* Fields formerly in the now-removed "1 · New request"
-                section — surfaced here so the request brief is visible
-                directly under the workflow header. */}
+          <Section title="Général">
+            <Row label="Référence" value={<span className="font-mono">{wf.reference}</span>} />
+            <Row label="Titre" value={wf.title} />
+            <Row label="Service" value={wf.departmentName} />
+            <Row label="Demandé par" value={wf.createdByName} />
+            <Row label="Priorité" value={wf.priority} />
+            <Row label="Circuit" value={orDash(wf.branch)} />
             <Row label="Description" value={orDash(wf.description)} />
-            <Row label="Category" value={orDash(wf.category)} />
-            <Row label="Needed by" value={fmtDate(wf.neededBy)} />
-            <Row label="Created" value={fmtDateTime(wf.createdAt)} />
-            <Row label="Last update" value={fmtDateTime(wf.updatedAt)} />
+            <Row label="Date souhaitée" value={fmtDate(wf.neededBy)} />
+            <Row label="Créé le" value={fmtDateTime(wf.createdAt)} />
+            <Row label="Dernière mise à jour" value={fmtDateTime(wf.updatedAt)} />
           </Section>
 
-          <Section title="2 · Quotation" step="QUOTATION">
-            <Row label="3 quotes required" value={fmtBool(wf.threeQuoteRequired)} />
+          <Section title="2 · Offre de prix" step="QUOTATION">
+            <Row label="3 offres requises" value={fmtBool(wf.threeQuoteRequired)} />
             <div className="py-1">
               {wf.quotes && wf.quotes.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs text-muted-foreground">
-                        <th className="px-2 py-1">Company</th>
-                        <th className="px-2 py-1">Amount</th>
+                        <th className="px-2 py-1">Fournisseur</th>
+                        <th className="px-2 py-1">Montant</th>
                         <th className="px-2 py-1">Notes</th>
-                        <th className="px-2 py-1">Winning</th>
+                        <th className="px-2 py-1">Retenu</th>
                       </tr>
                     </thead>
                     <tbody>
                       {wf.quotes.map((q, i) => (
                         <tr key={i} className="border-t">
                           <td className="px-2 py-1">{orDash(q.companyName)}</td>
-                          <td className="px-2 py-1">{fmtMoney(q.amount, q.currency)}</td>
+                          <td className="px-2 py-1">{fmtMoney(q.amount)}</td>
                           <td className="px-2 py-1">{orDash(q.notes)}</td>
                           <td className="px-2 py-1">{q.winning ? "★" : ""}</td>
                         </tr>
@@ -822,57 +818,57 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
           </Section>
 
           <Section
-            title="3 · Manager approval"
+            title="3 · Validation responsable"
             step="VALIDATING_QUOTE_FINANCIAL"
           >
-            <Row label="Approved" value={fmtBool(wf.managerApproved)} />
-            <Row label="Comment" value={orDash(wf.managerComment)} />
+            <Row label="Approuvé" value={fmtBool(wf.managerApproved)} />
+            <Row label="Commentaire" value={orDash(wf.managerComment)} />
           </Section>
 
           <Section
-            title="4 · Financial approval"
+            title="4 · Validation financière"
             step="VALIDATING_BY_FINANCIAL"
           >
-            <Row label="Approved" value={fmtBool(wf.financialApproved)} />
-            <Row label="Comment" value={orDash(wf.financialComment)} />
+            <Row label="Approuvé" value={fmtBool(wf.financialApproved)} />
+            <Row label="Commentaire" value={orDash(wf.financialComment)} />
           </Section>
 
           {wf.branch === "GT_INVEST" || wf.gtInvestDateId || wf.gtInvestResultId ? (
             <Section title="GT Invest" step="GT_INVEST">
-              <Row label="Session date" value={fmtDate(gtDate)} />
-              <Row label="Result" value={orDash(gtResult)} />
-              <Row label="Comment" value={orDash(wf.gtInvestComment)} />
+              <Row label="Date de réunion" value={fmtDate(gtDate)} />
+              <Row label="Résultat" value={orDash(gtResult)} />
+              <Row label="Commentaire" value={orDash(wf.gtInvestComment)} />
             </Section>
           ) : null}
 
-          <Section title="5 · Ordering" step="ORDERING">
-            <Row label="Order number" value={orDash(wf.orderNumber)} />
-            <Row label="Order date" value={fmtDate(wf.orderDate)} />
+          <Section title="5 · Commande" step="ORDERING">
+            <Row label="N° de commande" value={orDash(wf.orderNumber)} />
+            <Row label="Date de commande" value={fmtDate(wf.orderDate)} />
           </Section>
 
-          <Section title="6 · Delivery" step="DELIVERY">
-            <Row label="Delivered on" value={fmtDate(wf.deliveredOn)} />
+          <Section title="6 · Livraison" step="DELIVERY">
+            <Row label="Livré le" value={fmtDate(wf.deliveredOn)} />
             <Row label="Notes" value={orDash(wf.deliveryNotes)} />
           </Section>
 
-          <Section title="7 · Invoice" step="INVOICE">
-            <Row label="Invoice number" value={orDash(wf.invoiceNumber)} />
-            <Row label="Invoice amount" value={fmtMoney(wf.invoiceAmount, wf.currency)} />
-            <Row label="Invoice date" value={fmtDate(wf.invoiceDate)} />
+          <Section title="7 · Facture" step="INVOICE">
+            <Row label="N° de facture" value={orDash(wf.invoiceNumber)} />
+            <Row label="Montant facture" value={fmtMoney(wf.invoiceAmount)} />
+            <Row label="Date de facture" value={fmtDate(wf.invoiceDate)} />
           </Section>
 
           <Section
-            title="8 · Validate invoice"
+            title="8 · Validation facture"
             step="VALIDATING_INVOICE"
           >
-            <Row label="Validated" value={fmtBool(wf.invoiceValidated)} />
-            <Row label="Signed by" value={orDash(wf.invoiceSignedBy)} />
-            <Row label="Signed at" value={fmtDateTime(wf.invoiceSignedAt)} />
+            <Row label="Validé" value={fmtBool(wf.invoiceValidated)} />
+            <Row label="Signé par" value={orDash(wf.invoiceSignedBy)} />
+            <Row label="Signé le" value={fmtDateTime(wf.invoiceSignedAt)} />
           </Section>
 
-          <Section title="9 · Payment" step="PAYMENT">
-            <Row label="Payment date" value={fmtDate(wf.paymentDate)} />
-            <Row label="Payment reference" value={orDash(wf.paymentReference)} />
+          <Section title="9 · Paiement" step="PAYMENT">
+            <Row label="Date de paiement" value={fmtDate(wf.paymentDate)} />
+            <Row label="Référence paiement" value={orDash(wf.paymentReference)} />
           </Section>
         </CardContent>
       </Card>
@@ -917,7 +913,7 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
             </ul>
           ) : (
             <div className="text-sm text-muted-foreground">
-              No documents attached.
+              Aucun document joint.
             </div>
           )}
         </CardContent>
@@ -941,25 +937,25 @@ function RejectedPanel({ wf }: { wf: Workflow }) {
     <Card className="border-destructive/40">
       <CardHeader>
         <CardTitle className="text-destructive">
-          Workflow rejected and closed
+          Commande refusée et clôturée
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <div>
-          Closed at step{" "}
+          Clôturée à l'étape{" "}
           <strong>
-            {fromStep ? STEP_LABEL[fromStep] : "an approval step"}
+            {fromStep ? STEP_LABEL[fromStep] : "une étape d'approbation"}
           </strong>
           .
         </div>
         {reason ? (
           <div className="rounded-md bg-muted/50 p-3 text-muted-foreground">
-            <div className="text-[11px] uppercase tracking-wider">Reason</div>
+            <div className="text-[11px] uppercase tracking-wider">Raison</div>
             <div className="mt-1 whitespace-pre-wrap">{reason}</div>
           </div>
         ) : (
           <div className="text-muted-foreground">
-            No reason was recorded. Admin or Financial-All can Undo to reopen.
+            Aucune raison enregistrée. Un Admin ou Financier-Tous peut annuler pour rouvrir.
           </div>
         )}
       </CardContent>
@@ -973,12 +969,12 @@ function useSaveWorkflow(_wf: Workflow, onChange: () => void) {
     mutation: {
       onSuccess: () => {
         onChange();
-        toast({ title: "Saved", duration: 2000 });
+        toast({ title: "Enregistré", duration: 2000 });
       },
       onError: (err) => {
         toast({
           variant: "destructive",
-          title: "Save failed",
+          title: "Échec de l'enregistrement",
           description: extractErrorMessage(err),
         });
       },
@@ -1154,19 +1150,15 @@ function QuotationPanel({
           QUOTATION still shows the original ask up-front. */}
       <Card>
         <CardHeader>
-          <CardTitle>Request brief</CardTitle>
+          <CardTitle>Contexte de la demande</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           <div>
             <div className="text-xs text-muted-foreground">Description</div>
             <div>{wf.description && wf.description.length > 0 ? wf.description : "—"}</div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">Category</div>
-            <div>{wf.category && wf.category.length > 0 ? wf.category : "—"}</div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Needed by</div>
+            <div className="text-xs text-muted-foreground">Date souhaitée</div>
             <div>{wf.neededBy ? new Date(wf.neededBy).toLocaleDateString() : "—"}</div>
           </div>
         </CardContent>
@@ -1178,30 +1170,29 @@ function QuotationPanel({
     >
       <CardHeader>
         <CardTitle>
-          Quotations{quotesMissing && <RequiredMark />}
+          Offres de prix{quotesMissing && <RequiredMark />}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
           {threeQuotesRequired
-            ? "Collect quotes from suppliers. Mark one as winning before advancing."
-            : "The amount is below the limit — a single quote is enough and is automatically the winning one."}
+            ? "Collectez les offres de prix des fournisseurs. Marquez l'une comme retenue avant de continuer."
+            : "Le montant est en dessous du seuil — une seule offre suffit et est automatiquement retenue."}
         </p>
         {threeQuotesRequired && (
           <Alert className="mt-2 border-amber-500/50 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              The first quote
+              La première offre
               {limitX != null ? (
                 <>
-                  {" "}exceeds the configured limit of{" "}
+                  {" "}dépasse le seuil configuré de{" "}
                   <strong>
-                    {limitX} {wf.currency ?? "EUR"}
+                    {limitX} €
                   </strong>
                 </>
               ) : (
-                <> exceeds the configured limit</>
+                <> dépasse le seuil configuré</>
               )}
-              . Please collect <strong>three quotes</strong> from different
-              suppliers before advancing ({filledCount}/3 entered).
+              . Veuillez collecter <strong>trois offres</strong> de fournisseurs différents avant de continuer ({filledCount}/3 saisies).
             </AlertDescription>
           </Alert>
         )}
@@ -1214,7 +1205,7 @@ function QuotationPanel({
             data-testid={`row-quote-${idx}`}
           >
             <div className="col-span-4 space-y-1">
-              <Label className="text-xs">Supplier</Label>
+              <Label className="text-xs">Fournisseur</Label>
               <Select
                 value={q.companyId ? String(q.companyId) : ""}
                 onValueChange={(v) => {
@@ -1237,8 +1228,8 @@ function QuotationPanel({
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-3 space-y-1">
-              <Label className="text-xs">Amount</Label>
+            <div className="col-span-5 space-y-1">
+              <Label className="text-xs">Montant (€)</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -1252,18 +1243,7 @@ function QuotationPanel({
               />
             </div>
             <div className="col-span-2 space-y-1">
-              <Label className="text-xs">Currency</Label>
-              <Input
-                value={q.currency ?? ""}
-                onChange={(e) =>
-                  update(idx, { currency: e.target.value.toUpperCase() })
-                }
-                maxLength={3}
-                data-testid={`input-currency-${idx}`}
-              />
-            </div>
-            <div className="col-span-2 space-y-1">
-              <Label className="text-xs">Winning</Label>
+              <Label className="text-xs">Retenu</Label>
               {threeQuotesRequired ? (
                 <Button
                   type="button"
@@ -1273,14 +1253,14 @@ function QuotationPanel({
                   onClick={() => setWinning(idx)}
                   data-testid={`button-winning-${idx}`}
                 >
-                  {q.winning ? "Selected" : "Mark"}
+                  {q.winning ? "Sélectionné" : "Choisir"}
                 </Button>
               ) : (
                 <div
                   className="flex h-9 w-full items-center justify-center rounded-md border bg-muted/50 text-xs text-muted-foreground"
                   data-testid={`text-winning-auto-${idx}`}
                 >
-                  {idx === 0 ? "Auto" : "—"}
+                  {idx === 0 ? "Retenu" : "—"}
                 </div>
               )}
             </div>
@@ -1305,11 +1285,11 @@ function QuotationPanel({
             </div>
             <div className="col-span-12 space-y-2 border-t pt-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Quote documents</Label>
+                <Label className="text-xs">Documents de l'offre</Label>
                 <div className="flex items-center gap-2">
                   {uploadingIdx === idx && (
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+                      <Loader2 className="h-3 w-3 animate-spin" /> Chargement…
                     </span>
                   )}
                   <Label
@@ -1317,7 +1297,7 @@ function QuotationPanel({
                     className="inline-flex cursor-pointer items-center gap-1 rounded border bg-background px-2 py-1 text-xs hover:bg-muted"
                     data-testid={`button-upload-quote-${idx}`}
                   >
-                    <Upload className="h-3 w-3" /> Attach file
+                    <Upload className="h-3 w-3" /> Joindre un fichier
                   </Label>
                   <input
                     id={`quote-file-${idx}`}
@@ -1334,7 +1314,7 @@ function QuotationPanel({
                 if (ids.length === 0)
                   return (
                     <p className="text-xs text-muted-foreground">
-                      No file attached yet.
+                      Aucun fichier joint.
                     </p>
                   );
                 return (
@@ -1389,7 +1369,7 @@ function QuotationPanel({
             onClick={addRow}
             data-testid="button-add-quote"
           >
-            <Plus className="mr-2 h-4 w-4" /> Add quote
+            <Plus className="mr-2 h-4 w-4" /> Ajouter une offre
           </Button>
           <Button
             onClick={() =>
@@ -1405,7 +1385,7 @@ function QuotationPanel({
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             <Save className="mr-2 h-4 w-4" />
-            Save
+            Enregistrer
           </Button>
         </div>
       </CardContent>
@@ -1440,8 +1420,7 @@ function WinningQuoteCard({
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          No winning quote selected yet. Go back to the Quotation step and
-          mark one quote as winning.
+          Aucune offre retenue. Revenez à l'étape Offre de prix et sélectionnez une offre gagnante.
         </AlertDescription>
       </Alert>
     );
@@ -1463,12 +1442,12 @@ function WinningQuoteCard({
   return (
     <Card className="border-primary/40 bg-primary/5">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Winning quote</CardTitle>
+        <CardTitle className="text-base">Offre retenue</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <div>
-            <div className="text-xs text-muted-foreground">Reseller</div>
+            <div className="text-xs text-muted-foreground">Fournisseur</div>
             <div
               className="font-medium"
               data-testid="text-winning-supplier"
@@ -1477,13 +1456,13 @@ function WinningQuoteCard({
             </div>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground">Amount</div>
+            <div className="text-xs text-muted-foreground">Montant</div>
             <div
               className="font-medium"
               data-testid="text-winning-amount"
             >
               {winning.amount != null
-                ? `${winning.amount} ${winning.currency ?? wf.currency ?? ""}`
+                ? `${winning.amount} €`
                 : "—"}
             </div>
           </div>
@@ -1496,11 +1475,11 @@ function WinningQuoteCard({
         )}
         <div>
           <div className="mb-1 text-xs text-muted-foreground">
-            Quote documents
+            Documents de l'offre
           </div>
           {winningDocs.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">
-              No file was attached to the winning quote.
+              Aucun fichier joint à l'offre retenue.
             </p>
           ) : (
             <ul className="space-y-1">
@@ -1565,7 +1544,7 @@ function WinningQuoteCard({
         {otherQuotes.length > 0 && (
           <div className="border-t border-primary/20 pt-3">
             <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Other quotes ({otherQuotes.length})
+              Autres offres ({otherQuotes.length})
             </div>
             <ul className="space-y-2" data-testid="list-other-quotes">
               {otherQuotes.map((q, i) => {
@@ -1589,7 +1568,7 @@ function WinningQuoteCard({
                       </span>
                       <span className="text-muted-foreground" data-testid={`text-other-amount-${i}`}>
                         {q.amount != null
-                          ? `${q.amount} ${q.currency ?? wf.currency ?? ""}`
+                          ? `${q.amount} €`
                           : "—"}
                       </span>
                     </div>
@@ -1708,15 +1687,14 @@ function ManagerApprovePanel({
       <WinningQuoteCard wf={wf} />
       <Card>
         <CardHeader>
-          <CardTitle>Department Manager Validation</CardTitle>
+          <CardTitle>Validation responsable de service</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Approve to send this request on to Financial review, or
-            reject to close it. Rejecting closes the workflow.
+            Approuvez pour transmettre cette demande à la validation financière, ou refusez pour la clôturer.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1">
-            <Label>Comment</Label>
+            <Label>Commentaire</Label>
             <Textarea
               rows={3}
               value={comment}
@@ -1735,14 +1713,14 @@ function ManagerApprovePanel({
               ) : (
                 <ArrowRight className="mr-2 h-4 w-4" />
               )}
-              Approve
+              Approuver
             </Button>
             <Button
               variant="destructive"
               onClick={() => {
                 if (
                   !confirm(
-                    "Reject and close this workflow? This action can be undone by an Admin or Financial-All user.",
+                    "Refuser et clôturer cette commande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
                   )
                 )
                   return;
@@ -1757,7 +1735,7 @@ function ManagerApprovePanel({
               {reject.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Reject &amp; close
+              Refuser &amp; clôturer
             </Button>
           </div>
         </CardContent>
@@ -1842,7 +1820,7 @@ function FinancialApprovePanel({
   function rejectDecision() {
     if (
       !confirm(
-        "Reject and close this workflow? This action can be undone by an Admin or Financial-All user.",
+        "Refuser et clôturer cette commande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
       )
     )
       return;
@@ -1857,17 +1835,15 @@ function FinancialApprovePanel({
       <WinningQuoteCard wf={wf} />
       <Card>
         <CardHeader>
-          <CardTitle>Financial Approval</CardTitle>
+          <CardTitle>Validation financière</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Pick a routing branch — K-Order or GT Invest — and approve to
-            send the workflow forward. Approval is implicit when you choose
-            a branch.
+            Choisissez un circuit — K-Order ou GT Invest — puis approuvez pour faire avancer la commande.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <Label>
-              Routing branch<RequiredMark />
+              Circuit d'approbation<RequiredMark />
             </Label>
             <Select
               value={branch}
@@ -1880,7 +1856,7 @@ function FinancialApprovePanel({
                 className={`w-full sm:w-64 ${missingInputCls(missing.has("branch"))}`}
                 data-testid="select-fin-branch"
               >
-                <SelectValue placeholder="Choose K-Order or GT Invest…" />
+                <SelectValue placeholder="Choisir K-Order ou GT Invest…" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={AdvanceWorkflowInputBranch.K_ORDER}>
@@ -1893,7 +1869,7 @@ function FinancialApprovePanel({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Comment</Label>
+            <Label>Commentaire</Label>
             <Textarea
               rows={3}
               value={comment}
@@ -1912,7 +1888,7 @@ function FinancialApprovePanel({
               ) : (
                 <ArrowRight className="mr-2 h-4 w-4" />
               )}
-              Approve &amp; route
+              Approuver &amp; orienter
             </Button>
             <Button
               variant="destructive"
@@ -1923,7 +1899,7 @@ function FinancialApprovePanel({
               {reject.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Reject
+              Refuser
             </Button>
           </div>
         </CardContent>
@@ -1964,16 +1940,16 @@ function GtInvestPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>GT Invest Decision</CardTitle>
+        <CardTitle>Décision GT Invest</CardTitle>
         {wf.gtInvestDecision && (
           <p className="text-xs text-muted-foreground">
-            Last recorded decision: {gtDecisionLabel(wf.gtInvestDecision)}
+            Dernière décision enregistrée : {gtDecisionLabel(wf.gtInvestDecision)}
           </p>
         )}
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
-          <Label>Decision</Label>
+          <Label>Décision</Label>
           <Select
             value={decision}
             onValueChange={(v) =>
@@ -1983,7 +1959,7 @@ function GtInvestPanel({
             }
           >
             <SelectTrigger data-testid="select-gt-decision">
-              <SelectValue placeholder="Pick a decision" />
+              <SelectValue placeholder="Sélectionner..." />
             </SelectTrigger>
             <SelectContent>
               {GT_DECISION_OPTIONS.map((o) => (
@@ -1999,10 +1975,10 @@ function GtInvestPanel({
         </div>
         {needsDate && (
           <div className="space-y-1">
-            <Label>Meeting date</Label>
+            <Label>Date de réunion</Label>
             <Select value={dateId} onValueChange={setDateId}>
               <SelectTrigger data-testid="select-gt-date">
-                <SelectValue placeholder="Pick a meeting date" />
+                <SelectValue placeholder="Sélectionner..." />
               </SelectTrigger>
               <SelectContent>
                 {(dates ?? []).map((d) => (
@@ -2016,7 +1992,7 @@ function GtInvestPanel({
           </div>
         )}
         <div className="space-y-1">
-          <Label>Comment (optional)</Label>
+          <Label>Commentaire (optionnel)</Label>
           <Textarea
             rows={3}
             value={comment}
@@ -2046,7 +2022,7 @@ function GtInvestPanel({
           }}
           data-testid="button-apply-gt"
         >
-          <Save className="mr-2 h-4 w-4" /> Apply decision
+          <Save className="mr-2 h-4 w-4" /> Appliquer la décision
         </Button>
       </CardContent>
     </Card>
@@ -2129,7 +2105,7 @@ function PriorStepsRecap({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">Workflow recap</CardTitle>
+        <CardTitle className="text-base">Récapitulatif</CardTitle>
         <Button asChild variant="outline" size="sm">
           <a
             href={exportHref}
@@ -2138,45 +2114,42 @@ function PriorStepsRecap({
             data-testid="button-export-merged-pdf-recap"
           >
             <Download className="mr-2 h-4 w-4" />
-            Export merged PDF
+            Exporter PDF groupé
           </a>
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Section title="General">
-          <Row label="Reference" value={<span className="font-mono">{wf.reference}</span>} />
-          <Row label="Title" value={wf.title} />
-          <Row label="Department" value={wf.departmentName} />
-          <Row label="Requested by" value={wf.createdByName} />
-          <Row label="Priority" value={wf.priority} />
-          <Row label="Branch" value={orDash(wf.branch)} />
-          {/* Mirrors the General block on the Main tab so the request
-              brief is visible from the Summary recap as well. */}
+        <Section title="Général">
+          <Row label="Référence" value={<span className="font-mono">{wf.reference}</span>} />
+          <Row label="Titre" value={wf.title} />
+          <Row label="Service" value={wf.departmentName} />
+          <Row label="Demandé par" value={wf.createdByName} />
+          <Row label="Priorité" value={wf.priority} />
+          <Row label="Circuit" value={orDash(wf.branch)} />
           <Row label="Description" value={orDash(wf.description)} />
-          <Row label="Category" value={orDash(wf.category)} />
-          <Row label="Needed by" value={fmtDate(wf.neededBy)} />
-          <Row label="Created" value={fmtDateTime(wf.createdAt)} />
+          <Row label="Date souhaitée" value={fmtDate(wf.neededBy)} />
+          <Row label="Créé le" value={fmtDateTime(wf.createdAt)} />
         </Section>
 
         {show("QUOTATION") && (
-          <Section title="2 · Quotation">
-            <Row label="3 quotes required" value={fmtBool(wf.threeQuoteRequired)} />
+          <Section title="2 · Offre de prix">
+            <Row label="3 offres requises" value={fmtBool(wf.threeQuoteRequired)} />
             {wf.quotes && wf.quotes.length > 0 ? (
               <div className="overflow-x-auto py-1">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-muted-foreground">
-                      <th className="px-2 py-1">Company</th>
-                      <th className="px-2 py-1">Amount</th>
+                      <th className="px-2 py-1">Fournisseur</th>
+                      <th className="px-2 py-1">Montant</th>
                       <th className="px-2 py-1">Notes</th>
-                      <th className="px-2 py-1">Winning</th>
+                      <th className="px-2 py-1">Retenu</th>
                     </tr>
                   </thead>
                   <tbody>
                     {wf.quotes.map((q, i) => (
                       <tr key={i} className="border-t">
                         <td className="px-2 py-1">{orDash(q.companyName)}</td>
-                        <td className="px-2 py-1">{fmtMoney(q.amount, q.currency)}</td>
+                        <td className="px-2 py-1">{fmtMoney(q.amount)}</td>
                         <td className="px-2 py-1">{orDash(q.notes)}</td>
                         <td className="px-2 py-1">{q.winning ? "★" : ""}</td>
                       </tr>
@@ -2185,61 +2158,61 @@ function PriorStepsRecap({
                 </table>
               </div>
             ) : (
-              <Row label="Quotes" value="—" />
+              <Row label="Offres" value="—" />
             )}
           </Section>
         )}
 
         {show("VALIDATING_QUOTE_FINANCIAL") && (
-          <Section title="3 · Manager approval">
-            <Row label="Approved" value={fmtBool(wf.managerApproved)} />
-            <Row label="Comment" value={orDash(wf.managerComment)} />
+          <Section title="3 · Validation responsable">
+            <Row label="Approuvé" value={fmtBool(wf.managerApproved)} />
+            <Row label="Commentaire" value={orDash(wf.managerComment)} />
           </Section>
         )}
 
         {show("VALIDATING_BY_FINANCIAL") && (
-          <Section title="4 · Financial approval">
-            <Row label="Approved" value={fmtBool(wf.financialApproved)} />
-            <Row label="Comment" value={orDash(wf.financialComment)} />
+          <Section title="4 · Validation financière">
+            <Row label="Approuvé" value={fmtBool(wf.financialApproved)} />
+            <Row label="Commentaire" value={orDash(wf.financialComment)} />
           </Section>
         )}
 
         {show("GT_INVEST") &&
         (wf.branch === "GT_INVEST" || wf.gtInvestDateId || wf.gtInvestResultId) ? (
           <Section title="GT Invest">
-            <Row label="Session date" value={fmtDate(gtDate)} />
-            <Row label="Result" value={orDash(gtResult)} />
-            <Row label="Comment" value={orDash(wf.gtInvestComment)} />
+            <Row label="Date de réunion" value={fmtDate(gtDate)} />
+            <Row label="Résultat" value={orDash(gtResult)} />
+            <Row label="Commentaire" value={orDash(wf.gtInvestComment)} />
           </Section>
         ) : null}
 
         {show("ORDERING") && (
-          <Section title="5 · Ordering">
-            <Row label="Order number" value={orDash(wf.orderNumber)} />
-            <Row label="Order date" value={fmtDate(wf.orderDate)} />
+          <Section title="5 · Commande">
+            <Row label="N° de commande" value={orDash(wf.orderNumber)} />
+            <Row label="Date de commande" value={fmtDate(wf.orderDate)} />
           </Section>
         )}
 
         {show("DELIVERY") && (
-          <Section title="6 · Delivery">
-            <Row label="Delivered on" value={fmtDate(wf.deliveredOn)} />
+          <Section title="6 · Livraison">
+            <Row label="Livré le" value={fmtDate(wf.deliveredOn)} />
             <Row label="Notes" value={orDash(wf.deliveryNotes)} />
           </Section>
         )}
 
         {show("INVOICE") && (
-          <Section title="7 · Invoice">
-            <Row label="Invoice number" value={orDash(wf.invoiceNumber)} />
-            <Row label="Invoice amount" value={fmtMoney(wf.invoiceAmount, wf.currency)} />
-            <Row label="Invoice date" value={fmtDate(wf.invoiceDate)} />
+          <Section title="7 · Facture">
+            <Row label="N° de facture" value={orDash(wf.invoiceNumber)} />
+            <Row label="Montant facture" value={fmtMoney(wf.invoiceAmount)} />
+            <Row label="Date de facture" value={fmtDate(wf.invoiceDate)} />
           </Section>
         )}
 
         {show("VALIDATING_INVOICE") && (
-          <Section title="8 · Validate invoice">
-            <Row label="Validated" value={fmtBool(wf.invoiceValidated)} />
-            <Row label="Signed by" value={orDash(wf.invoiceSignedBy)} />
-            <Row label="Signed at" value={fmtDateTime(wf.invoiceSignedAt)} />
+          <Section title="8 · Validation facture">
+            <Row label="Validé" value={fmtBool(wf.invoiceValidated)} />
+            <Row label="Signé par" value={orDash(wf.invoiceSignedBy)} />
+            <Row label="Signé le" value={fmtDateTime(wf.invoiceSignedAt)} />
           </Section>
         )}
       </CardContent>
@@ -2296,13 +2269,13 @@ function OrderingPanel({
       <WinningQuoteCard wf={wf} showOtherQuotes={false} />
     <Card>
       <CardHeader>
-        <CardTitle>Order details</CardTitle>
+        <CardTitle>Détails de la commande</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>
-              Order number<RequiredMark />
+              N° de commande<RequiredMark />
             </Label>
             <Input
               value={orderNumber}
@@ -2315,7 +2288,7 @@ function OrderingPanel({
             />
           </div>
           <div className="space-y-1">
-            <Label>Order date</Label>
+            <Label>Date de commande</Label>
             <Input
               type="date"
               value={orderDate}
@@ -2334,13 +2307,13 @@ function OrderingPanel({
           disabled={save.isPending}
           data-testid="button-save-order"
         >
-          <Save className="mr-2 h-4 w-4" /> Save
+          <Save className="mr-2 h-4 w-4" /> Enregistrer
         </Button>
         <StepDocumentUploader
           wf={wf}
           kind="ORDER"
           step="ORDERING"
-          label="Order document"
+          label="Document de commande"
           required
         />
       </CardContent>
@@ -2373,17 +2346,14 @@ function DeliveryPanel({
     <div className="space-y-4">
     <Card>
       <CardHeader>
-        <CardTitle>Delivery</CardTitle>
+        <CardTitle>Livraison</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Record the delivery date below if known. Both the date and
-          the delivery note are optional — the date may legitimately
-          fall before the order date for backdated entries, and many
-          suppliers don't issue a printed delivery slip.
+          Enregistrez la date de livraison si connue. La date et le bon de livraison sont facultatifs.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
-          <Label>Delivered on</Label>
+          <Label>Livré le</Label>
           <Input
             type="date"
             value={deliveredOn}
@@ -2413,13 +2383,13 @@ function DeliveryPanel({
           disabled={save.isPending}
           data-testid="button-save-delivery"
         >
-          <Save className="mr-2 h-4 w-4" /> Save
+          <Save className="mr-2 h-4 w-4" /> Enregistrer
         </Button>
         <StepDocumentUploader
           wf={wf}
           kind="DELIVERY"
           step="DELIVERY"
-          label="Delivery note (optional)"
+          label="Bon de livraison (optionnel)"
         />
       </CardContent>
     </Card>
@@ -2464,13 +2434,13 @@ function InvoicePanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Invoice details</CardTitle>
+        <CardTitle>Détails de la facture</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="space-y-1">
             <Label>
-              Invoice number<RequiredMark />
+              N° de facture<RequiredMark />
             </Label>
             <Input
               value={invoiceNumber}
@@ -2484,7 +2454,7 @@ function InvoicePanel({
           </div>
           <div className="space-y-1">
             <Label>
-              Amount<RequiredMark />
+              Montant (€)<RequiredMark />
             </Label>
             <Input
               type="number"
@@ -2499,7 +2469,7 @@ function InvoicePanel({
             />
           </div>
           <div className="space-y-1">
-            <Label>Invoice date</Label>
+            <Label>Date de facture</Label>
             <Input
               type="date"
               value={invoiceDate}
@@ -2522,13 +2492,13 @@ function InvoicePanel({
           disabled={save.isPending}
           data-testid="button-save-invoice"
         >
-          <Save className="mr-2 h-4 w-4" /> Save
+          <Save className="mr-2 h-4 w-4" /> Enregistrer
         </Button>
         <StepDocumentUploader
           wf={wf}
           kind="INVOICE"
           step="INVOICE"
-          label="Invoice document"
+          label="Document de facture"
           required
         />
       </CardContent>
@@ -2589,6 +2559,13 @@ function InvoiceValidationPanel({
     }
   }
 
+  const advance = useAdvanceWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: () => {},
+    },
+  });
+
   async function onValidate() {
     if (settings?.certSigningEnabled) {
       setSigning(true);
@@ -2599,13 +2576,19 @@ function InvoiceValidationPanel({
         return;
       }
     }
-    save.mutate({
-      id: wf.id,
-      data: {
-        invoiceValidated: true,
-        invoiceSignedBy: signedBy || null,
+    save.mutate(
+      {
+        id: wf.id,
+        data: {
+          invoiceValidated: true,
+          invoiceSignedBy: signedBy || null,
+        },
       },
-    });
+      {
+        onSuccess: () =>
+          advance.mutate({ id: wf.id, data: { branch: null } }),
+      },
+    );
   }
   const reject = useRejectWorkflow({
     mutation: {
@@ -2614,30 +2597,28 @@ function InvoiceValidationPanel({
         const msg =
           (err as { data?: { message?: string } }).data?.message ??
           (err as Error).message;
-        alert(`Cannot reject: ${msg}`);
+        alert(`Impossible de refuser : ${msg}`);
       },
     },
   });
-  const busy = save.isPending || reject.isPending || signing;
+  const busy = save.isPending || advance.isPending || reject.isPending || signing;
   return (
     <div className="space-y-4">
+    <PriorStepsRecap wf={wf} throughStep="VALIDATING_INVOICE" />
     <Card>
       <CardHeader>
-        <CardTitle>Validate Invoice</CardTitle>
+        <CardTitle>Validation de la facture</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Validate to advance to Payment, or reject to close the
-          workflow without paying. Use <em>Export merged PDF</em> to
-          download a single signing pack with every attachment from
-          quote through invoice.
+          Validez pour passer au Paiement, ou refusez pour clôturer la commande. Utilisez <em>Exporter PDF groupé</em> pour télécharger le dossier complet.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
-          <Label>Signed by (optional)</Label>
+          <Label>Signé par (optionnel)</Label>
           <Input
             value={signedBy}
             onChange={(e) => setSignedBy(e.target.value)}
-            placeholder="Signer name"
+            placeholder="Nom du signataire"
             data-testid="input-invoice-signedby"
           />
         </div>
@@ -2645,7 +2626,7 @@ function InvoiceValidationPanel({
           <Button asChild variant="outline" data-testid="button-export-merged-pdf">
             <a href={exportHref} target="_blank" rel="noreferrer">
               <Download className="mr-2 h-4 w-4" />
-              Export merged PDF
+              Exporter PDF groupé
             </a>
           </Button>
           <Button
@@ -2653,23 +2634,23 @@ function InvoiceValidationPanel({
             disabled={busy}
             data-testid="button-invoice-validate"
           >
-            {save.isPending || signing ? (
+            {save.isPending || advance.isPending || signing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Save className="mr-2 h-4 w-4" />
             )}
             {signing
-              ? "Signing on local agent…"
+              ? "Signature en cours…"
               : settings?.certSigningEnabled
-                ? "Sign & validate"
-                : "Validate"}
+                ? "Signer & valider"
+                : "Valider"}
           </Button>
           <Button
             variant="destructive"
             onClick={() => {
               if (
                 !confirm(
-                  "Reject this invoice and close the workflow? This action can be undone by an Admin or Financial-All user.",
+                  "Refuser cette facture et clôturer la commande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
                 )
               )
                 return;
@@ -2681,7 +2662,7 @@ function InvoiceValidationPanel({
             {reject.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            Reject &amp; close
+            Refuser &amp; clôturer
           </Button>
         </div>
       </CardContent>
@@ -2717,22 +2698,20 @@ function PaymentPanel({
       <PriorStepsRecap wf={wf} throughStep="PAYMENT" />
     <Card>
       <CardHeader>
-        <CardTitle>Payment</CardTitle>
+        <CardTitle>Paiement</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Review the recap above, then click <em>Paid</em> once the
-          transfer of{" "}
+          Consultez le récapitulatif ci-dessus, puis cliquez sur <em>Payer</em> une fois le virement de{" "}
           <strong>
-            {wf.invoiceAmount} {wf.currency}
+            {wf.invoiceAmount} €
           </strong>{" "}
-          for <span className="font-mono">{wf.reference}</span> is
-          complete to close the workflow.
+          pour <span className="font-mono">{wf.reference}</span> effectué.
         </p>
         <div>
           <Button
             onClick={() => {
-              if (!confirm("Mark this workflow as Paid and close it?"))
+              if (!confirm("Marquer cette commande comme payée et la clôturer ?"))
                 return;
               advance.mutate({ id: wf.id, data: { branch: null } });
             }}
@@ -2744,7 +2723,7 @@ function PaymentPanel({
             ) : (
               <CheckCircle2 className="mr-2 h-4 w-4" />
             )}
-            Paid
+            Payer
           </Button>
         </div>
       </CardContent>
@@ -2795,7 +2774,7 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 p-3">
           <div className="space-y-1">
-            <Label className="text-xs">Kind</Label>
+            <Label className="text-xs">Type</Label>
             <Select
               value={kind}
               onValueChange={(v) =>
@@ -2818,7 +2797,7 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Upload file</Label>
+            <Label className="text-xs">Téléverser un fichier</Label>
             <Input
               type="file"
               onChange={onPick}
@@ -2827,7 +2806,7 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
           </div>
           {upload.isPending && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+              <Loader2 className="h-3 w-3 animate-spin" /> Chargement…
             </span>
           )}
         </div>
@@ -2836,7 +2815,7 @@ function DocumentsPanel({ wf }: { wf: Workflow }) {
 
         {(docs ?? []).length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No documents uploaded yet.
+            Aucun document ajouté.
           </p>
         ) : (
           <div className="divide-y">
@@ -2942,7 +2921,7 @@ function NotesPanel({ wf }: { wf: Workflow }) {
             rows={3}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Add a note for this step…"
+            placeholder="Ajouter une note pour cette étape…"
             data-testid="input-note-body"
           />
           <div className="flex justify-end">
@@ -2957,14 +2936,14 @@ function NotesPanel({ wf }: { wf: Workflow }) {
               disabled={create.isPending || !body.trim()}
               data-testid="button-add-note"
             >
-              <Plus className="mr-2 h-4 w-4" /> Add note
+              <Plus className="mr-2 h-4 w-4" /> Ajouter une note
             </Button>
           </div>
         </div>
         <Separator />
         {(notes ?? []).length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No notes yet.
+            Aucune note.
           </p>
         ) : (
           <div className="space-y-3">
@@ -2998,12 +2977,12 @@ function HistoryPanel({ wf }: { wf: Workflow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>History</CardTitle>
+        <CardTitle>Historique</CardTitle>
       </CardHeader>
       <CardContent>
         {(hist ?? []).length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No events yet.
+            Aucun événement.
           </p>
         ) : (
           <ol className="space-y-3">
@@ -3023,15 +3002,15 @@ function HistoryPanel({ wf }: { wf: Workflow }) {
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">
                       {h.action === "ADVANCE"
-                        ? "Next Step"
+                        ? "Étape suivante"
                         : h.action === "REJECT"
-                          ? "Reject"
+                          ? "Clôturer"
                           : h.action === "UNDO"
-                            ? "Undo"
+                            ? "Annuler"
                             : h.action === "CREATE"
-                              ? "Create"
+                              ? "Créer"
                               : h.action === "EDIT"
-                                ? "Edit"
+                                ? "Modifier"
                                 : h.action}
                     </span>
                     <span className="text-xs text-muted-foreground">

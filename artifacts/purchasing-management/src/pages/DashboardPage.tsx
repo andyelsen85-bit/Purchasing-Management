@@ -67,10 +67,10 @@ export function DashboardPage() {
     <div className="space-y-6 p-6">
       <header>
         <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-          Dashboard
+          Tableau de bord
         </h1>
         <p className="text-sm text-muted-foreground">
-          Overview of all active and completed purchasing workflows
+          Vue d'ensemble de toutes les commandes en cours et terminées
         </p>
       </header>
 
@@ -82,28 +82,28 @@ export function DashboardPage() {
         ) : (
           <>
             <StatCard
-              label="Active workflows"
+              label="Commandes actives"
               value={data?.totalActive ?? 0}
               icon={ListChecks}
               tone="primary"
               testId="card-stat-active"
             />
             <StatCard
-              label="Completed"
+              label="Terminées"
               value={data?.totalDone ?? 0}
               icon={CheckCircle2}
               tone="success"
               testId="card-stat-done"
             />
             <StatCard
-              label="Stalled"
+              label="En retard"
               value={data?.stalledCount ?? 0}
               icon={AlertTriangle}
               tone="warning"
               testId="card-stat-stalled"
             />
             <StatCard
-              label="Avg age (days)"
+              label="Âge moyen (jours)"
               value={Math.round((data?.averageAgeDays ?? 0) * 10) / 10}
               icon={Clock}
               tone="muted"
@@ -116,7 +116,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Workflows by step</CardTitle>
+            <CardTitle>Commandes par étape</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -171,13 +171,13 @@ export function DashboardPage() {
 
         <Card>
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Recent activity</CardTitle>
+            <CardTitle>Activité récente</CardTitle>
             <Link href="/workflows">
               <a
                 className="flex items-center gap-1 text-xs text-primary hover:underline"
                 data-testid="link-all-workflows"
               >
-                All <ArrowRight className="h-3 w-3" />
+                Tout <ArrowRight className="h-3 w-3" />
               </a>
             </Link>
           </CardHeader>
@@ -185,7 +185,7 @@ export function DashboardPage() {
             {isLoading ? (
               <Skeleton className="h-40" />
             ) : (data?.recent ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No activity yet.</p>
+              <p className="text-sm text-muted-foreground">Aucune activité.</p>
             ) : (
               (data?.recent ?? []).map((h) => (
                 <div

@@ -32,24 +32,24 @@ export const ACTIVE_STEPS = [
 ] as const satisfies readonly Step[];
 
 export const STEP_LABEL: Record<Step, string> = {
-  NEW: "New",
-  QUOTATION: "Quotation",
-  VALIDATING_QUOTE_FINANCIAL: "Validate Quote",
-  VALIDATING_BY_FINANCIAL: "Financial Approval",
+  NEW: "Nouveau",
+  QUOTATION: "Offre de prix",
+  VALIDATING_QUOTE_FINANCIAL: "Validation Responsable",
+  VALIDATING_BY_FINANCIAL: "Validation Financière",
   GT_INVEST: "GT Invest",
-  ORDERING: "Ordering",
-  DELIVERY: "Delivery",
-  INVOICE: "Invoice",
-  VALIDATING_INVOICE: "Validate Invoice",
-  PAYMENT: "Payment",
-  DONE: "Done",
-  REJECTED: "Rejected",
+  ORDERING: "Commande",
+  DELIVERY: "Livraison",
+  INVOICE: "Facture",
+  VALIDATING_INVOICE: "Validation Facture",
+  PAYMENT: "Paiement",
+  DONE: "Terminé",
+  REJECTED: "Clôturé",
 };
 
 export const PRIORITY_LABEL: Record<string, string> = {
-  LOW: "Low",
+  LOW: "Faible",
   NORMAL: "Normal",
-  HIGH: "High",
+  HIGH: "Élevée",
   URGENT: "Urgent",
 };
 

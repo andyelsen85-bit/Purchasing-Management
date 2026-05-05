@@ -72,6 +72,7 @@ const DATA_TYPES = [
 const REQUIRED_DOCS = [
   "Offre de prix",
   "Offre de prix des consommables",
+  "Offre de prix pour formation",
   "Offre de prix pour la maintenance",
   "Documentation contractuelle (SLA, CGV, maintenance, etc.)",
   "Fiche technique",
@@ -276,6 +277,28 @@ export function NewWorkflowPage() {
   useEffect(() => {
     setSupplierContactId("");
   }, [supplierCompanyId]);
+
+  // Q8.2 = "Oui" → auto-check "Offre de prix des consommables" in §11
+  useEffect(() => {
+    if (consumablesOfferAttached === "true") {
+      setDocumentsProvided((prev) =>
+        prev.includes("Offre de prix des consommables")
+          ? prev
+          : [...prev, "Offre de prix des consommables"],
+      );
+    }
+  }, [consumablesOfferAttached]);
+
+  // Q10.1.1 = "Oui" → auto-check "Offre de prix pour formation" in §11
+  useEffect(() => {
+    if (trainingOfferAttached === "true") {
+      setDocumentsProvided((prev) =>
+        prev.includes("Offre de prix pour formation")
+          ? prev
+          : [...prev, "Offre de prix pour formation"],
+      );
+    }
+  }, [trainingOfferAttached]);
 
   const create = useCreateWorkflow();
   const update = useUpdateWorkflow();
@@ -656,16 +679,6 @@ export function NewWorkflowPage() {
                     </Select>
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="category">Catégorie</Label>
-                  <Input
-                    id="category"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    placeholder="ex. Matériel médical"
-                    data-testid="input-category"
-                  />
-                </div>
               </div>
 
               <SectionTitle number="1" label="Identification générale" />
@@ -866,29 +879,31 @@ export function NewWorkflowPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>4.4.1 Position budgétaire (selon liste GT Invest)<Req /></Label>
-                  {budgetPositionsList.length === 0 ? (
-                    <Alert variant="destructive">
-                      <AlertDescription className="text-xs">
-                        Aucune position budgétaire n'est configurée. Un administrateur doit en ajouter dans Paramètres → GT Invest avant de pouvoir créer un workflow.
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <Select value={budgetPosition} onValueChange={setBudgetPosition}>
-                      <SelectTrigger data-testid="select-budget-position">
-                        <SelectValue placeholder="Sélectionner..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {budgetPositionsList.map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {p}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
+                {budgetPositionKnown === "YES" && (
+                  <div className="space-y-1.5">
+                    <Label>4.4.1 Position budgétaire (selon liste GT Invest)<Req /></Label>
+                    {budgetPositionsList.length === 0 ? (
+                      <Alert variant="destructive">
+                        <AlertDescription className="text-xs">
+                          Aucune position budgétaire n'est configurée. Un administrateur doit en ajouter dans Paramètres → GT Invest avant de pouvoir créer un workflow.
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <Select value={budgetPosition} onValueChange={setBudgetPosition}>
+                        <SelectTrigger data-testid="select-budget-position">
+                          <SelectValue placeholder="Sélectionner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {budgetPositionsList.map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}

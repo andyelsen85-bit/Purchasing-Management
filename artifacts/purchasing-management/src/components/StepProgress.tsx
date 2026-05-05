@@ -48,7 +48,7 @@ export function StepProgress({ current, branch }: Props) {
         className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
         data-testid="status-step-progress"
       >
-        Rejected — workflow closed
+        Commande clôturée
       </div>
     );
   }
