@@ -33,17 +33,17 @@ import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
 
-// 10 GiB ceiling on the uploaded JSON. We can support files this large
-// because we never load the dump into memory: multer streams it to a
-// temp file on disk and we then stream-parse it table-by-table with
-// `stream-json`. Raise this if you genuinely have a bigger backup
-// (production VM disk space is the real constraint at that point).
-const TEN_GIB = 10 * 1024 * 1024 * 1024;
+// 2 GiB ceiling on the uploaded JSON. Files are streamed to disk so
+// there is no heap-memory risk; 2 GiB is large enough for installations
+// with thousands of scanned documents embedded as base64.
+// The frontend enforces the same limit client-side so the user gets
+// immediate feedback without uploading a single byte.
+const MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
 const RESTORE_TMP_DIR = path.join(tmpdir(), "purchasing-restore");
 await fsp.mkdir(RESTORE_TMP_DIR, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({ destination: RESTORE_TMP_DIR }),
-  limits: { fileSize: TEN_GIB },
+  limits: { fileSize: MAX_RESTORE_BYTES },
 });
 
 // Tables in FK-safe order: parents first when inserting, children first

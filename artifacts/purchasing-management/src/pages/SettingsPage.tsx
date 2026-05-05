@@ -452,6 +452,18 @@ function useSaveSettings() {
  * a transaction, replays the dump, and forces every active session to
  * re-authenticate.
  */
+/** 2 GiB — must match the server-side multer limit in backup.ts */
+const MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024;
+
+function fmtBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} Go`;
+  if (bytes >= 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+  return `${bytes} o`;
+}
+
 function BackupRestorePanel() {
   const apiBase = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const [busy, setBusy] = useState<"download" | "upload" | null>(null);
@@ -484,7 +496,7 @@ function BackupRestorePanel() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      setSuccess(`Downloaded ${filename}`);
+      setSuccess(`Sauvegarde téléchargée : ${filename}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -494,11 +506,24 @@ function BackupRestorePanel() {
 
   function pickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
-    setPendingFile(f);
-    setConfirming(Boolean(f));
+    e.target.value = ""; // allow re-selecting same file later
     setError(null);
     setSuccess(null);
-    e.target.value = ""; // allow re-selecting same file later
+    if (!f) {
+      setPendingFile(null);
+      setConfirming(false);
+      return;
+    }
+    if (f.size > MAX_RESTORE_BYTES) {
+      setError(
+        `Fichier trop volumineux : ${fmtBytes(f.size)}. La taille maximale autorisée est ${fmtBytes(MAX_RESTORE_BYTES)}.`,
+      );
+      setPendingFile(null);
+      setConfirming(false);
+      return;
+    }
+    setPendingFile(f);
+    setConfirming(true);
   }
 
   async function uploadRestore() {
@@ -521,7 +546,7 @@ function BackupRestorePanel() {
       };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       setSuccess(
-        `Restored ${j.restoredRows ?? 0} rows. You will be signed out — please log in again.`,
+        `Restauration réussie : ${j.restoredRows ?? 0} lignes importées. Vous allez être déconnecté — veuillez vous reconnecter.`,
       );
       setPendingFile(null);
       // Server already destroyed our session; redirect to login after a
@@ -539,17 +564,18 @@ function BackupRestorePanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Backup &amp; Restore</CardTitle>
+        <CardTitle>Sauvegarde &amp; Restauration</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold">Download backup</h3>
+          <h3 className="text-sm font-semibold">Télécharger la sauvegarde</h3>
           <p className="text-sm text-muted-foreground">
-            Exports every user, department, company, workflow, document,
-            note, history entry, audit log, setting, GT Invest data and
-            TLS material as a single JSON file. Document files are
-            embedded as base64, so this single file is the complete
-            snapshot of the instance.
+            Exporte l'ensemble des données (utilisateurs, départements,
+            sociétés, commandes, documents, notes, historique, journal
+            d'audit, paramètres, GT Invest et certificats TLS) dans un
+            seul fichier JSON. Les pièces jointes sont encodées en
+            base64 — ce fichier est une image complète et autonome de
+            l'instance.
           </p>
           <Button
             onClick={downloadBackup}
@@ -561,24 +587,28 @@ function BackupRestorePanel() {
             ) : (
               <Download className="mr-2 h-4 w-4" />
             )}
-            Download backup
+            Télécharger la sauvegarde
           </Button>
         </div>
 
         <Separator />
 
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold">Restore from backup</h3>
+          <h3 className="text-sm font-semibold">Restaurer depuis une sauvegarde</h3>
           <Alert variant="destructive">
             <ShieldAlert className="h-4 w-4" />
             <AlertDescription>
-              Restoring overwrites <strong>every</strong> table (users,
-              workflows, documents, settings, …) with the contents of
-              the uploaded file. Any data created since the backup was
-              taken will be lost. You will be signed out and must log in
-              again with a user from the backup.
+              La restauration <strong>écrase intégralement</strong>{" "}
+              toutes les tables (utilisateurs, commandes, documents,
+              paramètres…) avec le contenu du fichier importé. Toutes
+              les données créées après la sauvegarde seront perdues.
+              Vous serez déconnecté et devrez vous reconnecter avec un
+              compte présent dans la sauvegarde.
             </AlertDescription>
           </Alert>
+          <p className="text-xs text-muted-foreground">
+            Taille maximale : {fmtBytes(MAX_RESTORE_BYTES)}
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="file"
@@ -592,9 +622,10 @@ function BackupRestorePanel() {
           {confirming && pendingFile && (
             <div className="rounded-md border border-destructive bg-destructive/5 p-3 text-sm">
               <p className="mb-2">
-                Selected: <strong>{pendingFile.name}</strong> (
-                {(pendingFile.size / 1024).toFixed(1)} KB). Click
-                Restore to wipe and replace all data.
+                Fichier sélectionné :{" "}
+                <strong>{pendingFile.name}</strong>{" "}
+                ({fmtBytes(pendingFile.size)}). Cliquez sur Restaurer
+                pour écraser toutes les données.
               </p>
               <div className="flex gap-2">
                 <Button
@@ -608,7 +639,7 @@ function BackupRestorePanel() {
                   ) : (
                     <Upload className="mr-2 h-4 w-4" />
                   )}
-                  Restore (overwrite everything)
+                  Restaurer (écraser tout)
                 </Button>
                 <Button
                   variant="outline"
@@ -619,7 +650,7 @@ function BackupRestorePanel() {
                   disabled={busy !== null}
                   data-testid="button-cancel-restore"
                 >
-                  Cancel
+                  Annuler
                 </Button>
               </div>
             </div>
