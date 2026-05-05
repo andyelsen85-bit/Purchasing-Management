@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft,
@@ -1349,7 +1349,17 @@ function QuotationPanel({
   );
 }
 
-function WinningQuoteCard({ wf }: { wf: Workflow }) {
+function WinningQuoteCard({
+  wf,
+  showOtherQuotes = true,
+}: {
+  wf: Workflow;
+  // When false, the "Other quotes" comparison section is hidden so
+  // the card stays focused on just the chosen supplier (used on the
+  // Ordering Main tab where the user only needs to act on the
+  // winning quote).
+  showOtherQuotes?: boolean;
+}) {
   const { data: companies } = useListCompanies();
   const { data: docs } = useListWorkflowDocuments(wf.id);
   const allQuotes = wf.quotes ?? [];
@@ -1381,9 +1391,10 @@ function WinningQuoteCard({ wf }: { wf: Workflow }) {
   // can see *why* the chosen one is the best (price comparison,
   // supplier alternatives). Only shown when three quotes were
   // required, since the single-quote case has nothing to compare.
-  const otherQuotes = wf.threeQuoteRequired
-    ? allQuotes.filter((q) => q !== winning)
-    : [];
+  const otherQuotes =
+    showOtherQuotes && wf.threeQuoteRequired
+      ? allQuotes.filter((q) => q !== winning)
+      : [];
   return (
     <Card className="border-primary/40 bg-primary/5">
       <CardHeader className="pb-2">
@@ -2148,13 +2159,37 @@ function OrderingPanel({
   wf: Workflow;
   onChange: () => void;
 }) {
+  // Date inputs need a bare YYYY-MM-DD; the API may return either
+  // that shape (Postgres `date` columns) or a full ISO timestamp,
+  // depending on how the value was written. Normalise both.
+  const toDateInput = (s: string | null | undefined): string =>
+    s ? String(s).slice(0, 10) : "";
   const [orderNumber, setOrderNumber] = useState(wf.orderNumber ?? "");
-  const [orderDate, setOrderDate] = useState(wf.orderDate ?? "");
+  const [orderDate, setOrderDate] = useState(toDateInput(wf.orderDate));
   const save = useSaveWorkflow(wf, onChange);
   const { missing, clearKey } = useMissingFields();
+  // Keep local form state in sync with the latest server snapshot so
+  // a Save → refetch (or another tab editing) is reflected here.
+  useEffect(() => {
+    setOrderNumber(wf.orderNumber ?? "");
+    setOrderDate(toDateInput(wf.orderDate));
+  }, [wf.orderNumber, wf.orderDate]);
+  // Defensive: clear the "missing" badge as soon as the field has a
+  // value locally — covers the case where the user filled the input
+  // after a failed Advance attempt and the onChange clear didn't fire
+  // (e.g. autofill, or value set via the date picker without a
+  // bubbling input event).
+  useEffect(() => {
+    if (orderNumber) clearKey("orderNumber");
+    if (orderDate) clearKey("orderDate");
+  }, [orderNumber, orderDate, clearKey]);
   return (
     <div className="space-y-4">
-      <PriorStepsRecap wf={wf} throughStep="ORDERING" />
+      {/* Recap of prior steps lives on the dedicated Summary tab now;
+          on the Main tab we only show what is needed to act on the
+          Ordering step itself — the chosen supplier and the order
+          form. */}
+      <WinningQuoteCard wf={wf} showOtherQuotes={false} />
     <Card>
       <CardHeader>
         <CardTitle>Order details</CardTitle>
