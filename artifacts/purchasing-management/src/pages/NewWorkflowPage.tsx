@@ -410,7 +410,7 @@ export function NewWorkflowPage() {
       )
         m.push("4.3.1 Justification de la procédure d'exception");
       if (!budgetPositionKnown) m.push("4.4 Position budgétaire connue");
-      if (!budgetPosition.trim()) m.push("4.4.1 Position budgétaire");
+      if (budgetPositionKnown === "YES" && !budgetPosition.trim()) m.push("4.4.1 Position budgétaire");
     }
     if (s === 4) {
       if (!supplierCompanyId) m.push("5.1 Nom du fournisseur");
