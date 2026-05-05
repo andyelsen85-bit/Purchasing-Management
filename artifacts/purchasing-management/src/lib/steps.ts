@@ -14,6 +14,23 @@ export const STEPS = [
 ] as const;
 export type Step = (typeof STEPS)[number];
 
+// Forward, user-facing flow — mirrors the server's ACTIVE_WORKFLOW_STEPS.
+// Use this anywhere UI needs to enumerate the active linear flow; STEPS
+// is retained as the recognised-value catalogue (incl. legacy NEW and
+// terminal REJECTED) for typing and label lookups only.
+export const ACTIVE_STEPS = [
+  "QUOTATION",
+  "VALIDATING_QUOTE_FINANCIAL",
+  "VALIDATING_BY_FINANCIAL",
+  "GT_INVEST",
+  "ORDERING",
+  "DELIVERY",
+  "INVOICE",
+  "VALIDATING_INVOICE",
+  "PAYMENT",
+  "DONE",
+] as const satisfies readonly Step[];
+
 export const STEP_LABEL: Record<Step, string> = {
   NEW: "New",
   QUOTATION: "Quotation",
