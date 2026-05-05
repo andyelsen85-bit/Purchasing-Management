@@ -655,6 +655,17 @@ router.post("/workflows/:id/undo", requireAuth, async (req, res): Promise<void> 
     res.status(404).json({ error: "Not found" });
     return;
   }
+  // QUOTATION is the new first step in the active flow (and NEW is the
+  // retired legacy first step). There is nothing meaningful to rewind
+  // to from either, so reject at the API layer for parity with the UI
+  // guard — even privileged callers shouldn't be able to drop a
+  // workflow into the retired NEW state via undo.
+  if (wf.currentStep === "QUOTATION" || wf.currentStep === "NEW") {
+    res
+      .status(400)
+      .json({ error: "Cannot undo from the first step (Quotation)" });
+    return;
+  }
   // Multi-step undo: derive the previous step from history rather than
   // relying on the (single-slot) `previousStep` column. We look for the
   // most recent forward transition (ADVANCE / REJECT) whose toStep is
