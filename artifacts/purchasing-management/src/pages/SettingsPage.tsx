@@ -5,6 +5,8 @@ import {
   Image as ImageIcon,
   Trash2,
   Plus,
+  Pencil,
+  X,
   Download,
   Upload,
   ShieldAlert,
@@ -41,6 +43,7 @@ import {
   useUpdateSettings,
   useListDepartments,
   useCreateDepartment,
+  useUpdateDepartment,
   useDeleteDepartment,
   useListGtInvestDates,
   useCreateGtInvestDate,
@@ -1702,30 +1705,117 @@ function DepartmentsPanel() {
         ) : (
           <div className="divide-y">
             {(depts ?? []).map((d) => (
-              <div
+              <DepartmentRow
                 key={d.id}
-                className="flex items-center gap-3 py-2"
-                data-testid={`dept-row-${d.id}`}
-              >
-                <code className="rounded bg-muted px-2 py-0.5 text-xs">
-                  {d.code}
-                </code>
-                <span className="flex-1 text-sm">{d.name}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => del.mutate({ id: d.id })}
-                  disabled={del.isPending}
-                  data-testid={`button-delete-dept-${d.id}`}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
+                dept={d}
+                onDelete={() => del.mutate({ id: d.id })}
+                delPending={del.isPending}
+              />
             ))}
           </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function DepartmentRow({
+  dept,
+  onDelete,
+  delPending,
+}: {
+  dept: { id: number; code: string; name: string };
+  onDelete: () => void;
+  delPending: boolean;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [editCode, setEditCode] = useState(dept.code);
+  const [editName, setEditName] = useState(dept.name);
+  const update = useUpdateDepartment({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries();
+        setEditing(false);
+      },
+    },
+  });
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2 py-2" data-testid={`dept-row-${dept.id}-edit`}>
+        <Input
+          className="w-32 text-xs"
+          value={editCode}
+          onChange={(e) => setEditCode(e.target.value)}
+          placeholder="Code"
+          data-testid={`input-edit-dept-code-${dept.id}`}
+        />
+        <Input
+          className="flex-1 text-sm"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          placeholder="Nom"
+          data-testid={`input-edit-dept-name-${dept.id}`}
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            setEditCode(dept.code);
+            setEditName(dept.name);
+            setEditing(false);
+          }}
+          data-testid={`button-cancel-edit-dept-${dept.id}`}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          disabled={!editCode.trim() || !editName.trim() || update.isPending}
+          onClick={() =>
+            update.mutate({
+              id: dept.id,
+              data: { code: editCode.trim(), name: editName.trim() },
+            })
+          }
+          data-testid={`button-save-dept-${dept.id}`}
+        >
+          {update.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-center gap-3 py-2"
+      data-testid={`dept-row-${dept.id}`}
+    >
+      <code className="rounded bg-muted px-2 py-0.5 text-xs">{dept.code}</code>
+      <span className="flex-1 text-sm">{dept.name}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setEditing(true)}
+        data-testid={`button-edit-dept-${dept.id}`}
+      >
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onDelete}
+        disabled={delPending}
+        data-testid={`button-delete-dept-${dept.id}`}
+      >
+        <Trash2 className="h-4 w-4 text-destructive" />
+      </Button>
+    </div>
   );
 }
 
