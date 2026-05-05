@@ -29,6 +29,7 @@ import {
   useListCompanies,
   useCreateCompany,
   useGetCompany,
+  useUpdateCompany,
   useCreateContact,
   useUpdateContact,
   useDeleteContact,
@@ -226,6 +227,21 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
   const { data: company } = useGetCompany(companyId);
   const canEdit = useCanEditMasterData();
   const canAdd = useCanAddSupplier();
+
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editTaxId, setEditTaxId] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
+  const updateCompany = useUpdateCompany({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries();
+        setEditingCompany(false);
+      },
+    },
+  });
   const delCompany = useDeleteCompany({
     mutation: { onSuccess: () => qc.invalidateQueries() },
   });
@@ -243,28 +259,131 @@ function CompanyDetailCard({ companyId }: { companyId: number }) {
 
   if (!company) return null;
 
+  function startEditCompany() {
+    setEditName(company!.name);
+    setEditAddress(company!.address ?? "");
+    setEditTaxId(company!.taxId ?? "");
+    setEditNotes(company!.notes ?? "");
+    setEditingCompany(true);
+  }
+
+  function cancelEditCompany() {
+    setEditingCompany(false);
+  }
+
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between">
-        <div>
-          <CardTitle data-testid="text-company-name">{company.name}</CardTitle>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {company.address}
+        {editingCompany ? (
+          <div className="flex-1 space-y-2 pr-2">
+            <div>
+              <Label className="text-xs">Nom *</Label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                data-testid="input-edit-company-name"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Adresse</Label>
+              <Input
+                value={editAddress}
+                onChange={(e) => setEditAddress(e.target.value)}
+                data-testid="input-edit-company-address"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">N° TVA / SIRET</Label>
+              <Input
+                value={editTaxId}
+                onChange={(e) => setEditTaxId(e.target.value)}
+                data-testid="input-edit-company-taxid"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Notes</Label>
+              <Textarea
+                rows={2}
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                data-testid="input-edit-company-notes"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={cancelEditCompany}
+                data-testid="button-cancel-edit-company"
+              >
+                <X className="mr-2 h-4 w-4" /> Annuler
+              </Button>
+              <Button
+                size="sm"
+                disabled={!editName.trim() || updateCompany.isPending}
+                onClick={() =>
+                  updateCompany.mutate({
+                    id: company.id,
+                    data: {
+                      name: editName,
+                      address: editAddress || null,
+                      taxId: editTaxId || null,
+                      notes: editNotes || null,
+                    },
+                  })
+                }
+                data-testid="button-save-company-details"
+              >
+                {updateCompany.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Enregistrer
+              </Button>
+            </div>
           </div>
-        </div>
-        {canEdit && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (confirm(`Delete company "${company.name}"?`)) {
-                delCompany.mutate({ id: company.id });
-              }
-            }}
-            data-testid="button-delete-company"
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+        ) : (
+          <div className="flex-1">
+            <CardTitle data-testid="text-company-name">{company.name}</CardTitle>
+            {company.address && (
+              <div className="mt-1 text-sm text-muted-foreground">{company.address}</div>
+            )}
+            {company.taxId && (
+              <div className="mt-0.5 text-xs text-muted-foreground">TVA / SIRET : {company.taxId}</div>
+            )}
+            {company.notes && (
+              <div className="mt-1 text-xs italic text-muted-foreground">{company.notes}</div>
+            )}
+          </div>
+        )}
+        {!editingCompany && (
+          <div className="flex items-center gap-1">
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={startEditCompany}
+                data-testid="button-edit-company"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (confirm(`Supprimer la société "${company.name}" ?`)) {
+                    delCompany.mutate({ id: company.id });
+                  }
+                }}
+                data-testid="button-delete-company"
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-4">
