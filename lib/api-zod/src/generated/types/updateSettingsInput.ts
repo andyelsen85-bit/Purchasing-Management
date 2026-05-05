@@ -16,6 +16,12 @@ export interface UpdateSettingsInput {
   /** @nullable */
   limitX?: number | null;
   /** @nullable */
+  quoteThresholdStandard?: number | null;
+  /** @nullable */
+  quoteThresholdLivreI?: number | null;
+  /** @nullable */
+  quoteThresholdLivreII?: number | null;
+  /** @nullable */
   currency?: string | null;
   /** @nullable */
   certSigningEnabled?: boolean | null;

@@ -93,6 +93,7 @@ export * from "./user";
 export * from "./userSource";
 export * from "./workflow";
 export * from "./workflowBranch";
+export * from "./workflowPublicationTier";
 export * from "./workflowsByStepGroup";
 export * from "./workflowStep";
 export * from "./workflowSummary";

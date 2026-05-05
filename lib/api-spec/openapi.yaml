@@ -1239,6 +1239,15 @@ components:
           type: array
           items: { $ref: "#/components/schemas/QuoteEntry" }
         threeQuoteRequired: { type: boolean }
+        publicationTier:
+          type: ["string", "null"]
+          enum: [STANDARD, THREE_QUOTES, LIVRE_I, LIVRE_II, null]
+          description: |
+            Derived from the first quote amount vs the three configured
+            thresholds. STANDARD = no extra constraint; THREE_QUOTES =
+            three suppliers with a winning pick required; LIVRE_I /
+            LIVRE_II = same advance rules as THREE_QUOTES but flagged
+            for "Livre I" / "Livre II" publication.
         # Step 3 - Manager validation
         managerApproved: { type: ["boolean", "null"] }
         managerComment: { type: ["string", "null"] }
@@ -1669,6 +1678,9 @@ components:
         appName: { type: string }
         logoDataUrl: { type: ["string", "null"] }
         limitX: { type: number }
+        quoteThresholdStandard: { type: number }
+        quoteThresholdLivreI: { type: number }
+        quoteThresholdLivreII: { type: number }
         currency: { type: string }
         certSigningEnabled: { type: boolean }
         signingAgentPort: { type: ["integer", "null"] }
@@ -1696,6 +1708,9 @@ components:
         appName: { type: ["string", "null"] }
         logoDataUrl: { type: ["string", "null"] }
         limitX: { type: ["number", "null"] }
+        quoteThresholdStandard: { type: ["number", "null"] }
+        quoteThresholdLivreI: { type: ["number", "null"] }
+        quoteThresholdLivreII: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         certSigningEnabled: { type: ["boolean", "null"] }
         signingAgentPort: { type: ["integer", "null"] }

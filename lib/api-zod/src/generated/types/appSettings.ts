@@ -13,6 +13,9 @@ export interface AppSettings {
   /** @nullable */
   logoDataUrl?: string | null;
   limitX: number;
+  quoteThresholdStandard?: number;
+  quoteThresholdLivreI?: number;
+  quoteThresholdLivreII?: number;
   currency: string;
   certSigningEnabled: boolean;
   /** @nullable */

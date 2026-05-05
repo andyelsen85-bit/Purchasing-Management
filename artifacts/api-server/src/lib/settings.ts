@@ -95,7 +95,26 @@ export interface SmtpConfigStored {
 export interface AppSettings {
   appName: string;
   logoDataUrl?: string | null;
+  /**
+   * Legacy alias of `quoteThresholdStandard`. Kept in the type so existing
+   * code paths (workflows.ts, the AppSettingsPanel form) continue to
+   * compile; `getSettings()` keeps both fields in sync.
+   */
   limitX: number;
+  /**
+   * First publication-tier threshold. A first quote amount strictly above
+   * this value (and at or below `quoteThresholdLivreI`) flips the workflow
+   * into THREE_QUOTES — three suppliers with a winning pick required.
+   */
+  quoteThresholdStandard: number;
+  /**
+   * Second threshold. Above this value the workflow is tagged LIVRE_I.
+   */
+  quoteThresholdLivreI: number;
+  /**
+   * Third threshold. Above this value the workflow is tagged LIVRE_II.
+   */
+  quoteThresholdLivreII: number;
   currency: string;
   certSigningEnabled: boolean;
   // Port on which the Windows signing agent listens on each
@@ -116,6 +135,9 @@ const DEFAULT: AppSettings = {
   appName: "Purchasing Management",
   logoDataUrl: null,
   limitX: 10000,
+  quoteThresholdStandard: 10000,
+  quoteThresholdLivreI: 50000,
+  quoteThresholdLivreII: 200000,
   currency: "EUR",
   certSigningEnabled: false,
   signingAgentPort: 9443,
@@ -159,7 +181,35 @@ export async function getSettings(): Promise<AppSettings> {
     await db.insert(settingsTable).values({ data: DEFAULT });
     return DEFAULT;
   }
-  return { ...DEFAULT, ...((row.data as Partial<AppSettings>) ?? {}) };
+  const merged = { ...DEFAULT, ...((row.data as Partial<AppSettings>) ?? {}) };
+  // Keep legacy `limitX` and the new `quoteThresholdStandard` mirrored
+  // both ways so old saved settings (which only have limitX) seed the
+  // new field, and new saves (which only set quoteThresholdStandard)
+  // still satisfy the legacy field readers.
+  if (
+    merged.quoteThresholdStandard == null ||
+    merged.quoteThresholdStandard === DEFAULT.quoteThresholdStandard
+  ) {
+    if (merged.limitX != null) merged.quoteThresholdStandard = merged.limitX;
+  }
+  merged.limitX = merged.quoteThresholdStandard;
+  return merged;
+}
+
+/** Pure helper — derive the publication tier from a first quote amount. */
+export function derivePublicationTier(
+  firstAmount: number | null | undefined,
+  s: Pick<
+    AppSettings,
+    "quoteThresholdStandard" | "quoteThresholdLivreI" | "quoteThresholdLivreII"
+  >,
+): "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" {
+  const a = firstAmount;
+  if (a == null) return "STANDARD";
+  if (a > s.quoteThresholdLivreII) return "LIVRE_II";
+  if (a > s.quoteThresholdLivreI) return "LIVRE_I";
+  if (a > s.quoteThresholdStandard) return "THREE_QUOTES";
+  return "STANDARD";
 }
 
 export function toPublicSettings(s: AppSettings) {
@@ -167,6 +217,9 @@ export function toPublicSettings(s: AppSettings) {
     appName: s.appName,
     logoDataUrl: s.logoDataUrl ?? null,
     limitX: s.limitX,
+    quoteThresholdStandard: s.quoteThresholdStandard,
+    quoteThresholdLivreI: s.quoteThresholdLivreI,
+    quoteThresholdLivreII: s.quoteThresholdLivreII,
     currency: s.currency,
     certSigningEnabled: s.certSigningEnabled,
     signingAgentPort: s.signingAgentPort ?? null,

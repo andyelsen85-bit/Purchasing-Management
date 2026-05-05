@@ -142,6 +142,35 @@ export function WorkflowDetailPage({ id, user }: Props) {
             <span>·</span>
             <span>{wf.createdByName}</span>
             <Badge variant="outline">{wf.priority}</Badge>
+            {(() => {
+              // Publication tier badge — falls back to threeQuoteRequired
+              // for rows created before the tier column existed.
+              const tier =
+                (wf as { publicationTier?: string | null }).publicationTier ??
+                (wf.threeQuoteRequired ? "THREE_QUOTES" : "STANDARD");
+              if (tier === "STANDARD") return null;
+              const label =
+                tier === "LIVRE_II"
+                  ? "Livre II"
+                  : tier === "LIVRE_I"
+                    ? "Livre I"
+                    : "3 quotes";
+              const tone =
+                tier === "LIVRE_II"
+                  ? "bg-purple-100 text-purple-800 border-purple-200"
+                  : tier === "LIVRE_I"
+                    ? "bg-amber-100 text-amber-800 border-amber-200"
+                    : "bg-blue-100 text-blue-800 border-blue-200";
+              return (
+                <Badge
+                  variant="outline"
+                  className={tone}
+                  data-testid="badge-publication-tier"
+                >
+                  {label}
+                </Badge>
+              );
+            })()}
           </div>
         </div>
         <ActionBar wf={wf} user={user} onChange={refresh} />
@@ -156,7 +185,10 @@ export function WorkflowDetailPage({ id, user }: Props) {
       <Tabs defaultValue="step" className="space-y-4">
         <TabsList>
           <TabsTrigger value="step" data-testid="tab-step">
-            Details
+            Main
+          </TabsTrigger>
+          <TabsTrigger value="summary" data-testid="tab-summary">
+            Summary
           </TabsTrigger>
           <TabsTrigger value="docs" data-testid="tab-documents">
             <FileText className="mr-1 h-3.5 w-3.5" /> Documents
@@ -171,6 +203,16 @@ export function WorkflowDetailPage({ id, user }: Props) {
 
         <TabsContent value="step">
           <StepPanel wf={wf} user={user} onChange={refresh} />
+        </TabsContent>
+        <TabsContent value="summary">
+          {/* Always-on prior-steps recap, regardless of current step.
+              Shows everything completed before the current step plus
+              the merged-PDF export link. */}
+          <Card>
+            <CardContent className="p-5">
+              <PriorStepsRecap wf={wf} throughStep={wf.currentStep as Step} />
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="docs">
           <DocumentsPanel wf={wf} />

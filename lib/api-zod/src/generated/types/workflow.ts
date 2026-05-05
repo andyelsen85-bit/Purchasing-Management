@@ -9,6 +9,7 @@ import type { GtInvestDecision } from "./gtInvestDecision";
 import type { Priority } from "./priority";
 import type { QuoteEntry } from "./quoteEntry";
 import type { WorkflowBranch } from "./workflowBranch";
+import type { WorkflowPublicationTier } from "./workflowPublicationTier";
 import type { WorkflowStep } from "./workflowStep";
 
 export interface Workflow {
@@ -37,6 +38,16 @@ export interface Workflow {
   neededBy?: Date | null;
   quotes: QuoteEntry[];
   threeQuoteRequired: boolean;
+  /**
+   * Derived from the first quote amount vs the three configured
+thresholds. STANDARD = no extra constraint; THREE_QUOTES =
+three suppliers with a winning pick required; LIVRE_I /
+LIVRE_II = same advance rules as THREE_QUOTES but flagged
+for "Livre I" / "Livre II" publication.
+
+   * @nullable
+   */
+  publicationTier?: WorkflowPublicationTier;
   /** @nullable */
   managerApproved?: boolean | null;
   /** @nullable */

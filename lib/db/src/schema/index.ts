@@ -104,6 +104,12 @@ export const workflowsTable = pgTable(
     // Step 2 - quotes
     quotes: jsonb("quotes").notNull().default([]),
     threeQuoteRequired: boolean("three_quote_required").notNull().default(false),
+    // Publication tier derived from the first quote amount vs the
+    // configured thresholds (settings.quoteThresholdStandard / LivreI /
+    // LivreII). One of: STANDARD | THREE_QUOTES | LIVRE_I | LIVRE_II.
+    // Nullable for back-compat with rows created before the tier
+    // existed; for those, the UI falls back to threeQuoteRequired.
+    publicationTier: text("publication_tier"),
 
     // Step 3 - manager
     managerApproved: boolean("manager_approved"),

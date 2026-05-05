@@ -553,6 +553,18 @@ export const GetWorkflowResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -700,6 +712,18 @@ export const UpdateWorkflowResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -820,6 +844,18 @@ export const RestoreWorkflowResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -935,6 +971,18 @@ export const AdvanceWorkflowResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -1044,6 +1092,18 @@ export const RejectWorkflowResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -1149,6 +1209,18 @@ export const UndoWorkflowResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -1272,6 +1344,18 @@ export const SetGtInvestDecisionResponse = zod.object({
     }),
   ),
   threeQuoteRequired: zod.boolean(),
+  publicationTier: zod
+    .union([
+      zod.literal("STANDARD"),
+      zod.literal("THREE_QUOTES"),
+      zod.literal("LIVRE_I"),
+      zod.literal("LIVRE_II"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'Derived from the first quote amount vs the three configured\nthresholds. STANDARD = no extra constraint; THREE_QUOTES =\nthree suppliers with a winning pick required; LIVRE_I \/\nLIVRE_II = same advance rules as THREE_QUOTES but flagged\nfor \"Livre I\" \/ \"Livre II\" publication.\n',
+    ),
   managerApproved: zod.boolean().nullish(),
   managerComment: zod.string().nullish(),
   financialApproved: zod.boolean().nullish(),
@@ -1654,6 +1738,9 @@ export const GetSettingsResponse = zod.object({
   appName: zod.string(),
   logoDataUrl: zod.string().nullish(),
   limitX: zod.number(),
+  quoteThresholdStandard: zod.number().optional(),
+  quoteThresholdLivreI: zod.number().optional(),
+  quoteThresholdLivreII: zod.number().optional(),
   currency: zod.string(),
   certSigningEnabled: zod.boolean(),
   signingAgentPort: zod.number().nullish(),
@@ -1703,6 +1790,9 @@ export const UpdateSettingsBody = zod.object({
   appName: zod.string().nullish(),
   logoDataUrl: zod.string().nullish(),
   limitX: zod.number().nullish(),
+  quoteThresholdStandard: zod.number().nullish(),
+  quoteThresholdLivreI: zod.number().nullish(),
+  quoteThresholdLivreII: zod.number().nullish(),
   currency: zod.string().nullish(),
   certSigningEnabled: zod.boolean().nullish(),
   signingAgentPort: zod.number().nullish(),
@@ -1757,6 +1847,9 @@ export const UpdateSettingsResponse = zod.object({
   appName: zod.string(),
   logoDataUrl: zod.string().nullish(),
   limitX: zod.number(),
+  quoteThresholdStandard: zod.number().optional(),
+  quoteThresholdLivreI: zod.number().optional(),
+  quoteThresholdLivreII: zod.number().optional(),
   currency: zod.string(),
   certSigningEnabled: zod.boolean(),
   signingAgentPort: zod.number().nullish(),

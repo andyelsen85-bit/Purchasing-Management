@@ -238,47 +238,6 @@ export function AppShell({ user, children }: Props) {
                 })}
               </nav>
 
-              <Separator className="my-4 bg-sidebar-border" />
-
-              <div className="px-3">
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-                  <FolderTree className="h-3 w-3" />
-                  Departments
-                </div>
-              </div>
-              <div className="mt-2 space-y-0.5" data-testid="list-departments">
-                <button
-                  type="button"
-                  onClick={() => setSelectedDeptId("ALL")}
-                  className={`flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm transition-colors hover-elevate ${
-                    selectedDeptId === "ALL"
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                      : "text-sidebar-foreground/80"
-                  }`}
-                  data-testid="button-dept-all"
-                >
-                  <span>All departments</span>
-                  <ChevronRight className="h-3 w-3 opacity-60" />
-                </button>
-                {departmentsList.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => setSelectedDeptId(d.id)}
-                    className={`flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm transition-colors hover-elevate ${
-                      selectedDeptId === d.id
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-sidebar-foreground/80"
-                    }`}
-                    data-testid={`button-dept-${d.id}`}
-                  >
-                    <span className="truncate">{d.name}</span>
-                    <span className="ml-2 text-[10px] uppercase tracking-wider text-sidebar-foreground/50">
-                      {d.code}
-                    </span>
-                  </button>
-                ))}
-              </div>
             </ScrollArea>
 
             <div className="border-t border-sidebar-border p-3">
@@ -333,7 +292,7 @@ export function AppShell({ user, children }: Props) {
           </div>
         </ResizablePanel>
 
-        {showWorkflowsSidebar && (
+        {false && showWorkflowsSidebar && (
           <>
             <ResizableHandle withHandle />
             {/* Secondary sidebar: workflows for the selected department */}

@@ -36,7 +36,7 @@ import {
   type WorkflowStep,
 } from "../lib/permissions";
 import { audit } from "../lib/audit";
-import { getSettings } from "../lib/settings";
+import { getSettings, derivePublicationTier } from "../lib/settings";
 import { sendNotification, recipientsForStep } from "../lib/email";
 
 const router: IRouter = Router();
@@ -222,6 +222,7 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
         ? new Date(parsed.data.neededBy).toISOString().slice(0, 10)
         : null,
       threeQuoteRequired: false,
+      publicationTier: "STANDARD",
       currentStep: "NEW",
     })
     .returning();
@@ -287,17 +288,18 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
     update.neededBy = b.neededBy ? new Date(b.neededBy).toISOString().slice(0, 10) : null;
   if (b.quotes !== undefined) {
     update.quotes = b.quotes;
-    // Re-evaluate the "3 quotes required" rule whenever quotes change.
-    // Rule: if the FIRST entered quote amount exceeds the configured
-    // limit (settings.limitX), three quotes are required. We look at
-    // the first quote with a non-null amount so the UI can pre-fill
-    // empty rows without spuriously flipping the flag.
+    // Re-evaluate the publication tier whenever quotes change. The
+    // first quote with a non-null amount drives the tier across all
+    // three configured thresholds (Standard / Livre I / Livre II).
+    // `threeQuoteRequired` is kept in sync for legacy readers — it is
+    // true for THREE_QUOTES, LIVRE_I and LIVRE_II.
     const settings = await getSettings();
     const firstAmount = b.quotes
       .map((q) => q.amount)
       .find((a): a is number => a != null);
-    update.threeQuoteRequired =
-      firstAmount != null && firstAmount > settings.limitX;
+    const tier = derivePublicationTier(firstAmount, settings);
+    update.publicationTier = tier;
+    update.threeQuoteRequired = tier !== "STANDARD";
   }
   if (b.managerApproved !== undefined) update.managerApproved = b.managerApproved;
   if (b.managerComment !== undefined) update.managerComment = b.managerComment;

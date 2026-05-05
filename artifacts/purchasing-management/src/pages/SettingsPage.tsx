@@ -867,6 +867,8 @@ function AppSettingsPanel() {
   const [appName, setAppName] = useState("");
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [limitX, setLimitX] = useState<number>(10000);
+  const [limitY, setLimitY] = useState<number>(50000);
+  const [limitZ, setLimitZ] = useState<number>(200000);
   const [currency, setCurrency] = useState("EUR");
   const [signingEnabled, setSigningEnabled] = useState(false);
   const [signingPort, setSigningPort] = useState<number>(9443);
@@ -875,7 +877,17 @@ function AppSettingsPanel() {
     if (!s) return;
     setAppName(s.appName);
     setLogoDataUrl(s.logoDataUrl ?? null);
-    setLimitX(s.limitX);
+    setLimitX(
+      (s as { quoteThresholdStandard?: number }).quoteThresholdStandard ??
+        s.limitX,
+    );
+    setLimitY(
+      (s as { quoteThresholdLivreI?: number }).quoteThresholdLivreI ?? 50000,
+    );
+    setLimitZ(
+      (s as { quoteThresholdLivreII?: number }).quoteThresholdLivreII ??
+        200000,
+    );
     setCurrency(s.currency);
     setSigningEnabled(s.certSigningEnabled);
     setSigningPort(s.signingAgentPort ?? 9443);
@@ -914,7 +926,7 @@ function AppSettingsPanel() {
             />
           </div>
           <div className="space-y-1 sm:col-span-2">
-            <Label>Three-quote requirement above (X)</Label>
+            <Label>Quote threshold — Standard (X)</Label>
             <Input
               type="number"
               value={limitX}
@@ -922,8 +934,33 @@ function AppSettingsPanel() {
               data-testid="input-limitx"
             />
             <p className="text-xs text-muted-foreground">
-              When estimated amount is greater than this value, three quotes
-              are required.
+              When the first quote amount is greater than this value, three
+              suppliers and a winning pick are required (publication tier:
+              Three quotes).
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>Quote threshold — Livre I (Y)</Label>
+            <Input
+              type="number"
+              value={limitY}
+              onChange={(e) => setLimitY(Number(e.target.value))}
+              data-testid="input-limity"
+            />
+            <p className="text-xs text-muted-foreground">
+              Above this value the workflow is tagged "Livre I".
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>Quote threshold — Livre II (Z)</Label>
+            <Input
+              type="number"
+              value={limitZ}
+              onChange={(e) => setLimitZ(Number(e.target.value))}
+              data-testid="input-limitz"
+            />
+            <p className="text-xs text-muted-foreground">
+              Above this value the workflow is tagged "Livre II".
             </p>
           </div>
         </div>
@@ -1008,6 +1045,9 @@ function AppSettingsPanel() {
                   appName,
                   logoDataUrl,
                   limitX,
+                  quoteThresholdStandard: limitX,
+                  quoteThresholdLivreI: limitY,
+                  quoteThresholdLivreII: limitZ,
                   currency,
                   certSigningEnabled: signingEnabled,
                   signingAgentPort:

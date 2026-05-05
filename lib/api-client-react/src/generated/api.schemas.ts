@@ -196,6 +196,26 @@ export const WorkflowBranch = {
 } as const;
 
 /**
+ * Derived from the first quote amount vs the three configured
+thresholds. STANDARD = no extra constraint; THREE_QUOTES =
+three suppliers with a winning pick required; LIVRE_I /
+LIVRE_II = same advance rules as THREE_QUOTES but flagged
+for "Livre I" / "Livre II" publication.
+
+ * @nullable
+ */
+export type WorkflowPublicationTier =
+  | (typeof WorkflowPublicationTier)[keyof typeof WorkflowPublicationTier]
+  | null;
+
+export const WorkflowPublicationTier = {
+  STANDARD: "STANDARD",
+  THREE_QUOTES: "THREE_QUOTES",
+  LIVRE_I: "LIVRE_I",
+  LIVRE_II: "LIVRE_II",
+} as const;
+
+/**
  * Outcome recorded by the GT Invest committee for a workflow:
 OK → moves to Ordering;
 REFUSED → closes the workflow;
@@ -240,6 +260,16 @@ export interface Workflow {
   neededBy?: string | null;
   quotes: QuoteEntry[];
   threeQuoteRequired: boolean;
+  /**
+   * Derived from the first quote amount vs the three configured
+thresholds. STANDARD = no extra constraint; THREE_QUOTES =
+three suppliers with a winning pick required; LIVRE_I /
+LIVRE_II = same advance rules as THREE_QUOTES but flagged
+for "Livre I" / "Livre II" publication.
+
+   * @nullable
+   */
+  publicationTier?: WorkflowPublicationTier;
   /** @nullable */
   managerApproved?: boolean | null;
   /** @nullable */
@@ -714,6 +744,9 @@ export interface AppSettings {
   /** @nullable */
   logoDataUrl?: string | null;
   limitX: number;
+  quoteThresholdStandard?: number;
+  quoteThresholdLivreI?: number;
+  quoteThresholdLivreII?: number;
   currency: string;
   certSigningEnabled: boolean;
   /** @nullable */
@@ -819,6 +852,12 @@ export interface UpdateSettingsInput {
   logoDataUrl?: string | null;
   /** @nullable */
   limitX?: number | null;
+  /** @nullable */
+  quoteThresholdStandard?: number | null;
+  /** @nullable */
+  quoteThresholdLivreI?: number | null;
+  /** @nullable */
+  quoteThresholdLivreII?: number | null;
   /** @nullable */
   currency?: string | null;
   /** @nullable */
