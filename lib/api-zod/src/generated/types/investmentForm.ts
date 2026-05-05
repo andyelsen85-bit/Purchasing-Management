@@ -49,6 +49,10 @@ export interface InvestmentForm {
   /** @nullable */
   supplierContact?: string | null;
   /** @nullable */
+  supplierCompanyId?: number | null;
+  /** @nullable */
+  supplierContactId?: number | null;
+  /** @nullable */
   architecturalWorks?: boolean | null;
   /** @nullable */
   itConnection?: boolean | null;

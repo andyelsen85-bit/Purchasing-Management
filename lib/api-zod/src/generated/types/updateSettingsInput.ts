@@ -30,6 +30,7 @@ export interface UpdateSettingsInput {
   /** @nullable */
   archiveRetentionDays?: number | null;
   gtInvestRecipients?: string[];
+  budgetPositions?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;
 }

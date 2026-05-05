@@ -258,6 +258,10 @@ export interface InvestmentForm {
   /** @nullable */
   supplierContact?: string | null;
   /** @nullable */
+  supplierCompanyId?: number | null;
+  /** @nullable */
+  supplierContactId?: number | null;
+  /** @nullable */
   architecturalWorks?: boolean | null;
   /** @nullable */
   itConnection?: boolean | null;
@@ -834,6 +838,7 @@ export interface AppSettings {
   /** @nullable */
   archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
+  budgetPositions: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
 }
@@ -947,6 +952,7 @@ export interface UpdateSettingsInput {
   /** @nullable */
   archiveRetentionDays?: number | null;
   gtInvestRecipients?: string[];
+  budgetPositions?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;
 }

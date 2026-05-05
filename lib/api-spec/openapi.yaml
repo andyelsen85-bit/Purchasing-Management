@@ -1698,6 +1698,12 @@ components:
         gtInvestRecipients:
           type: array
           items: { type: string }
+        # GT Invest budget position labels — picked in section 4.4.1 of
+        # the investment request form on workflow creation. Managed in
+        # Settings → GT Invest.
+        budgetPositions:
+          type: array
+          items: { type: string }
         ldap: { $ref: "#/components/schemas/LdapsSettings" }
         smtp: { $ref: "#/components/schemas/SmtpSettings" }
       required:
@@ -1706,6 +1712,7 @@ components:
         - currency
         - certSigningEnabled
         - gtInvestRecipients
+        - budgetPositions
         - ldap
         - smtp
 
@@ -1723,6 +1730,9 @@ components:
         signingAgentPort: { type: ["integer", "null"] }
         archiveRetentionDays: { type: ["integer", "null"] }
         gtInvestRecipients:
+          type: array
+          items: { type: string }
+        budgetPositions:
           type: array
           items: { type: string }
         ldap:
@@ -1967,6 +1977,12 @@ components:
         # 5 – Fournisseur
         supplierName: { type: ["string", "null"] }
         supplierContact: { type: ["string", "null"] }
+        # Optional FK linkage to the master Reseller / Contact records.
+        # When the user picks the supplier from the dropdown on the
+        # creation form these are populated; the free-text fields above
+        # are denormalised copies kept for legacy display.
+        supplierCompanyId: { type: ["integer", "null"] }
+        supplierContactId: { type: ["integer", "null"] }
         # 6 – Aspects techniques
         architecturalWorks: { type: ["boolean", "null"] }
         itConnection: { type: ["boolean", "null"] }

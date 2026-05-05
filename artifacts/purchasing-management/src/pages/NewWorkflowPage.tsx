@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ArrowRight, Loader2, ClipboardList } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, ClipboardList, Upload, FileText, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -19,13 +20,18 @@ import {
 import {
   useCreateWorkflow,
   useListDepartments,
+  useListCompanies,
+  useGetCompany,
+  useGetSettings,
+  useUpdateWorkflow,
   Priority,
   type InvestmentForm,
+  type Workflow,
 } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError } from "@/lib/api-error";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 const STEP_LABELS = [
   "Identification",
@@ -34,6 +40,7 @@ const STEP_LABELS = [
   "Fournisseur & Technique",
   "Données & Consommables",
   "Maintenance & Formation",
+  "Documents à joindre",
 ];
 
 const INVESTMENT_TYPES = [
@@ -73,6 +80,14 @@ const REQUIRED_DOCS = [
   "Certificat de résistance au feu (si mobilier ou matériel inflammable)",
   "Normes ISO 80601 et/ou IEC 60601 (pour matériel roulant)",
 ];
+
+// Map a section-11 doc label to the document `kind` stored in the
+// workflow documents collection. The first one ("Offre de prix") is
+// the first quote of the workflow, so it gets QUOTE — every other
+// document is filed as OTHER on the QUOTATION step.
+function docKindFor(label: string): "QUOTE" | "OTHER" {
+  return label === "Offre de prix" ? "QUOTE" : "OTHER";
+}
 
 function SectionTitle({ number, label }: { number: string; label: string }) {
   return (
@@ -140,13 +155,22 @@ function CheckboxList({
   );
 }
 
+// Required-field marker.
+function Req() {
+  return <span className="text-destructive ml-0.5">*</span>;
+}
+
 export function NewWorkflowPage() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
   const { data: departments } = useListDepartments();
+  const { data: companies } = useListCompanies();
+  const { data: settings } = useGetSettings();
   const { toast } = useToast();
 
   const [step, setStep] = useState(1);
+  const [showErrors, setShowErrors] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // ── Basic workflow fields ──────────────────────────────────────
   const [title, setTitle] = useState("");
@@ -181,8 +205,8 @@ export function NewWorkflowPage() {
   const [budgetPosition, setBudgetPosition] = useState("");
 
   // ── Section 5 – Fournisseur ────────────────────────────────────
-  const [supplierName, setSupplierName] = useState("");
-  const [supplierContact, setSupplierContact] = useState("");
+  const [supplierCompanyId, setSupplierCompanyId] = useState<string>("");
+  const [supplierContactId, setSupplierContactId] = useState<string>("");
 
   // ── Section 6 – Aspects techniques ────────────────────────────
   const [architecturalWorks, setArchitecturalWorks] = useState("");
@@ -211,30 +235,50 @@ export function NewWorkflowPage() {
   const [trainingOfferAttached, setTrainingOfferAttached] = useState("");
   const [commissioningDate, setCommissioningDate] = useState("");
 
-  // ── Section 11 – Documentation ────────────────────────────────
+  // ── Section 11 – Documentation à fournir (just the checked list)
   const [documentsProvided, setDocumentsProvided] = useState<string[]>([]);
 
+  // ── Step 7 – uploads, one per checked item in section 11 ──────
+  const [files, setFiles] = useState<Record<string, File | null>>({});
+
+  // Default the department selector to the first one once departments
+  // load — the user can change it but this avoids an empty required.
   useEffect(() => {
     if (!departmentId && departments && departments.length > 0) {
       setDepartmentId(String(departments[0].id));
     }
   }, [departments, departmentId]);
 
-  const create = useCreateWorkflow({
-    mutation: {
-      onSuccess: (wf) => {
-        qc.invalidateQueries();
-        setLocation(`/workflows/${wf.id}`);
-      },
-      onError: (err) => {
-        toast({
-          variant: "destructive",
-          title: "Cannot create workflow",
-          description: extractApiError(err, "Could not create workflow."),
-        });
-      },
-    },
-  });
+  // Selected company → contacts list filtered for the 5.2 dropdown.
+  // The list endpoint does not embed contacts, so we re-query the
+  // single-company endpoint (CompanyWithContacts) once a supplier is
+  // chosen.
+  const selectedCompanySummary = useMemo(
+    () =>
+      supplierCompanyId
+        ? (companies ?? []).find((c) => String(c.id) === supplierCompanyId) ?? null
+        : null,
+    [companies, supplierCompanyId],
+  );
+  // Passing 0 when no supplier is picked; the generated hook's
+  // default `enabled: !!id` short-circuits the request.
+  const { data: selectedCompanyFull } = useGetCompany(
+    supplierCompanyId ? Number(supplierCompanyId) : 0,
+  );
+  const supplierContacts = useMemo(
+    () =>
+      (selectedCompanyFull?.contacts ?? [])
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [selectedCompanyFull],
+  );
+  // If the selected supplier changes, reset the contact selection.
+  useEffect(() => {
+    setSupplierContactId("");
+  }, [supplierCompanyId]);
+
+  const create = useCreateWorkflow();
+  const update = useUpdateWorkflow();
 
   function boolVal(v: string): boolean | null {
     if (v === "true") return true;
@@ -248,6 +292,10 @@ export function NewWorkflowPage() {
       const idx = types.indexOf("Autre");
       types[idx] = `Autre: ${investmentTypeOther.trim()}`;
     }
+    const supplierCompany = selectedCompanySummary;
+    const supplierContact = supplierContactId
+      ? supplierContacts.find((c) => String(c.id) === supplierContactId)
+      : null;
     return {
       projectLeader: projectLeader || null,
       investmentTypes: types.length ? types : undefined,
@@ -265,8 +313,14 @@ export function NewWorkflowPage() {
       exceptionJustification: exceptionJustification || null,
       budgetPositionKnown: budgetPositionKnown || null,
       budgetPosition: budgetPosition || null,
-      supplierName: supplierName || null,
-      supplierContact: supplierContact || null,
+      supplierName: supplierCompany?.name ?? null,
+      supplierContact: supplierContact
+        ? [supplierContact.name, supplierContact.email, supplierContact.phone]
+            .filter(Boolean)
+            .join(" · ")
+        : null,
+      supplierCompanyId: supplierCompany?.id ?? null,
+      supplierContactId: supplierContact?.id ?? null,
       architecturalWorks: boolVal(architecturalWorks),
       itConnection: boolVal(itConnection),
       systemInterop: boolVal(systemInterop),
@@ -288,29 +342,204 @@ export function NewWorkflowPage() {
     };
   }
 
-  function canAdvance(): boolean {
-    if (step === 1 && (!title.trim() || !departmentId)) return false;
-    return true;
+  // Per-step validation: lists the missing fields for the current page.
+  // Used both to gate the "Suivant" button (with showErrors=true after
+  // a click) and to render the inline error alert.
+  function missingForStep(s: number): string[] {
+    const m: string[] = [];
+    if (s === 1) {
+      if (!title.trim()) m.push("Titre du workflow");
+      if (!departmentId) m.push("Département");
+      if (!projectLeader.trim()) m.push("1.3 Responsable / Leader du projet");
+      if (investmentTypes.length === 0)
+        m.push("1.4 Type(s) d'investissement");
+      if (
+        investmentTypes.includes("Autre") &&
+        !investmentTypeOther.trim()
+      )
+        m.push("1.4 Précision pour « Autre »");
+    }
+    if (s === 2) {
+      if (!description.trim()) m.push("2.1 Description détaillée");
+      if (!justification.trim()) m.push("2.2 Justification");
+      if (!demoTested) m.push("2.3 Testé en demo");
+      if (demoTested === "true" && !demoContext.trim())
+        m.push("2.3 Contexte du test");
+    }
+    if (s === 3) {
+      if (!requestNature) m.push("3.1 Nature de la demande");
+      if (requestNature === "REPLACEMENT") {
+        if (!replacedEquipmentRef.trim())
+          m.push("3.1.1 Numéro / nom de l'équipement remplacé");
+        if (!replacedEquipmentLocation.trim())
+          m.push("3.1.2 Localisation");
+        if (!replacementReason.trim()) m.push("3.1.3 Motif du remplacement");
+        if (!decommissioned) m.push("3.1.4 Mise hors service");
+        if (decommissioned === "false" && !decommissionedNote.trim())
+          m.push("3.1.4 Précision sur le devenir de l'équipement");
+      }
+      if (!estimatedAmount5y) m.push("4.1 Coût estimé sur 5 ans");
+      if (!exceptionProcedure) m.push("4.3 Procédure d'exception");
+      if (
+        (exceptionProcedure === "LIVRE_I" ||
+          exceptionProcedure === "LIVRE_II") &&
+        !exceptionJustification.trim()
+      )
+        m.push("4.3.1 Justification de la procédure d'exception");
+      if (!budgetPositionKnown) m.push("4.4 Position budgétaire connue");
+      if (!budgetPosition.trim()) m.push("4.4.1 Position budgétaire");
+    }
+    if (s === 4) {
+      if (!supplierCompanyId) m.push("5.1 Nom du fournisseur");
+      if (!supplierContactId) m.push("5.2 Personne de contact");
+      if (!architecturalWorks) m.push("6.1 Aménagements architecturaux");
+      if (!itConnection) m.push("6.2 Connexion informatique");
+      if (!systemInterop) m.push("6.3 Interopérabilité systèmes critiques");
+      if (systemInterop === "true" && accessTypes.length === 0)
+        m.push("6.3.1 Type d'accès");
+    }
+    if (s === 5) {
+      if (dataTypes.length === 0) m.push("7.1 Types de données traitées");
+      if (!availabilityImpact) m.push("7.2 Impact en cas d'indisponibilité");
+      if (!hasAI) m.push("7.3 Intelligence artificielle");
+      if (!consumablesNeeded) m.push("8.1 Consommables nécessaires");
+      if (consumablesNeeded === "true" && !consumablesOfferAttached)
+        m.push("8.2 Offre des consommables jointe");
+      if (!hazardousConsumables) m.push("8.3 Gaz / produits chimiques");
+    }
+    if (s === 6) {
+      if (!warrantyDuration.trim()) m.push("9.1 Durée de la garantie");
+      if (!maintenanceContract) m.push("9.2 Contrat de maintenance");
+      if (!cleaningRequired) m.push("9.4 Nettoyage / désinfection");
+      if (!sterilizationRequired) m.push("9.5 Stérilisation");
+      if (!trainingRequired) m.push("10.1 Formation nécessaire");
+      if (trainingRequired === "true" && !trainingOfferAttached)
+        m.push("10.1.1 Offre de formation jointe");
+      if (!commissioningDate) m.push("10.2 Date de mise en service");
+      if (documentsProvided.length === 0)
+        m.push("11 Documents à fournir (cocher au moins un)");
+    }
+    if (s === 7) {
+      for (const d of documentsProvided) {
+        if (!files[d]) m.push(`Fichier pour « ${d} »`);
+      }
+    }
+    return m;
   }
 
-  function onSubmit() {
-    if (!title || !departmentId) return;
-    create.mutate({
-      data: {
-        title,
-        departmentId: Number(departmentId),
-        priority,
-        description: description || null,
-        category: category || null,
-        estimatedAmount: null,
-        currency: null,
-        neededBy: commissioningDate || null,
-        investmentForm: buildInvestmentForm(),
-      },
-    });
+  const currentMissing = missingForStep(step);
+  const canAdvance = currentMissing.length === 0;
+
+  function handleNext() {
+    if (!canAdvance) {
+      setShowErrors(true);
+      return;
+    }
+    setShowErrors(false);
+    setStep((s) => s + 1);
+  }
+
+  function handlePrev() {
+    setShowErrors(false);
+    setStep((s) => Math.max(1, s - 1));
+  }
+
+  // Submit: create the workflow, then upload each section-11 document
+  // sequentially (so we can capture the returned doc IDs), then — if
+  // an "Offre de prix" was uploaded — PATCH the workflow's `quotes`
+  // with that document attached as the first (winning, by default
+  // when there's only one) quote, supplier pre-filled from 5.1.
+  async function onSubmit() {
+    if (!canAdvance) {
+      setShowErrors(true);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const wf: Workflow = await create.mutateAsync({
+        data: {
+          title,
+          departmentId: Number(departmentId),
+          priority,
+          description: description || null,
+          category: category || null,
+          estimatedAmount: null,
+          currency: null,
+          neededBy: commissioningDate || null,
+          investmentForm: buildInvestmentForm(),
+        },
+      });
+
+      // Upload every checked document. Multipart fetch directly — the
+      // codegen client also exposes UploadWorkflowDocumentBodyTwo for
+      // multipart, but a plain fetch is simpler than juggling the
+      // generated discriminator.
+      let offrePrixDocId: number | null = null;
+      for (const label of documentsProvided) {
+        const file = files[label];
+        if (!file) continue;
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("step", "QUOTATION");
+        fd.append("kind", docKindFor(label));
+        const r = await fetch(`/api/workflows/${wf.id}/documents`, {
+          method: "POST",
+          body: fd,
+          credentials: "include",
+        });
+        if (!r.ok) {
+          const txt = await r.text();
+          throw new Error(`Upload failed for « ${label} »: ${txt}`);
+        }
+        const doc = (await r.json()) as { id: number };
+        if (label === "Offre de prix") offrePrixDocId = doc.id;
+      }
+
+      // If an "Offre de prix" was uploaded, materialise it as the
+      // first quote of the workflow. The supplier (5.1) is pre-filled
+      // and the document is linked. Amount is left null — the user
+      // enters it on the QUOTATION step. With a single quote, the
+      // server will treat it as the winner.
+      if (offrePrixDocId != null && supplierCompanyId) {
+        const company = (companies ?? []).find(
+          (c) => String(c.id) === supplierCompanyId,
+        );
+        await update.mutateAsync({
+          id: wf.id,
+          data: {
+            quotes: [
+              {
+                companyId: Number(supplierCompanyId),
+                companyName: company?.name ?? null,
+                contactId: supplierContactId
+                  ? Number(supplierContactId)
+                  : null,
+                amount: null,
+                currency: null,
+                notes: null,
+                winning: true,
+                documentIds: [offrePrixDocId],
+              },
+            ],
+          },
+        });
+      }
+
+      qc.invalidateQueries();
+      setLocation(`/workflows/${wf.id}`);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Création impossible",
+        description: extractApiError(err, "Le workflow n'a pas pu être créé."),
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const progressPct = ((step - 1) / TOTAL_STEPS) * 100;
+  const budgetPositionsList = settings?.budgetPositions ?? [];
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -341,7 +570,7 @@ export function NewWorkflowPage() {
           <CardTitle className="text-base">{STEP_LABELS[step - 1]}</CardTitle>
           {step === 1 && (
             <CardDescription>
-              Informations de base sur la demande et le projet.
+              Informations de base sur la demande et le projet. Tous les champs marqués <Req /> sont obligatoires.
             </CardDescription>
           )}
           {step === 2 && (
@@ -369,6 +598,11 @@ export function NewWorkflowPage() {
               Maintenance, formation, mise en service et liste des documents joints.
             </CardDescription>
           )}
+          {step === 7 && (
+            <CardDescription>
+              Joindre un fichier pour chaque document coché à la section 11. Tous les fichiers sont obligatoires.
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent className="space-y-6">
 
@@ -378,19 +612,18 @@ export function NewWorkflowPage() {
               <SectionTitle number="0" label="Workflow" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="title">Titre du workflow *</Label>
+                  <Label htmlFor="title">Titre du workflow<Req /></Label>
                   <Input
                     id="title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="ex. Acquisition scanner IRM"
-                    required
                     data-testid="input-title"
                   />
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>Service / Département *</Label>
+                    <Label>Service / Département<Req /></Label>
                     <Select value={departmentId} onValueChange={setDepartmentId}>
                       <SelectTrigger data-testid="select-department">
                         <SelectValue placeholder="Sélectionner..." />
@@ -438,7 +671,7 @@ export function NewWorkflowPage() {
               <SectionTitle number="1" label="Identification générale" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="projectLeader">1.3 Responsable / Leader du projet</Label>
+                  <Label htmlFor="projectLeader">1.3 Responsable / Leader du projet<Req /></Label>
                   <Input
                     id="projectLeader"
                     value={projectLeader}
@@ -447,19 +680,21 @@ export function NewWorkflowPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>1.4 Type d'investissement (cocher les cases appropriées)</Label>
+                  <Label>1.4 Type d'investissement (cocher les cases appropriées)<Req /></Label>
                   <CheckboxList
                     options={INVESTMENT_TYPES}
                     values={investmentTypes}
                     onChange={setInvestmentTypes}
                   />
                   {investmentTypes.includes("Autre") && (
-                    <Input
-                      placeholder="Préciser..."
-                      value={investmentTypeOther}
-                      onChange={(e) => setInvestmentTypeOther(e.target.value)}
-                      className="mt-2"
-                    />
+                    <div className="mt-2 space-y-1.5">
+                      <Label>Préciser « Autre »<Req /></Label>
+                      <Input
+                        placeholder="Préciser..."
+                        value={investmentTypeOther}
+                        onChange={(e) => setInvestmentTypeOther(e.target.value)}
+                      />
+                    </div>
                   )}
                 </div>
               </div>
@@ -473,7 +708,7 @@ export function NewWorkflowPage() {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="description">
-                    2.1 Description détaillée de l'équipement / investissement
+                    2.1 Description détaillée de l'équipement / investissement<Req />
                   </Label>
                   <Textarea
                     id="description"
@@ -485,7 +720,7 @@ export function NewWorkflowPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="justification">
-                    2.2 Argumentaire – justification de l'investissement
+                    2.2 Argumentaire – justification de l'investissement<Req />
                   </Label>
                   <Textarea
                     id="justification"
@@ -496,12 +731,12 @@ export function NewWorkflowPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>2.3 L'équipement a-t-il déjà été testé en Demo au CHdN ?</Label>
+                  <Label>2.3 L'équipement a-t-il déjà été testé en Demo au CHdN ?<Req /></Label>
                   <YesNoSelect value={demoTested} onChange={setDemoTested} />
                 </div>
                 {demoTested === "true" && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="demoContext">Préciser le contexte du test</Label>
+                    <Label htmlFor="demoContext">Préciser le contexte du test<Req /></Label>
                     <Textarea
                       id="demoContext"
                       rows={2}
@@ -520,7 +755,7 @@ export function NewWorkflowPage() {
               <SectionTitle number="3" label="Nature de la demande" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>3.1 Nature de la demande</Label>
+                  <Label>3.1 Nature de la demande<Req /></Label>
                   <Select value={requestNature} onValueChange={setRequestNature}>
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner..." />
@@ -534,21 +769,21 @@ export function NewWorkflowPage() {
                 {requestNature === "REPLACEMENT" && (
                   <div className="rounded-md border p-4 space-y-4 bg-muted/30">
                     <div className="space-y-1.5">
-                      <Label>3.1.1 Numéro d'équipement / numéro de série ou nom remplacé</Label>
+                      <Label>3.1.1 Numéro d'équipement / numéro de série ou nom remplacé<Req /></Label>
                       <Input
                         value={replacedEquipmentRef}
                         onChange={(e) => setReplacedEquipmentRef(e.target.value)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>3.1.2 Localisation de l'équipement existant</Label>
+                      <Label>3.1.2 Localisation de l'équipement existant<Req /></Label>
                       <Input
                         value={replacedEquipmentLocation}
                         onChange={(e) => setReplacedEquipmentLocation(e.target.value)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>3.1.3 Motif du remplacement</Label>
+                      <Label>3.1.3 Motif du remplacement<Req /></Label>
                       <Textarea
                         rows={2}
                         value={replacementReason}
@@ -556,12 +791,12 @@ export function NewWorkflowPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>3.1.4 L'ancien équipement sera-t-il mis hors service ?</Label>
+                      <Label>3.1.4 L'ancien équipement sera-t-il mis hors service ?<Req /></Label>
                       <YesNoSelect value={decommissioned} onChange={setDecommissioned} />
                     </div>
                     {decommissioned === "false" && (
                       <div className="space-y-1.5">
-                        <Label>Préciser ce qu'il deviendra</Label>
+                        <Label>Préciser ce qu'il deviendra<Req /></Label>
                         <Textarea
                           rows={2}
                           value={decommissionedNote}
@@ -577,7 +812,7 @@ export function NewWorkflowPage() {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="amount5y">
-                    4.1 Coût total estimé sur 5 années (HTVA)
+                    4.1 Coût total estimé sur 5 années (HTVA)<Req />
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     Inclure : achat, maintenance, consommables, formation, abonnements.
@@ -592,7 +827,7 @@ export function NewWorkflowPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>4.3 La demande relève-t-elle d'une procédure d'exception ?</Label>
+                  <Label>4.3 La demande relève-t-elle d'une procédure d'exception ?<Req /></Label>
                   <Select value={exceptionProcedure} onValueChange={setExceptionProcedure}>
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner..." />
@@ -610,7 +845,7 @@ export function NewWorkflowPage() {
                 </div>
                 {(exceptionProcedure === "LIVRE_I" || exceptionProcedure === "LIVRE_II") && (
                   <div className="space-y-1.5">
-                    <Label>4.3.1 Justification détaillée de la procédure d'exception</Label>
+                    <Label>4.3.1 Justification détaillée de la procédure d'exception<Req /></Label>
                     <Textarea
                       rows={3}
                       value={exceptionJustification}
@@ -619,7 +854,7 @@ export function NewWorkflowPage() {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label>4.4 La position budgétaire est-elle connue ?</Label>
+                  <Label>4.4 La position budgétaire est-elle connue ?<Req /></Label>
                   <Select value={budgetPositionKnown} onValueChange={setBudgetPositionKnown}>
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner..." />
@@ -631,15 +866,29 @@ export function NewWorkflowPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {budgetPositionKnown && (
-                  <div className="space-y-1.5">
-                    <Label>4.4.1 Position budgétaire (selon liste GT Invest)</Label>
-                    <Input
-                      value={budgetPosition}
-                      onChange={(e) => setBudgetPosition(e.target.value)}
-                    />
-                  </div>
-                )}
+                <div className="space-y-1.5">
+                  <Label>4.4.1 Position budgétaire (selon liste GT Invest)<Req /></Label>
+                  {budgetPositionsList.length === 0 ? (
+                    <Alert variant="destructive">
+                      <AlertDescription className="text-xs">
+                        Aucune position budgétaire n'est configurée. Un administrateur doit en ajouter dans Paramètres → GT Invest avant de pouvoir créer un workflow.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Select value={budgetPosition} onValueChange={setBudgetPosition}>
+                      <SelectTrigger data-testid="select-budget-position">
+                        <SelectValue placeholder="Sélectionner..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {budgetPositionsList.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -650,19 +899,58 @@ export function NewWorkflowPage() {
               <SectionTitle number="5" label="Fournisseur" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>5.1 Nom du fournisseur</Label>
-                  <Input
-                    value={supplierName}
-                    onChange={(e) => setSupplierName(e.target.value)}
-                  />
+                  <Label>5.1 Nom du fournisseur<Req /></Label>
+                  {(companies ?? []).length === 0 ? (
+                    <Alert variant="destructive">
+                      <AlertDescription className="text-xs">
+                        Aucun fournisseur n'est enregistré. Ajoutez-en un dans la page Fournisseurs avant de continuer.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Select value={supplierCompanyId} onValueChange={setSupplierCompanyId}>
+                      <SelectTrigger data-testid="select-supplier-company">
+                        <SelectValue placeholder="Sélectionner un fournisseur..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {(companies ?? [])
+                          .slice()
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((c) => (
+                            <SelectItem key={c.id} value={String(c.id)}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label>5.2 Personne de contact (nom, e-mail, téléphone)</Label>
-                  <Input
-                    value={supplierContact}
-                    onChange={(e) => setSupplierContact(e.target.value)}
-                    placeholder="Nom, email, tél."
-                  />
+                  <Label>5.2 Personne de contact<Req /></Label>
+                  {!supplierCompanyId ? (
+                    <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                      Sélectionner d'abord un fournisseur ci-dessus.
+                    </p>
+                  ) : supplierContacts.length === 0 ? (
+                    <Alert variant="destructive">
+                      <AlertDescription className="text-xs">
+                        Ce fournisseur n'a aucun contact enregistré. Ajoutez-en un dans la page Fournisseurs avant de continuer.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Select value={supplierContactId} onValueChange={setSupplierContactId}>
+                      <SelectTrigger data-testid="select-supplier-contact">
+                        <SelectValue placeholder="Sélectionner un contact..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {supplierContacts.map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>
+                            {c.name}
+                            {c.email ? ` · ${c.email}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
 
@@ -670,7 +958,7 @@ export function NewWorkflowPage() {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?</Label>
+                    <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?<Req /></Label>
                     <YesNoSelect value={architecturalWorks} onChange={setArchitecturalWorks} />
                     {architecturalWorks === "true" && (
                       <p className="text-xs text-amber-600">
@@ -679,33 +967,26 @@ export function NewWorkflowPage() {
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label>6.2 Connexion informatique requise ?</Label>
+                    <Label>6.2 Connexion informatique requise ?<Req /></Label>
                     <YesNoSelect value={itConnection} onChange={setItConnection} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>
-                    6.3 Accès ou interopérabilité avec des systèmes critiques (DPI, IT…) ?
+                    6.3 Accès ou interopérabilité avec des systèmes critiques (DPI, IT…) ?<Req />
                   </Label>
-                  <Select value={systemInterop} onValueChange={setSystemInterop}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="true">Oui</SelectItem>
-                      <SelectItem value="false">Non</SelectItem>
-                      <SelectItem value="unknown">Ne sais pas</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <YesNoSelect value={systemInterop} onChange={setSystemInterop} />
                 </div>
-                <div className="space-y-2">
-                  <Label>6.4 Type d'accès (si applicable)</Label>
-                  <CheckboxList
-                    options={ACCESS_TYPES}
-                    values={accessTypes}
-                    onChange={setAccessTypes}
-                  />
-                </div>
+                {systemInterop === "true" && (
+                  <div className="space-y-2 rounded-md border p-4 bg-muted/30">
+                    <Label>6.3.1 Type d'accès<Req /></Label>
+                    <CheckboxList
+                      options={ACCESS_TYPES}
+                      values={accessTypes}
+                      onChange={setAccessTypes}
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -716,7 +997,7 @@ export function NewWorkflowPage() {
               <SectionTitle number="7" label="Données, sécurité et conformité" />
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>7.1 L'équipement / la solution traite-t-il ou donne-t-il accès à :</Label>
+                  <Label>7.1 L'équipement / la solution traite-t-il ou donne-t-il accès à :<Req /></Label>
                   <CheckboxList
                     options={DATA_TYPES}
                     values={dataTypes}
@@ -724,7 +1005,7 @@ export function NewWorkflowPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>7.2 Impact potentiel en cas d'indisponibilité du système</Label>
+                  <Label>7.2 Impact potentiel en cas d'indisponibilité du système<Req /></Label>
                   <Select value={availabilityImpact} onValueChange={setAvailabilityImpact}>
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner..." />
@@ -737,7 +1018,7 @@ export function NewWorkflowPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>7.3 L'offre inclut-elle de l'intelligence artificielle ?</Label>
+                  <Label>7.3 L'offre inclut-elle de l'intelligence artificielle ?<Req /></Label>
                   <YesNoSelect value={hasAI} onChange={setHasAI} />
                   {hasAI === "true" && (
                     <p className="text-xs text-amber-600">Validation DPO requise.</p>
@@ -748,12 +1029,12 @@ export function NewWorkflowPage() {
               <SectionTitle number="8" label="Consommables et sécurité" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>8.1 Des consommables sont-ils nécessaires (EPI inclus) ?</Label>
+                  <Label>8.1 Des consommables sont-ils nécessaires (EPI inclus) ?<Req /></Label>
                   <YesNoSelect value={consumablesNeeded} onChange={setConsumablesNeeded} />
                 </div>
                 {consumablesNeeded === "true" && (
                   <div className="space-y-1.5">
-                    <Label>8.2 Offre des consommables jointe ?</Label>
+                    <Label>8.2 Offre des consommables jointe ?<Req /></Label>
                     <YesNoSelect
                       value={consumablesOfferAttached}
                       onChange={setConsumablesOfferAttached}
@@ -761,7 +1042,7 @@ export function NewWorkflowPage() {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label>8.3 Les consommables incluent-ils des gaz ou produits chimiques ?</Label>
+                  <Label>8.3 Les consommables incluent-ils des gaz ou produits chimiques ?<Req /></Label>
                   <YesNoSelect value={hazardousConsumables} onChange={setHazardousConsumables} />
                   {hazardousConsumables === "true" && (
                     <p className="text-xs text-amber-600">
@@ -779,7 +1060,7 @@ export function NewWorkflowPage() {
               <SectionTitle number="9" label="Maintenance, hygiène et exploitation" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>9.1 Durée de la garantie</Label>
+                  <Label>9.1 Durée de la garantie<Req /></Label>
                   <Input
                     value={warrantyDuration}
                     onChange={(e) => setWarrantyDuration(e.target.value)}
@@ -788,18 +1069,18 @@ export function NewWorkflowPage() {
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <div className="space-y-1.5">
-                    <Label>9.2 Contrat de maintenance nécessaire ?</Label>
+                    <Label>9.2 Contrat de maintenance nécessaire ?<Req /></Label>
                     <YesNoSelect value={maintenanceContract} onChange={setMaintenanceContract} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>9.4 Nettoyage / désinfection requis ?</Label>
+                    <Label>9.4 Nettoyage / désinfection requis ?<Req /></Label>
                     <YesNoSelect value={cleaningRequired} onChange={setCleaningRequired} />
                     {cleaningRequired === "true" && (
                       <p className="text-xs text-amber-600">Contacter le service hygiène.</p>
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label>9.5 Stérilisation requise ?</Label>
+                    <Label>9.5 Stérilisation requise ?<Req /></Label>
                     <YesNoSelect value={sterilizationRequired} onChange={setSterilizationRequired} />
                     {sterilizationRequired === "true" && (
                       <p className="text-xs text-amber-600">Contacter le service stérilisation.</p>
@@ -811,12 +1092,12 @@ export function NewWorkflowPage() {
               <SectionTitle number="10" label="Formation et mise en service" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>10.1 Une formation pour les utilisateurs est-elle nécessaire ?</Label>
+                  <Label>10.1 Une formation pour les utilisateurs est-elle nécessaire ?<Req /></Label>
                   <YesNoSelect value={trainingRequired} onChange={setTrainingRequired} />
                 </div>
                 {trainingRequired === "true" && (
                   <div className="space-y-1.5">
-                    <Label>10.1.1 Offre de formation jointe ?</Label>
+                    <Label>10.1.1 Offre de formation jointe ?<Req /></Label>
                     <YesNoSelect
                       value={trainingOfferAttached}
                       onChange={setTrainingOfferAttached}
@@ -825,7 +1106,7 @@ export function NewWorkflowPage() {
                 )}
                 <div className="space-y-1.5">
                   <Label htmlFor="commissioningDate">
-                    10.2 Date souhaitée de mise en production / service
+                    10.2 Date souhaitée de mise en production / service<Req />
                   </Label>
                   <Input
                     id="commissioningDate"
@@ -840,15 +1121,113 @@ export function NewWorkflowPage() {
               <SectionTitle number="11" label="Documentation obligatoire à fournir" />
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Cocher les documents déjà fournis ou qui seront joints.
+                  Cocher les documents qui seront joints. Vous pourrez les téléverser à l'étape suivante.<Req />
                 </p>
                 <CheckboxList
                   options={REQUIRED_DOCS}
                   values={documentsProvided}
-                  onChange={setDocumentsProvided}
+                  onChange={(v) => {
+                    setDocumentsProvided(v);
+                    // Drop any file selection for items that were just unchecked.
+                    setFiles((f) => {
+                      const next: Record<string, File | null> = {};
+                      for (const k of v) next[k] = f[k] ?? null;
+                      return next;
+                    });
+                  }}
                 />
               </div>
             </>
+          )}
+
+          {/* ── STEP 7 — uploads for every checked Section 11 doc ── */}
+          {step === 7 && (
+            <>
+              <SectionTitle number="12" label="Téléversement des documents" />
+              {documentsProvided.length === 0 ? (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    Aucun document n'a été coché à la section 11. Revenez à l'étape précédente pour en cocher au moins un.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    Téléversez le fichier correspondant à chaque document coché. Tous les fichiers sont obligatoires. L'« Offre de prix » sera enregistrée comme premier devis du workflow, avec le fournisseur sélectionné en 5.1.
+                  </p>
+                  {documentsProvided.map((label) => {
+                    const f = files[label] ?? null;
+                    return (
+                      <div
+                        key={label}
+                        className="rounded-md border p-3 space-y-2"
+                        data-testid={`upload-row-${label}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <Label className="text-sm font-medium leading-snug">
+                            {label}
+                            <Req />
+                          </Label>
+                          {label === "Offre de prix" && (
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                              Premier devis
+                            </span>
+                          )}
+                        </div>
+                        {f ? (
+                          <div className="flex items-center justify-between gap-2 rounded bg-muted/40 px-3 py-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="h-4 w-4 flex-shrink-0 text-primary" />
+                              <span className="truncate text-sm">{f.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ({Math.round(f.size / 1024)} KB)
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                setFiles((m) => ({ ...m, [label]: null }))
+                              }
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40">
+                            <Upload className="h-4 w-4" />
+                            <span>Choisir un fichier…</span>
+                            <input
+                              type="file"
+                              className="sr-only"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] ?? null;
+                                setFiles((m) => ({ ...m, [label]: file }));
+                              }}
+                              data-testid={`file-input-${label}`}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Inline missing-fields error (shown after Suivant click) */}
+          {showErrors && currentMissing.length > 0 && (
+            <Alert variant="destructive" data-testid="missing-fields-alert">
+              <AlertDescription>
+                <div className="font-semibold">Champs obligatoires manquants :</div>
+                <ul className="mt-1 list-disc pl-5 text-sm">
+                  {currentMissing.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
           )}
 
         </CardContent>
@@ -858,8 +1237,8 @@ export function NewWorkflowPage() {
       <div className="flex justify-between">
         <Button
           variant="outline"
-          onClick={() => setStep((s) => Math.max(1, s - 1))}
-          disabled={step === 1}
+          onClick={handlePrev}
+          disabled={step === 1 || submitting}
           data-testid="button-prev-step"
         >
           <ArrowLeft className="mr-2 h-4 w-4" /> Précédent
@@ -867,8 +1246,7 @@ export function NewWorkflowPage() {
 
         {step < TOTAL_STEPS ? (
           <Button
-            onClick={() => setStep((s) => s + 1)}
-            disabled={!canAdvance()}
+            onClick={handleNext}
             data-testid="button-next-step"
           >
             Suivant <ArrowRight className="ml-2 h-4 w-4" />
@@ -876,10 +1254,10 @@ export function NewWorkflowPage() {
         ) : (
           <Button
             onClick={onSubmit}
-            disabled={create.isPending || !title || !departmentId}
+            disabled={submitting}
             data-testid="button-submit"
           >
-            {create.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Créer le workflow
           </Button>
         )}

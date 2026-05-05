@@ -23,6 +23,7 @@ export interface AppSettings {
   /** @nullable */
   archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
+  budgetPositions: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
 }

@@ -269,6 +269,7 @@ export function SettingsPage() {
           <div className="space-y-4">
             <GtRecipientsPanel />
             <GtDatesPanel />
+            <BudgetPositionsPanel />
           </div>
         </TabsContent>
         <TabsContent value="https">
@@ -2318,6 +2319,96 @@ function GtDatesPanel() {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BudgetPositionsPanel — manages the GT Invest "position budgétaire" list
+// (settings.budgetPositions). The values populate the dropdown shown in
+// section 4.4.1 of the investment request form on workflow creation.
+// ─────────────────────────────────────────────────────────────────────────────
+function BudgetPositionsPanel() {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const [positions, setPositions] = useState<string[]>([]);
+  const [next, setNext] = useState("");
+
+  useEffect(() => {
+    if (!s) return;
+    setPositions(s.budgetPositions ?? []);
+  }, [s]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Positions budgétaires GT Invest</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Liste déroulante affichée à la section 4.4.1 du formulaire de demande
+          d&apos;investissement, lors de la création d&apos;un workflow.
+        </p>
+        <div className="flex gap-2">
+          <Input
+            placeholder="ex. CAPEX 2026 — Imagerie"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            data-testid="input-budget-position"
+          />
+          <Button
+            onClick={() => {
+              const v = next.trim();
+              if (!v) return;
+              setPositions((r) => Array.from(new Set([...r, v])));
+              setNext("");
+            }}
+            data-testid="button-add-budget-position"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <div className="space-y-1">
+          {positions.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              Aucune position budgétaire configurée.
+            </p>
+          ) : (
+            positions.map((p) => (
+              <div
+                key={p}
+                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                data-testid={`budget-position-${p}`}
+              >
+                <span>{p}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    setPositions((rs) => rs.filter((x) => x !== p))
+                  }
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() =>
+              save.mutate({ data: { budgetPositions: positions } })
+            }
+            disabled={save.isPending}
+            data-testid="button-save-budget-positions"
+          >
+            {save.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            <Save className="mr-2 h-4 w-4" /> Save
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

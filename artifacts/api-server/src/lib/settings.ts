@@ -127,6 +127,12 @@ export interface AppSettings {
   // the request body, so this is purely a UX default.
   archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
+  /**
+   * Configurable list of GT Invest budget position labels — picked
+   * from a dropdown in section 4.4.1 of the investment request form
+   * on workflow creation. Managed in Settings → GT Invest.
+   */
+  budgetPositions: string[];
   ldap: LdapConfigStored;
   smtp: SmtpConfigStored;
 }
@@ -143,6 +149,7 @@ const DEFAULT: AppSettings = {
   signingAgentPort: 9443,
   archiveRetentionDays: 365,
   gtInvestRecipients: [],
+  budgetPositions: [],
   ldap: {
     enabled: false,
     host: null,
@@ -225,6 +232,7 @@ export function toPublicSettings(s: AppSettings) {
     signingAgentPort: s.signingAgentPort ?? null,
     archiveRetentionDays: s.archiveRetentionDays ?? null,
     gtInvestRecipients: s.gtInvestRecipients ?? [],
+    budgetPositions: s.budgetPositions ?? [],
     ldap: {
       enabled: !!s.ldap?.enabled,
       host: s.ldap?.host ?? null,
