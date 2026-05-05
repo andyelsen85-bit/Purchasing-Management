@@ -41,6 +41,7 @@ import type {
   DeletedWorkflow,
   Department,
   Document,
+  EmptyTrash200,
   ExportGtInvestPackageParams,
   ExportWorkflowsParams,
   GtInvestDate,
@@ -4534,6 +4535,91 @@ export function useListDeletedWorkflows<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Hard-deletes every workflow that has been soft-deleted (deletedAt IS NOT NULL),
+along with all their child rows (steps, documents, document_versions, notes,
+history, notifications). This action is irreversible.
+
+ * @summary Permanently delete all trashed workflows (admin only)
+ */
+export const getEmptyTrashUrl = () => {
+  return `/api/admin/deleted-workflows`;
+};
+
+export const emptyTrash = async (
+  options?: RequestInit,
+): Promise<EmptyTrash200> => {
+  return customFetch<EmptyTrash200>(getEmptyTrashUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getEmptyTrashMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof emptyTrash>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof emptyTrash>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["emptyTrash"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof emptyTrash>>,
+    void
+  > = () => {
+    return emptyTrash(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EmptyTrashMutationResult = NonNullable<
+  Awaited<ReturnType<typeof emptyTrash>>
+>;
+
+export type EmptyTrashMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Permanently delete all trashed workflows (admin only)
+ */
+export const useEmptyTrash = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof emptyTrash>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof emptyTrash>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getEmptyTrashMutationOptions(options));
+};
 
 /**
  * Runs a real LDAP search (and optional user bind) against the

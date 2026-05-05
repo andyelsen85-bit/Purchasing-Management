@@ -1224,3 +1224,8 @@ export const ListNotificationsStatus = {
 export type ListAuditLogParams = {
   limit?: number;
 };
+
+export type EmptyTrash200 = {
+  /** Count of workflows permanently removed */
+  deleted: number;
+};

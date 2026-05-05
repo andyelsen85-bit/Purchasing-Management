@@ -54,6 +54,7 @@ import {
   useGetSession,
   useListDeletedWorkflows,
   useRestoreWorkflow,
+  useEmptyTrash,
   useListUsers,
   useListAuditLog,
   useArchiveAttachments,
@@ -246,7 +247,7 @@ export function SettingsPage() {
             Audit Log
           </TabsTrigger>
           <TabsTrigger value="trash" data-testid="tab-trash">
-            Trash
+            Corbeille
           </TabsTrigger>
         </TabsList>
         <TabsContent value="app">
@@ -296,11 +297,8 @@ export function SettingsPage() {
 }
 
 /**
- * Settings → Trash. Lists every soft-deleted workflow and lets the
- * admin restore it (clearing `deletedAt` so it re-appears in the
- * normal lists). Hard purge is intentionally not exposed here — the
- * admin can purge from the database directly if they really want
- * to free disk space; the spec is to preserve audit trails.
+ * Settings → Corbeille. Lists every soft-deleted workflow and lets the
+ * admin restore it or permanently delete the entire trash in one click.
  */
 function DeletedWorkflowsPanel() {
   const qc = useQueryClient();
@@ -308,27 +306,70 @@ function DeletedWorkflowsPanel() {
   const restore = useRestoreWorkflow({
     mutation: {
       onSuccess: () => {
-        qc.invalidateQueries({
-          queryKey: getListDeletedWorkflowsQueryKey(),
-        });
-        // Also refresh active workflow lists so the restored row
-        // shows up immediately on /workflows etc.
+        qc.invalidateQueries({ queryKey: getListDeletedWorkflowsQueryKey() });
         qc.invalidateQueries();
       },
     },
   });
+  const emptyTrash = useEmptyTrash({
+    mutation: {
+      onSuccess: (data) => {
+        qc.invalidateQueries({ queryKey: getListDeletedWorkflowsQueryKey() });
+        toast({
+          title: "Corbeille vidée",
+          description: `${data.deleted} commande${data.deleted !== 1 ? "s" : ""} supprimée${data.deleted !== 1 ? "s" : ""} définitivement.`,
+        });
+      },
+      onError: (err) => {
+        toast({
+          title: "Erreur",
+          description: extractErrorMessage(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
   const rows = deleted ?? [];
+  const busy = restore.isPending || emptyTrash.isPending;
+
+  function handleEmptyTrash() {
+    if (
+      !confirm(
+        `Vider définitivement la corbeille ? Cette action supprimera ${rows.length} commande${rows.length !== 1 ? "s" : ""} et toutes leurs pièces jointes de manière irréversible.`,
+      )
+    )
+      return;
+    emptyTrash.mutate(undefined as unknown as void);
+  }
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Deleted workflows</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <CardTitle>Corbeille</CardTitle>
+        {rows.length > 0 && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleEmptyTrash}
+            disabled={busy}
+            data-testid="button-empty-trash"
+          >
+            {emptyTrash.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="mr-2 h-4 w-4" />
+            )}
+            Vider la corbeille
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Workflows deleted by an administrator are flagged as deleted
-          rather than removed from the database, so the full history
-          (notes, documents, audit trail) is preserved. Restore one to
-          make it visible again on the workflows list.
+          Les commandes supprimées par un administrateur sont conservées ici
+          (historique, documents et journal d'audit préservés). Restaurez-en
+          une pour la faire réapparaître dans la liste, ou videz la corbeille
+          pour les supprimer définitivement.
         </p>
         {error && (
           <Alert variant="destructive">
@@ -337,11 +378,11 @@ function DeletedWorkflowsPanel() {
         )}
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            <Loader2 className="h-4 w-4 animate-spin" /> Chargement…
           </div>
         ) : rows.length === 0 ? (
           <p className="rounded-md border bg-muted/30 px-3 py-6 text-center text-sm text-muted-foreground">
-            The trash is empty.
+            La corbeille est vide.
           </p>
         ) : (
           <div className="divide-y rounded-md border">
@@ -356,23 +397,22 @@ function DeletedWorkflowsPanel() {
                     {w.reference} — {w.title}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {w.departmentName} · step {w.currentStep} · deleted
-                    {" "}
-                    {new Date(w.deletedAt).toLocaleString()}
-                    {w.deletedByName ? ` by ${w.deletedByName}` : ""}
+                    {w.departmentName} · étape {w.currentStep} · supprimé le{" "}
+                    {new Date(w.deletedAt).toLocaleString("fr-FR")}
+                    {w.deletedByName ? ` par ${w.deletedByName}` : ""}
                   </div>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => restore.mutate({ id: w.id })}
-                  disabled={restore.isPending}
+                  disabled={busy}
                   data-testid={`button-restore-${w.id}`}
                 >
                   {restore.isPending && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  Restore
+                  Restaurer
                 </Button>
               </div>
             ))}

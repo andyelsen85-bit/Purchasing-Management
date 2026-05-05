@@ -33,6 +33,7 @@ export * from "./deletedWorkflow";
 export * from "./department";
 export * from "./document";
 export * from "./documentKind";
+export * from "./emptyTrash200";
 export * from "./exportGtInvestPackageParams";
 export * from "./exportWorkflowsFormat";
 export * from "./exportWorkflowsParams";

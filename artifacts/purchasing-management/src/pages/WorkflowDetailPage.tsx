@@ -2074,7 +2074,7 @@ function PriorStepsRecap({
     s ? new Date(s).toLocaleDateString() : "—";
   const fmtDateTime = (s: string | null | undefined) =>
     s ? new Date(s).toLocaleString() : "—";
-  const fmtMoney = (n: number | null | undefined, c: string | null | undefined) =>
+  const fmtMoney = (n: number | null | undefined, c?: string | null) =>
     n != null ? `${n} ${c ?? ""}`.trim() : "—";
   const fmtBool = (b: boolean | null | undefined) =>
     b == null ? "—" : b ? "Yes" : "No";

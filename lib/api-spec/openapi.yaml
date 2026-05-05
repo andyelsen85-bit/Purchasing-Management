@@ -866,6 +866,26 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/DeletedWorkflow" }
+    delete:
+      operationId: emptyTrash
+      tags: [admin]
+      summary: Permanently delete all trashed workflows (admin only)
+      description: |
+        Hard-deletes every workflow that has been soft-deleted (deletedAt IS NOT NULL),
+        along with all their child rows (steps, documents, document_versions, notes,
+        history, notifications). This action is irreversible.
+      responses:
+        "200":
+          description: Number of workflows permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: integer
+                    description: Count of workflows permanently removed
 
   # ---------------- ADMIN / LDAP TEST ----------------
   /admin/ldap-test:

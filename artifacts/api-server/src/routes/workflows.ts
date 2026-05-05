@@ -9,6 +9,9 @@ import {
   historyTable,
   documentsTable,
   notesTable,
+  documentVersionsTable,
+  workflowStepsTable,
+  notificationsTable,
 } from "@workspace/db";
 import {
   CreateWorkflowBody,
@@ -1091,6 +1094,46 @@ router.get(
         deletedByName: r.deletedByName ?? "",
       })),
     );
+  },
+);
+
+/**
+ * DELETE /api/admin/deleted-workflows — admin-only. Permanently
+ * hard-deletes every workflow in the trash (deletedAt IS NOT NULL),
+ * removing all child rows first (steps, documents, document_versions,
+ * notes, history, notifications) then the workflow row itself.
+ * Returns { deleted: <count> }.
+ */
+router.delete(
+  "/admin/deleted-workflows",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const user = getUser(req);
+    if (!user.roles.includes("ADMIN")) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const trashed = await db
+      .select({ id: workflowsTable.id })
+      .from(workflowsTable)
+      .where(isNotNull(workflowsTable.deletedAt));
+    if (trashed.length === 0) {
+      res.json({ deleted: 0 });
+      return;
+    }
+    const ids = trashed.map((r) => r.id);
+    // Delete child rows first (no DB-level cascade configured).
+    for (const id of ids) {
+      await db.delete(notificationsTable).where(eq(notificationsTable.workflowId, id));
+      await db.delete(documentVersionsTable).where(eq(documentVersionsTable.workflowId, id));
+      await db.delete(documentsTable).where(eq(documentsTable.workflowId, id));
+      await db.delete(notesTable).where(eq(notesTable.workflowId, id));
+      await db.delete(historyTable).where(eq(historyTable.workflowId, id));
+      await db.delete(workflowStepsTable).where(eq(workflowStepsTable.workflowId, id));
+    }
+    await db.delete(workflowsTable).where(isNotNull(workflowsTable.deletedAt));
+    await audit(user.id, "TRASH_EMPTIED", "workflow");
+    res.json({ deleted: ids.length });
   },
 );
 

@@ -2419,6 +2419,17 @@ export const ListDeletedWorkflowsResponse = zod.array(
 );
 
 /**
+ * Hard-deletes every workflow that has been soft-deleted (deletedAt IS NOT NULL),
+along with all their child rows (steps, documents, document_versions, notes,
+history, notifications). This action is irreversible.
+
+ * @summary Permanently delete all trashed workflows (admin only)
+ */
+export const EmptyTrashResponse = zod.object({
+  deleted: zod.number().describe("Count of workflows permanently removed"),
+});
+
+/**
  * Runs a real LDAP search (and optional user bind) against the
 currently saved LDAP settings so the operator can confirm
 connectivity, credentials, and the AD group → role/department
