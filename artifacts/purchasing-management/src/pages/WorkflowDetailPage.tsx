@@ -58,6 +58,8 @@ import {
   useGetSettings,
   AdvanceWorkflowInputBranch,
   UploadDocumentInputKind,
+  getGetWorkflowQueryKey,
+  getListWorkflowDocumentsQueryKey,
   type Workflow,
   type QuoteEntry,
 } from "@/lib/api";
@@ -239,8 +241,9 @@ function ActionBar({
   onChange: () => void;
 }) {
   const [branch, setBranch] = useState<keyof typeof AdvanceWorkflowInputBranch | "">("");
-  const { setMissing } = useMissingFields();
+  const { setMissing, runBeforeAdvance } = useMissingFields();
   const { data: docs } = useListWorkflowDocuments(wf.id);
+  const qc = useQueryClient();
   const advance = useAdvanceWorkflow({
     mutation: {
       onSuccess: () => {
@@ -329,15 +332,46 @@ function ActionBar({
     <div className="flex flex-wrap items-center gap-2">
       {!inlineAdvanceStep && (
         <Button
-          onClick={() => {
+          onClick={async () => {
+            // First, persist any unsaved local form edits the user
+            // made on the current step's form. Each step panel
+            // registers a save callback via the MissingFields
+            // context; awaiting it ensures the freshly-typed values
+            // reach the server before we re-check prerequisites.
+            try {
+              await runBeforeAdvance();
+            } catch {
+              // The save itself surfaces a "Save failed" toast via
+              // useSaveWorkflow; abort the advance silently.
+              return;
+            }
+            // Refetch the workflow + documents so the local missing
+            // check sees the just-persisted values rather than the
+            // stale snapshot captured in this closure.
+            await Promise.all([
+              qc.refetchQueries({
+                queryKey: getGetWorkflowQueryKey(wf.id),
+              }),
+              qc.refetchQueries({
+                queryKey: getListWorkflowDocumentsQueryKey(wf.id),
+              }),
+            ]);
+            const freshWf =
+              (qc.getQueryData(getGetWorkflowQueryKey(wf.id)) as
+                | Workflow
+                | undefined) ?? wf;
+            const freshDocs =
+              (qc.getQueryData(getListWorkflowDocumentsQueryKey(wf.id)) as
+                | Array<{ kind: string; isCurrent?: boolean }>
+                | undefined) ?? docs ?? [];
             // Pre-validate locally and highlight missing fields
             // instead of firing a request that will surface as an
             // error popup. Only call the server when the client-side
             // checks pass — the server still runs the same checks
             // as a safety net.
             const missing = computeMissingFields(
-              wf,
-              (docs ?? []).map((d) => ({
+              freshWf,
+              freshDocs.map((d) => ({
                 kind: d.kind,
                 isCurrent: (d as unknown as { isCurrent?: boolean }).isCurrent,
               })),
@@ -349,7 +383,7 @@ function ActionBar({
             }
             setMissing(new Set());
             advance.mutate({
-              id: wf.id,
+              id: freshWf.id,
               data: { branch: branch ? branch : null },
             });
           }}
@@ -963,6 +997,7 @@ function QuotationPanel({
       : [{ winning: false, currency: wf.currency || "EUR", documentIds: [] }],
   );
   const save = useSaveWorkflow(wf, onChange);
+  const { setBeforeAdvance } = useMissingFields();
   // Track which row is currently uploading so we can show a spinner
   // and disable the file input. Using a per-row id avoids one global
   // pending flag blocking other rows.
@@ -1020,6 +1055,20 @@ function QuotationPanel({
   const filledCount = quotes.filter(
     (q) => q.amount != null && (q.companyId || q.companyName),
   ).length;
+
+  // Persist current local quote rows on global Next Step so any
+  // unsaved row edits are taken into account by the server's
+  // advance prerequisites.
+  useEffect(() => {
+    setBeforeAdvance(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: { quotes: normalizeForSave(quotes) },
+      });
+    });
+    return () => setBeforeAdvance(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setBeforeAdvance, save, wf.id, quotes, threeQuotesRequired]);
 
   async function onPickQuoteFile(
     idx: number,
@@ -1588,6 +1637,19 @@ function ManagerApprovePanel({
 }) {
   const [comment, setComment] = useState<string>(wf.managerComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const { setBeforeAdvance } = useMissingFields();
+  // Persist the comment field on global Next Step. We deliberately
+  // do NOT auto-set managerApproved here — approval is an explicit
+  // action via the dedicated Approve button in this panel.
+  useEffect(() => {
+    setBeforeAdvance(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: { managerComment: comment || null },
+      });
+    });
+    return () => setBeforeAdvance(null);
+  }, [setBeforeAdvance, save, wf.id, comment]);
   // Approve here is a two-step action: persist managerApproved=true and
   // the comment, then immediately advance the workflow to the next step
   // (same effect as clicking the global "Next Step" button afterwards).
@@ -1708,6 +1770,23 @@ function FinancialApprovePanel({
   >((wf.branch as keyof typeof AdvanceWorkflowInputBranch | null) ?? "");
   const [comment, setComment] = useState<string>(wf.financialComment ?? "");
   const save = useSaveWorkflow(wf, onChange);
+  const { setBeforeAdvance: setBeforeAdvanceFin } = useMissingFields();
+  // The global Next Step button is hidden on this step
+  // (inlineAdvanceStep) so this handler is rarely invoked, but we
+  // still register it for consistency: any cross-step advance
+  // triggered while editing will persist the typed comment first.
+  // We deliberately do NOT auto-set financialApproved here —
+  // approval is an explicit action via the inline "Approve & route"
+  // button in this panel.
+  useEffect(() => {
+    setBeforeAdvanceFin(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: { financialComment: comment || null },
+      });
+    });
+    return () => setBeforeAdvanceFin(null);
+  }, [setBeforeAdvanceFin, save, wf.id, comment]);
   const advance = useAdvanceWorkflow({
     mutation: {
       onSuccess: () => onChange(),
@@ -2175,7 +2254,19 @@ function OrderingPanel({
   const [orderNumber, setOrderNumber] = useState(wf.orderNumber ?? "");
   const [orderDate, setOrderDate] = useState(toDateInput(wf.orderDate));
   const save = useSaveWorkflow(wf, onChange);
-  const { missing, clearKey } = useMissingFields();
+  const { missing, clearKey, setBeforeAdvance } = useMissingFields();
+  // Auto-save the form when the user clicks the global Next Step
+  // so freshly-typed values are taken into account by the server's
+  // advance prerequisites — no need to click Save first.
+  useEffect(() => {
+    setBeforeAdvance(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: { orderNumber, orderDate: orderDate || null },
+      });
+    });
+    return () => setBeforeAdvance(null);
+  }, [setBeforeAdvance, save, wf.id, orderNumber, orderDate]);
   // Keep local form state in sync with the latest server snapshot so
   // a Save → refetch (or another tab editing) is reflected here.
   useEffect(() => {
@@ -2260,7 +2351,16 @@ function DeliveryPanel({
   const [deliveredOn, setDeliveredOn] = useState(wf.deliveredOn ?? "");
   const [deliveryNotes, setDeliveryNotes] = useState(wf.deliveryNotes ?? "");
   const save = useSaveWorkflow(wf, onChange);
-  const { missing, clearKey } = useMissingFields();
+  const { missing, clearKey, setBeforeAdvance } = useMissingFields();
+  useEffect(() => {
+    setBeforeAdvance(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: { deliveredOn: deliveredOn || null, deliveryNotes },
+      });
+    });
+    return () => setBeforeAdvance(null);
+  }, [setBeforeAdvance, save, wf.id, deliveredOn, deliveryNotes]);
   return (
     <div className="space-y-4">
       <PriorStepsRecap wf={wf} throughStep="DELIVERY" />
@@ -2337,7 +2437,27 @@ function InvoicePanel({
   );
   const [invoiceDate, setInvoiceDate] = useState(wf.invoiceDate ?? "");
   const save = useSaveWorkflow(wf, onChange);
-  const { missing, clearKey } = useMissingFields();
+  const { missing, clearKey, setBeforeAdvance } = useMissingFields();
+  useEffect(() => {
+    setBeforeAdvance(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: {
+          invoiceNumber,
+          invoiceAmount: invoiceAmount ? Number(invoiceAmount) : null,
+          invoiceDate: invoiceDate || null,
+        },
+      });
+    });
+    return () => setBeforeAdvance(null);
+  }, [
+    setBeforeAdvance,
+    save,
+    wf.id,
+    invoiceNumber,
+    invoiceAmount,
+    invoiceDate,
+  ]);
   return (
     <Card>
       <CardHeader>

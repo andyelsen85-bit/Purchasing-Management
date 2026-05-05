@@ -1,13 +1,31 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 // Per-workflow context that tracks which field keys are "missing"
 // after a failed Next Step / approve attempt. Step panels read it to
 // add a red border (and supplemental "Required" hint) on inputs and
 // uploaders; the action button writes to it.
+//
+// It also exposes a small "before-advance" registry: each step
+// panel can register a save callback that the global Next Step
+// button will await before firing the advance request. That way
+// any unsaved local form edits are persisted automatically and
+// taken into account by the server's advance prerequisites — the
+// user no longer has to remember to click Save first.
+type BeforeAdvanceFn = () => Promise<void> | void;
+
 interface Ctx {
   missing: Set<string>;
   setMissing: (keys: Set<string>) => void;
   clearKey: (key: string) => void;
+  setBeforeAdvance: (fn: BeforeAdvanceFn | null) => void;
+  runBeforeAdvance: () => Promise<void>;
 }
 
 const MissingFieldsCtx = createContext<Ctx | null>(null);
@@ -29,9 +47,23 @@ export function MissingFieldsProvider({
       return next;
     });
   }, []);
+  const beforeRef = useRef<BeforeAdvanceFn | null>(null);
+  const setBeforeAdvance = useCallback((fn: BeforeAdvanceFn | null) => {
+    beforeRef.current = fn;
+  }, []);
+  const runBeforeAdvance = useCallback(async () => {
+    const fn = beforeRef.current;
+    if (fn) await fn();
+  }, []);
   const value = useMemo<Ctx>(
-    () => ({ missing, setMissing, clearKey }),
-    [missing, setMissing, clearKey],
+    () => ({
+      missing,
+      setMissing,
+      clearKey,
+      setBeforeAdvance,
+      runBeforeAdvance,
+    }),
+    [missing, setMissing, clearKey, setBeforeAdvance, runBeforeAdvance],
   );
   return (
     <MissingFieldsCtx.Provider value={value}>
@@ -49,6 +81,8 @@ export function useMissingFields(): Ctx {
       missing: new Set(),
       setMissing: () => {},
       clearKey: () => {},
+      setBeforeAdvance: () => {},
+      runBeforeAdvance: async () => {},
     };
   }
   return ctx;
