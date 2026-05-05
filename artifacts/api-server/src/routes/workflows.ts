@@ -223,14 +223,19 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
         : null,
       threeQuoteRequired: false,
       publicationTier: "STANDARD",
-      currentStep: "NEW",
+      // Workflows now skip the legacy "NEW" step entirely — every
+      // field that used to live there is captured on the creation
+      // form, so the request lands the user directly on Quotation
+      // (the next real action). NEW is kept as a recognised legacy
+      // value so historical rows still render.
+      currentStep: "QUOTATION",
     })
     .returning();
   if (created) {
     await db.insert(historyTable).values({
       workflowId: created.id,
       action: "CREATE",
-      toStep: "NEW",
+      toStep: "QUOTATION",
       actorId: user.id,
       details: `Created workflow ${reference}`,
     });

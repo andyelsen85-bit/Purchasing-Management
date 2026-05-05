@@ -394,7 +394,13 @@ function ActionBar({
         <Button
           variant="outline"
           onClick={() => undo.mutate({ id: wf.id })}
-          disabled={undo.isPending || wf.currentStep === "NEW"}
+          disabled={
+            undo.isPending ||
+            // Quotation is the new first step (the legacy "NEW" step
+            // has been removed) — there is nothing to undo there.
+            wf.currentStep === "NEW" ||
+            wf.currentStep === "QUOTATION"
+          }
           data-testid="button-undo"
         >
           <Undo2 className="mr-2 h-4 w-4" /> Undo
@@ -731,15 +737,14 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
             <Row label="Requested by" value={wf.createdByName} />
             <Row label="Priority" value={wf.priority} />
             <Row label="Branch" value={orDash(wf.branch)} />
-            <Row label="Created" value={fmtDateTime(wf.createdAt)} />
-            <Row label="Last update" value={fmtDateTime(wf.updatedAt)} />
-          </Section>
-
-          <Section title="1 · New request" step="NEW">
+            {/* Fields formerly in the now-removed "1 · New request"
+                section — surfaced here so the request brief is visible
+                directly under the workflow header. */}
             <Row label="Description" value={orDash(wf.description)} />
             <Row label="Category" value={orDash(wf.category)} />
-            <Row label="Estimated amount" value={fmtMoney(wf.estimatedAmount, wf.currency)} />
             <Row label="Needed by" value={fmtDate(wf.neededBy)} />
+            <Row label="Created" value={fmtDateTime(wf.createdAt)} />
+            <Row label="Last update" value={fmtDateTime(wf.updatedAt)} />
           </Section>
 
           <Section title="2 · Quotation" step="QUOTATION">
@@ -2014,17 +2019,13 @@ function PriorStepsRecap({
           <Row label="Requested by" value={wf.createdByName} />
           <Row label="Priority" value={wf.priority} />
           <Row label="Branch" value={orDash(wf.branch)} />
+          {/* Mirrors the General block on the Main tab so the request
+              brief is visible from the Summary recap as well. */}
+          <Row label="Description" value={orDash(wf.description)} />
+          <Row label="Category" value={orDash(wf.category)} />
+          <Row label="Needed by" value={fmtDate(wf.neededBy)} />
           <Row label="Created" value={fmtDateTime(wf.createdAt)} />
         </Section>
-
-        {show("NEW") && (
-          <Section title="1 · New request">
-            <Row label="Description" value={orDash(wf.description)} />
-            <Row label="Category" value={orDash(wf.category)} />
-            <Row label="Estimated amount" value={fmtMoney(wf.estimatedAmount, wf.currency)} />
-            <Row label="Needed by" value={fmtDate(wf.neededBy)} />
-          </Section>
-        )}
 
         {show("QUOTATION") && (
           <Section title="2 · Quotation">

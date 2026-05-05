@@ -94,8 +94,8 @@ export function NewWorkflowPage() {
         <CardHeader>
           <CardTitle data-testid="text-page-title">New workflow</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Start a new purchasing request. The workflow will start in NEW and
-            advance to QUOTATION on creation.
+            Start a new purchasing request. The workflow opens directly on
+            the Quotation step so you can record supplier quotes right away.
           </p>
         </CardHeader>
         <CardContent>
