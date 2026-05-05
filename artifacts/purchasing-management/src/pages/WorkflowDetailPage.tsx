@@ -2604,7 +2604,6 @@ function InvoiceValidationPanel({
   const busy = save.isPending || advance.isPending || reject.isPending || signing;
   return (
     <div className="space-y-4">
-    <PriorStepsRecap wf={wf} throughStep="VALIDATING_INVOICE" />
     <Card>
       <CardHeader>
         <CardTitle>Validation de la facture</CardTitle>
