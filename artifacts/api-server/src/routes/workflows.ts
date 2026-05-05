@@ -33,6 +33,7 @@ import {
   canCreateInDepartment,
   canUndo,
   nextStep,
+  ACTIVE_WORKFLOW_STEPS,
   type WorkflowStep,
 } from "../lib/permissions";
 import { audit } from "../lib/audit";
@@ -178,10 +179,14 @@ router.get("/workflows/by-step", requireAuth, async (req, res): Promise<void> =>
     });
     grouped.set(r.w.currentStep, arr);
   }
-  const STEPS = [
-    "NEW","QUOTATION","VALIDATING_QUOTE_FINANCIAL","VALIDATING_BY_FINANCIAL",
-    "GT_INVEST","ORDERING","DELIVERY","INVOICE","VALIDATING_INVOICE","PAYMENT","DONE",
-  ];
+  // by-step columns mirror the active flow only (NEW is retired).
+  // Any legacy NEW rows roll up into the QUOTATION column so they
+  // remain visible and actionable.
+  const legacy = grouped.get("NEW") ?? [];
+  if (legacy.length > 0) {
+    grouped.set("QUOTATION", [...(grouped.get("QUOTATION") ?? []), ...legacy]);
+  }
+  const STEPS = [...ACTIVE_WORKFLOW_STEPS] as string[];
   res.json(STEPS.map((s) => ({ step: s, workflows: grouped.get(s) ?? [] })));
 });
 

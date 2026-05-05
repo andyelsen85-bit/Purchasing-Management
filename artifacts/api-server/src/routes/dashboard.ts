@@ -2,14 +2,14 @@ import { Router, type IRouter } from "express";
 import { desc, eq, isNull } from "drizzle-orm";
 import { db, workflowsTable, historyTable, usersTable } from "@workspace/db";
 import { requireAuth, getUser } from "../middlewares/auth";
-import { canSeeWorkflow } from "../lib/permissions";
+import { canSeeWorkflow, ACTIVE_WORKFLOW_STEPS } from "../lib/permissions";
 
 const router: IRouter = Router();
 const STALL_DAYS = 7;
-const STEPS = [
-  "NEW","QUOTATION","VALIDATING_QUOTE_FINANCIAL","VALIDATING_BY_FINANCIAL",
-  "GT_INVEST","ORDERING","DELIVERY","INVOICE","VALIDATING_INVOICE","PAYMENT","DONE",
-];
+// Dashboard counters reflect the active flow only — NEW has been
+// retired and any legacy rows still in NEW are bucketed into QUOTATION
+// for display so the totals match what users see in the UI.
+const STEPS = [...ACTIVE_WORKFLOW_STEPS] as string[];
 
 router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> => {
   const user = getUser(req);

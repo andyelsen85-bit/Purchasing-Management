@@ -1,5 +1,10 @@
 import type { Role, SessionUser } from "./auth";
 
+// All step values the system recognises. NEW is retained as a legacy
+// value so historical rows and `nextStep("NEW")` still work, but it is
+// no longer part of the forward-active flow — callers that enumerate
+// the active linear ordering (dashboard counters, by-step columns,
+// progress ribbons) must use `ACTIVE_WORKFLOW_STEPS` instead.
 export const WORKFLOW_STEPS = [
   "NEW",
   "QUOTATION",
@@ -15,6 +20,21 @@ export const WORKFLOW_STEPS = [
   "REJECTED",
 ] as const;
 export type WorkflowStep = (typeof WORKFLOW_STEPS)[number];
+
+// The forward, user-facing step flow — excludes the legacy NEW entry
+// (workflows now start at QUOTATION) and the terminal REJECTED state.
+export const ACTIVE_WORKFLOW_STEPS = [
+  "QUOTATION",
+  "VALIDATING_QUOTE_FINANCIAL",
+  "VALIDATING_BY_FINANCIAL",
+  "GT_INVEST",
+  "ORDERING",
+  "DELIVERY",
+  "INVOICE",
+  "VALIDATING_INVOICE",
+  "PAYMENT",
+  "DONE",
+] as const;
 
 export function hasRole(user: SessionUser, ...roles: Role[]): boolean {
   return roles.some((r) => user.roles.includes(r));
