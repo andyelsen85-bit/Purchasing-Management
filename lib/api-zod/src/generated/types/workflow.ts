@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GtInvestDecision } from "./gtInvestDecision";
+import type { InvestmentForm } from "./investmentForm";
 import type { Priority } from "./priority";
 import type { QuoteEntry } from "./quoteEntry";
 import type { WorkflowBranch } from "./workflowBranch";
@@ -36,6 +37,7 @@ export interface Workflow {
   currency?: string | null;
   /** @nullable */
   neededBy?: Date | null;
+  investmentForm?: InvestmentForm | null;
   quotes: QuoteEntry[];
   threeQuoteRequired: boolean;
   /**

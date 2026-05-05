@@ -226,6 +226,7 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
       neededBy: parsed.data.neededBy
         ? new Date(parsed.data.neededBy).toISOString().slice(0, 10)
         : null,
+      investmentForm: parsed.data.investmentForm ?? null,
       threeQuoteRequired: false,
       publicationTier: "STANDARD",
       // Workflows now skip the legacy "NEW" step entirely — every
@@ -296,6 +297,7 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   if (b.currency !== undefined) update.currency = b.currency;
   if (b.neededBy !== undefined)
     update.neededBy = b.neededBy ? new Date(b.neededBy).toISOString().slice(0, 10) : null;
+  if (b.investmentForm !== undefined) update.investmentForm = b.investmentForm;
   if (b.quotes !== undefined) {
     update.quotes = b.quotes;
     // Re-evaluate the publication tier whenever quotes change. The

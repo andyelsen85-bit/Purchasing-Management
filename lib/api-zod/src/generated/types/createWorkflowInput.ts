@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvestmentForm } from "./investmentForm";
 import type { Priority } from "./priority";
 
 export interface CreateWorkflowInput {
@@ -21,4 +22,5 @@ export interface CreateWorkflowInput {
   currency?: string | null;
   /** @nullable */
   neededBy?: Date | null;
+  investmentForm?: InvestmentForm;
 }

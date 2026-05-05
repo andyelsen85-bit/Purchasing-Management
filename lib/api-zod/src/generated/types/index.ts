@@ -44,6 +44,7 @@ export * from "./gtInvestResult";
 export * from "./healthStatus";
 export * from "./historyEntry";
 export * from "./importCertInput";
+export * from "./investmentForm";
 export * from "./ldapDiagnosticStep";
 export * from "./ldapDiagnosticStepStatus";
 export * from "./ldapsSettings";

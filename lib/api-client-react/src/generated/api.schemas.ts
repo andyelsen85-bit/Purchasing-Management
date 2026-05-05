@@ -216,6 +216,83 @@ export const WorkflowPublicationTier = {
 } as const;
 
 /**
+ * GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE
+D'INVESTISSEMENT). All fields optional — the form may be filled
+incrementally. Stored as JSONB on the workflow row.
+
+ */
+export interface InvestmentForm {
+  /** @nullable */
+  projectLeader?: string | null;
+  investmentTypes?: string[];
+  /** @nullable */
+  justification?: string | null;
+  /** @nullable */
+  demoTested?: boolean | null;
+  /** @nullable */
+  demoContext?: string | null;
+  /** @nullable */
+  requestNature?: string | null;
+  /** @nullable */
+  replacedEquipmentRef?: string | null;
+  /** @nullable */
+  replacedEquipmentLocation?: string | null;
+  /** @nullable */
+  replacementReason?: string | null;
+  /** @nullable */
+  decommissioned?: boolean | null;
+  /** @nullable */
+  decommissionedNote?: string | null;
+  /** @nullable */
+  estimatedAmount5y?: number | null;
+  /** @nullable */
+  exceptionProcedure?: string | null;
+  /** @nullable */
+  exceptionJustification?: string | null;
+  /** @nullable */
+  budgetPositionKnown?: string | null;
+  /** @nullable */
+  budgetPosition?: string | null;
+  /** @nullable */
+  supplierName?: string | null;
+  /** @nullable */
+  supplierContact?: string | null;
+  /** @nullable */
+  architecturalWorks?: boolean | null;
+  /** @nullable */
+  itConnection?: boolean | null;
+  /** @nullable */
+  systemInterop?: boolean | null;
+  accessTypes?: string[];
+  dataTypes?: string[];
+  /** @nullable */
+  availabilityImpact?: string | null;
+  /** @nullable */
+  hasAI?: boolean | null;
+  /** @nullable */
+  consumablesNeeded?: boolean | null;
+  /** @nullable */
+  consumablesOfferAttached?: boolean | null;
+  /** @nullable */
+  hazardousConsumables?: boolean | null;
+  /** @nullable */
+  warrantyDuration?: string | null;
+  /** @nullable */
+  maintenanceContract?: boolean | null;
+  /** @nullable */
+  cleaningRequired?: boolean | null;
+  /** @nullable */
+  sterilizationRequired?: boolean | null;
+  /** @nullable */
+  trainingRequired?: boolean | null;
+  /** @nullable */
+  trainingOfferAttached?: boolean | null;
+  /** @nullable */
+  commissioningDate?: string | null;
+  documentsProvided?: string[];
+}
+
+/**
  * Outcome recorded by the GT Invest committee for a workflow:
 OK → moves to Ordering;
 REFUSED → closes the workflow;
@@ -258,6 +335,7 @@ export interface Workflow {
   currency?: string | null;
   /** @nullable */
   neededBy?: string | null;
+  investmentForm?: InvestmentForm | null;
   quotes: QuoteEntry[];
   threeQuoteRequired: boolean;
   /**
@@ -381,6 +459,7 @@ export interface CreateWorkflowInput {
   currency?: string | null;
   /** @nullable */
   neededBy?: string | null;
+  investmentForm?: InvestmentForm;
 }
 
 export interface UpdateWorkflowInput {
@@ -397,6 +476,7 @@ export interface UpdateWorkflowInput {
   currency?: string | null;
   /** @nullable */
   neededBy?: string | null;
+  investmentForm?: InvestmentForm;
   quotes?: QuoteEntry[];
   /** @nullable */
   managerApproved?: boolean | null;

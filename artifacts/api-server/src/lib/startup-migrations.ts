@@ -14,6 +14,12 @@ import { derivePublicationTier, getSettings } from "./settings";
  */
 export async function runStartupMigrations(): Promise<void> {
   try {
+    // Add investment_form JSONB column if it doesn't exist yet
+    // (idempotent — IF NOT EXISTS makes it safe to run on every boot).
+    await db.execute(
+      sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS investment_form jsonb`,
+    );
+
     // Task #6: the legacy "NEW" workflow step has been retired.
     // Move any workflow still parked in NEW to QUOTATION and record
     // the transition in history so audit trails remain coherent.

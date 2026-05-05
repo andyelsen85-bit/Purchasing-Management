@@ -101,6 +101,10 @@ export const workflowsTable = pgTable(
     currency: text("currency").default("EUR"),
     neededBy: date("needed_by"),
 
+    // Investment request questionnaire (GT Invest form, all 11 sections).
+    // Stored as JSONB so new fields can be added without schema migrations.
+    investmentForm: jsonb("investment_form"),
+
     // Step 2 - quotes
     quotes: jsonb("quotes").notNull().default([]),
     threeQuoteRequired: boolean("three_quote_required").notNull().default(false),

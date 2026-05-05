@@ -15,6 +15,7 @@ import {
   Save,
   AlertCircle,
   CheckCircle2,
+  ClipboardList,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ import {
   getListWorkflowDocumentsQueryKey,
   type Workflow,
   type QuoteEntry,
+  type InvestmentForm,
 } from "@/lib/api";
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
@@ -192,6 +194,9 @@ export function WorkflowDetailPage({ id, user }: Props) {
           <TabsTrigger value="summary" data-testid="tab-summary">
             Summary
           </TabsTrigger>
+          <TabsTrigger value="form" data-testid="tab-form">
+            <ClipboardList className="mr-1 h-3.5 w-3.5" /> Formulaire
+          </TabsTrigger>
           <TabsTrigger value="docs" data-testid="tab-documents">
             <FileText className="mr-1 h-3.5 w-3.5" /> Documents
           </TabsTrigger>
@@ -215,6 +220,9 @@ export function WorkflowDetailPage({ id, user }: Props) {
               <PriorStepsRecap wf={wf} throughStep={wf.currentStep as Step} />
             </CardContent>
           </Card>
+        </TabsContent>
+        <TabsContent value="form">
+          <InvestmentFormPanel wf={wf} />
         </TabsContent>
         <TabsContent value="docs">
           <DocumentsPanel wf={wf} />
@@ -3046,6 +3054,216 @@ function HistoryPanel({ wf }: { wf: Workflow }) {
             ))}
           </ol>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InvestmentFormPanel — read-only view of the GT Invest questionnaire
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REQUEST_NATURE_LABEL: Record<string, string> = {
+  NEW: "Nouvel achat",
+  REPLACEMENT: "Remplacement",
+};
+
+const EXCEPTION_PROCEDURE_LABEL: Record<string, string> = {
+  NONE: "Non",
+  LIVRE_I: "Oui – Livre I (marchés au-dessous des seuils européens)",
+  LIVRE_II: "Oui – Livre II (marchés au-dessus des seuils européens)",
+};
+
+const BUDGET_POSITION_LABEL: Record<string, string> = {
+  YES: "Oui",
+  NO: "Non",
+  TO_CONFIRM: "À confirmer",
+};
+
+const IMPACT_LABEL: Record<string, string> = {
+  CRITICAL: "Critique (interruption des soins)",
+  MODERATE: "Modéré (perturbation des opérations)",
+  MINOR: "Mineur",
+};
+
+function IFRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode | null | undefined;
+}) {
+  if (value === null || value === undefined || value === "" || value === false) return null;
+  return (
+    <div className="grid grid-cols-[40%_1fr] gap-2 py-1.5 text-sm border-b last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium">{value}</span>
+    </div>
+  );
+}
+
+function IFBool({ v }: { v: boolean | null | undefined }) {
+  if (v === null || v === undefined) return null;
+  return <span>{v ? "Oui" : "Non"}</span>;
+}
+
+function IFSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-0">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 mt-4">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function InvestmentFormPanel({ wf }: { wf: Workflow }) {
+  const f = wf.investmentForm as InvestmentForm | null | undefined;
+
+  if (!f) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center text-muted-foreground text-sm">
+          <ClipboardList className="mx-auto mb-3 h-10 w-10 opacity-30" />
+          <p>Aucun formulaire d'investissement rempli pour ce workflow.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ClipboardList className="h-5 w-5" />
+          Formulaire de demande d'investissement
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="divide-y-0 space-y-0">
+
+        <IFSection title="1 · Identification générale">
+          <IFRow label="Responsable / Leader du projet" value={f.projectLeader} />
+          <IFRow
+            label="Type(s) d'investissement"
+            value={
+              f.investmentTypes?.length
+                ? f.investmentTypes.join(", ")
+                : null
+            }
+          />
+        </IFSection>
+
+        <IFSection title="2 · Description du besoin">
+          <IFRow label="Justification" value={f.justification} />
+          <IFRow label="Testé en demo au CHdN ?" value={<IFBool v={f.demoTested} />} />
+          <IFRow label="Contexte du test" value={f.demoContext} />
+        </IFSection>
+
+        <IFSection title="3 · Nature de la demande">
+          <IFRow
+            label="Nature"
+            value={f.requestNature ? (REQUEST_NATURE_LABEL[f.requestNature] ?? f.requestNature) : null}
+          />
+          <IFRow label="Équipement remplacé (réf.)" value={f.replacedEquipmentRef} />
+          <IFRow label="Localisation équipement existant" value={f.replacedEquipmentLocation} />
+          <IFRow label="Motif du remplacement" value={f.replacementReason} />
+          <IFRow label="Mis hors service ?" value={<IFBool v={f.decommissioned} />} />
+          <IFRow label="Devenir de l'ancien équipement" value={f.decommissionedNote} />
+        </IFSection>
+
+        <IFSection title="4 · Aspects financiers">
+          <IFRow
+            label="Coût estimé 5 ans (HTVA)"
+            value={
+              f.estimatedAmount5y != null
+                ? `${f.estimatedAmount5y.toLocaleString("fr-BE")} €`
+                : null
+            }
+          />
+          <IFRow
+            label="Procédure d'exception"
+            value={
+              f.exceptionProcedure
+                ? (EXCEPTION_PROCEDURE_LABEL[f.exceptionProcedure] ?? f.exceptionProcedure)
+                : null
+            }
+          />
+          <IFRow label="Justification procédure d'exception" value={f.exceptionJustification} />
+          <IFRow
+            label="Position budgétaire connue ?"
+            value={
+              f.budgetPositionKnown
+                ? (BUDGET_POSITION_LABEL[f.budgetPositionKnown] ?? f.budgetPositionKnown)
+                : null
+            }
+          />
+          <IFRow label="Position budgétaire" value={f.budgetPosition} />
+        </IFSection>
+
+        <IFSection title="5 · Fournisseur">
+          <IFRow label="Nom du fournisseur" value={f.supplierName} />
+          <IFRow label="Contact" value={f.supplierContact} />
+        </IFSection>
+
+        <IFSection title="6 · Aspects techniques">
+          <IFRow label="Aménagements architecturaux ?" value={<IFBool v={f.architecturalWorks} />} />
+          <IFRow label="Connexion informatique ?" value={<IFBool v={f.itConnection} />} />
+          <IFRow label="Interopérabilité systèmes critiques ?" value={<IFBool v={f.systemInterop} />} />
+          <IFRow
+            label="Types d'accès"
+            value={f.accessTypes?.length ? f.accessTypes.join(", ") : null}
+          />
+        </IFSection>
+
+        <IFSection title="7 · Données, sécurité et conformité">
+          <IFRow
+            label="Types de données traitées"
+            value={f.dataTypes?.length ? f.dataTypes.join(", ") : null}
+          />
+          <IFRow
+            label="Impact indisponibilité"
+            value={
+              f.availabilityImpact
+                ? (IMPACT_LABEL[f.availabilityImpact] ?? f.availabilityImpact)
+                : null
+            }
+          />
+          <IFRow label="Intelligence artificielle ?" value={<IFBool v={f.hasAI} />} />
+        </IFSection>
+
+        <IFSection title="8 · Consommables et sécurité">
+          <IFRow label="Consommables nécessaires ?" value={<IFBool v={f.consumablesNeeded} />} />
+          <IFRow label="Offre consommables jointe ?" value={<IFBool v={f.consumablesOfferAttached} />} />
+          <IFRow label="Gaz ou produits chimiques ?" value={<IFBool v={f.hazardousConsumables} />} />
+        </IFSection>
+
+        <IFSection title="9 · Maintenance, hygiène et exploitation">
+          <IFRow label="Durée de la garantie" value={f.warrantyDuration} />
+          <IFRow label="Contrat de maintenance ?" value={<IFBool v={f.maintenanceContract} />} />
+          <IFRow label="Nettoyage / désinfection requis ?" value={<IFBool v={f.cleaningRequired} />} />
+          <IFRow label="Stérilisation requise ?" value={<IFBool v={f.sterilizationRequired} />} />
+        </IFSection>
+
+        <IFSection title="10 · Formation et mise en service">
+          <IFRow label="Formation nécessaire ?" value={<IFBool v={f.trainingRequired} />} />
+          <IFRow label="Offre de formation jointe ?" value={<IFBool v={f.trainingOfferAttached} />} />
+          <IFRow label="Date souhaitée de mise en service" value={f.commissioningDate} />
+        </IFSection>
+
+        {f.documentsProvided?.length ? (
+          <IFSection title="11 · Documentation fournie">
+            <div className="space-y-1">
+              {f.documentsProvided.map((d) => (
+                <div key={d} className="flex items-center gap-2 text-sm py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                  {d}
+                </div>
+              ))}
+            </div>
+          </IFSection>
+        ) : null}
+
       </CardContent>
     </Card>
   );

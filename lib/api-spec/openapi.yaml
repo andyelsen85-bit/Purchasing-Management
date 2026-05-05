@@ -1234,6 +1234,11 @@ components:
         estimatedAmount: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         neededBy: { type: ["string", "null"], format: date }
+        # Investment request questionnaire (GT Invest form)
+        investmentForm:
+          oneOf:
+            - $ref: "#/components/schemas/InvestmentForm"
+            - type: "null"
         # Step 2 - Quotation
         quotes:
           type: array
@@ -1372,6 +1377,7 @@ components:
         estimatedAmount: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         neededBy: { type: ["string", "null"], format: date }
+        investmentForm: { $ref: "#/components/schemas/InvestmentForm" }
       required: [title, departmentId, priority]
 
     UpdateWorkflowInput:
@@ -1384,6 +1390,7 @@ components:
         estimatedAmount: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         neededBy: { type: ["string", "null"], format: date }
+        investmentForm: { $ref: "#/components/schemas/InvestmentForm" }
         quotes:
           type: array
           items: { $ref: "#/components/schemas/QuoteEntry" }
@@ -1927,6 +1934,69 @@ components:
         detail: { type: ["string", "null"] }
         durationMs: { type: ["integer", "null"] }
       required: [name, status]
+
+    InvestmentForm:
+      type: object
+      description: |
+        GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE
+        D'INVESTISSEMENT). All fields optional — the form may be filled
+        incrementally. Stored as JSONB on the workflow row.
+      properties:
+        # 1 – Identification
+        projectLeader: { type: ["string", "null"] }
+        investmentTypes:
+          type: array
+          items: { type: string }
+        # 2 – Description du besoin
+        justification: { type: ["string", "null"] }
+        demoTested: { type: ["boolean", "null"] }
+        demoContext: { type: ["string", "null"] }
+        # 3 – Nature de la demande
+        requestNature: { type: ["string", "null"] }
+        replacedEquipmentRef: { type: ["string", "null"] }
+        replacedEquipmentLocation: { type: ["string", "null"] }
+        replacementReason: { type: ["string", "null"] }
+        decommissioned: { type: ["boolean", "null"] }
+        decommissionedNote: { type: ["string", "null"] }
+        # 4 – Aspects financiers
+        estimatedAmount5y: { type: ["number", "null"] }
+        exceptionProcedure: { type: ["string", "null"] }
+        exceptionJustification: { type: ["string", "null"] }
+        budgetPositionKnown: { type: ["string", "null"] }
+        budgetPosition: { type: ["string", "null"] }
+        # 5 – Fournisseur
+        supplierName: { type: ["string", "null"] }
+        supplierContact: { type: ["string", "null"] }
+        # 6 – Aspects techniques
+        architecturalWorks: { type: ["boolean", "null"] }
+        itConnection: { type: ["boolean", "null"] }
+        systemInterop: { type: ["boolean", "null"] }
+        accessTypes:
+          type: array
+          items: { type: string }
+        # 7 – Données, sécurité et conformité
+        dataTypes:
+          type: array
+          items: { type: string }
+        availabilityImpact: { type: ["string", "null"] }
+        hasAI: { type: ["boolean", "null"] }
+        # 8 – Consommables et sécurité
+        consumablesNeeded: { type: ["boolean", "null"] }
+        consumablesOfferAttached: { type: ["boolean", "null"] }
+        hazardousConsumables: { type: ["boolean", "null"] }
+        # 9 – Maintenance, hygiène et exploitation
+        warrantyDuration: { type: ["string", "null"] }
+        maintenanceContract: { type: ["boolean", "null"] }
+        cleaningRequired: { type: ["boolean", "null"] }
+        sterilizationRequired: { type: ["boolean", "null"] }
+        # 10 – Formation et mise en service
+        trainingRequired: { type: ["boolean", "null"] }
+        trainingOfferAttached: { type: ["boolean", "null"] }
+        commissioningDate: { type: ["string", "null"] }
+        # 11 – Documentation obligatoire
+        documentsProvided:
+          type: array
+          items: { type: string }
 
     NotificationEntry:
       type: object
