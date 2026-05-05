@@ -16,6 +16,8 @@ export async function runStartupMigrations(): Promise<void> {
     // Task #6: the legacy "NEW" workflow step has been retired.
     // Move any workflow still parked in NEW to QUOTATION and record
     // the transition in history so audit trails remain coherent.
+    // history.actor_id is NOT NULL, so we attribute the auto-migration
+    // to the workflow's original creator (always present, FK-valid).
     const moved = await db.execute(sql`
       WITH updated AS (
         UPDATE workflows
@@ -23,10 +25,10 @@ export async function runStartupMigrations(): Promise<void> {
                previous_step = 'NEW',
                last_step_change_at = NOW()
          WHERE current_step = 'NEW'
-        RETURNING id
+        RETURNING id, created_by_id
       )
       INSERT INTO history (workflow_id, action, from_step, to_step, actor_id, details)
-      SELECT id, 'ADVANCE', 'NEW', 'QUOTATION', NULL,
+      SELECT id, 'ADVANCE', 'NEW', 'QUOTATION', created_by_id,
              'Auto-migrated: NEW step retired (workflows now start at Quotation)'
         FROM updated
       RETURNING workflow_id
