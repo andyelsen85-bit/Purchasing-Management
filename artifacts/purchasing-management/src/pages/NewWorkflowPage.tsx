@@ -371,7 +371,7 @@ export function NewWorkflowPage() {
   function missingForStep(s: number): string[] {
     const m: string[] = [];
     if (s === 1) {
-      if (!title.trim()) m.push("Titre du workflow");
+      if (!title.trim()) m.push("Titre de la Demande");
       if (!departmentId) m.push("Département");
       if (!projectLeader.trim()) m.push("1.3 Responsable / Leader du projet");
       if (investmentTypes.length === 0)
@@ -554,7 +554,7 @@ export function NewWorkflowPage() {
       toast({
         variant: "destructive",
         title: "Création impossible",
-        description: extractApiError(err, "Le workflow n'a pas pu être créé."),
+        description: extractApiError(err, "La commande n'a pas pu être créée."),
       });
     } finally {
       setSubmitting(false);
@@ -632,10 +632,10 @@ export function NewWorkflowPage() {
           {/* ── STEP 1 ─────────────────────────────────────────────── */}
           {step === 1 && (
             <>
-              <SectionTitle number="0" label="Workflow" />
+              <SectionTitle number="0" label="Commande" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="title">Titre du workflow<Req /></Label>
+                  <Label htmlFor="title">Titre de la Demande<Req /></Label>
                   <Input
                     id="title"
                     value={title}
@@ -1273,7 +1273,7 @@ export function NewWorkflowPage() {
             data-testid="button-submit"
           >
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Créer le workflow
+            Créer la commande
           </Button>
         )}
       </div>
