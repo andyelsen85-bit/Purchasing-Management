@@ -24,7 +24,10 @@ router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> =>
   let active = 0;
   let done = 0;
   for (const w of visible) {
-    counts.set(w.currentStep, (counts.get(w.currentStep) ?? 0) + 1);
+    // Legacy NEW rows roll into the QUOTATION bucket so the per-step
+    // totals match the active flow that the dashboard renders.
+    const bucket = w.currentStep === "NEW" ? "QUOTATION" : w.currentStep;
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
     const age = Math.floor((Date.now() - new Date(w.lastStepChangeAt).getTime()) / 86_400_000);
     if (w.currentStep === "DONE") done++;
     else {

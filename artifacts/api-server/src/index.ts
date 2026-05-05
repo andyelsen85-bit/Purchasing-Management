@@ -3,6 +3,7 @@ import https from "node:https";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { db, tlsTable } from "@workspace/db";
+import { runStartupMigrations } from "./lib/startup-migrations";
 
 const rawPort = process.env["PORT"];
 
@@ -90,7 +91,15 @@ async function configureListeners(): Promise<{ ok: boolean; mode: string }> {
   __reloadHttps?: () => Promise<{ ok: boolean; mode: string }>;
 }).__reloadHttps = configureListeners;
 
-void configureListeners().catch((err) => {
+void (async () => {
+  try {
+    await runStartupMigrations();
+  } catch (err) {
+    logger.error({ err }, "Startup migrations failed; aborting boot");
+    process.exit(1);
+  }
+  await configureListeners();
+})().catch((err) => {
   logger.error({ err }, "Failed to start listeners");
   process.exit(1);
 });
