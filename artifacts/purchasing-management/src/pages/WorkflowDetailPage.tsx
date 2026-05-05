@@ -1082,6 +1082,30 @@ function QuotationPanel({
     missing.has("doc:QUOTE");
 
   return (
+    <div className="space-y-4">
+      {/* Request brief — surfaces the fields formerly captured in the
+          retired "1 · New request" step (description / category /
+          needed-by) at the top of the Main tab so a request landing in
+          QUOTATION still shows the original ask up-front. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Request brief</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+          <div>
+            <div className="text-xs text-muted-foreground">Description</div>
+            <div>{wf.description && wf.description.length > 0 ? wf.description : "—"}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Category</div>
+            <div>{wf.category && wf.category.length > 0 ? wf.category : "—"}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Needed by</div>
+            <div>{wf.neededBy ? new Date(wf.neededBy).toLocaleDateString() : "—"}</div>
+          </div>
+        </CardContent>
+      </Card>
     <Card
       className={
         quotesMissing ? "border-destructive ring-1 ring-destructive" : ""
@@ -1321,6 +1345,7 @@ function QuotationPanel({
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
