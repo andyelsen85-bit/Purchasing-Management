@@ -453,13 +453,12 @@ async function validateAdvancePrereqs(
         return "Attach the order document before advancing.";
       return null;
     case "DELIVERY":
-      // The delivery note attachment used to be mandatory, but in
-      // practice many suppliers don't issue a printed delivery slip,
-      // so the rule blocked legitimate workflows. We still require
-      // the delivered-on date so the audit trail is complete; the
-      // attachment is now optional.
-      if (!wf.deliveredOn)
-        return "Enter the delivery date before advancing.";
+      // Delivery has no hard prerequisites: the printed delivery
+      // slip is rarely issued by suppliers (so the attachment is
+      // optional), and the delivered-on date is informational —
+      // a workflow can legitimately advance even if the recorded
+      // delivery date precedes the order date (e.g. backdated
+      // entry, partial deliveries).
       return null;
     case "INVOICE":
       if (

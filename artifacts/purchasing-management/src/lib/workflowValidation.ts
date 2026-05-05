@@ -71,7 +71,7 @@ export function computeMissingFields(
       if (!hasDoc(docs, "ORDER")) out.add("doc:ORDER");
       return out;
     case "DELIVERY":
-      if (!wf.deliveredOn) out.add("deliveredOn");
+      // No required fields on Delivery — see server validateAdvancePrereqs.
       return out;
     case "INVOICE":
       if (!wf.invoiceNumber) out.add("invoiceNumber");

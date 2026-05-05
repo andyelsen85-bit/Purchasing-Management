@@ -2351,7 +2351,7 @@ function DeliveryPanel({
   const [deliveredOn, setDeliveredOn] = useState(wf.deliveredOn ?? "");
   const [deliveryNotes, setDeliveryNotes] = useState(wf.deliveryNotes ?? "");
   const save = useSaveWorkflow(wf, onChange);
-  const { missing, clearKey, setBeforeAdvance } = useMissingFields();
+  const { setBeforeAdvance } = useMissingFields();
   useEffect(() => {
     setBeforeAdvance(async () => {
       await save.mutateAsync({
@@ -2367,23 +2367,19 @@ function DeliveryPanel({
       <CardHeader>
         <CardTitle>Delivery</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Record the delivery date below. Attaching a delivery note is
-          optional — many suppliers don't issue one.
+          Record the delivery date below if known. Both the date and
+          the delivery note are optional — the date may legitimately
+          fall before the order date for backdated entries, and many
+          suppliers don't issue a printed delivery slip.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
-          <Label>
-            Delivered on<RequiredMark />
-          </Label>
+          <Label>Delivered on</Label>
           <Input
             type="date"
             value={deliveredOn}
-            onChange={(e) => {
-              setDeliveredOn(e.target.value);
-              if (e.target.value) clearKey("deliveredOn");
-            }}
-            className={missingInputCls(missing.has("deliveredOn"))}
+            onChange={(e) => setDeliveredOn(e.target.value)}
             data-testid="input-delivered-on"
           />
         </div>
