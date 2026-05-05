@@ -1,4 +1,3 @@
-import { Check } from "lucide-react";
 import { STEP_LABEL, type Step } from "@/lib/steps";
 
 interface Props {
@@ -82,17 +81,13 @@ export function StepProgress({ current, branch }: Props) {
               <div
                 className={`flex h-9 items-center justify-center rounded-md border px-2 text-[11px] font-medium transition ${
                   done
-                    ? "bg-primary/10 border-primary/30 text-primary"
+                    ? "bg-emerald-600 text-white border-emerald-700"
                     : active
                       ? "bg-primary text-primary-foreground border-primary shadow animate-pulse"
                       : "bg-muted/40 border-border text-muted-foreground"
                 }`}
               >
-                {done ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : (
-                  <span className="truncate">{STEP_LABEL[step]}</span>
-                )}
+                <span className="truncate">{STEP_LABEL[step]}</span>
               </div>
             </div>
           );
