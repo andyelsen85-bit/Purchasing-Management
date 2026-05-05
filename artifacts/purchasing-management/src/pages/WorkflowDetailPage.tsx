@@ -1000,10 +1000,18 @@ function QuotationPanel({
   // as the user types it (before saving). Falls back to the persisted
   // server flag if settings aren't loaded yet.
   const limitX = settings?.limitX ?? null;
+  // Second threshold — above this the workflow becomes a Livre I /
+  // Livre II publication, which is a public bid with a single
+  // awarded supplier and therefore does NOT require three competing
+  // quotes. Only the band between Standard (X) and Livre I (Y)
+  // triggers the 3-quote rule.
+  const limitY =
+    (settings as { quoteThresholdLivreI?: number | null } | undefined)
+      ?.quoteThresholdLivreI ?? null;
   const firstAmount = quotes.find((q) => q.amount != null)?.amount ?? null;
   const threeQuotesRequired =
     limitX != null && firstAmount != null
-      ? firstAmount > limitX
+      ? firstAmount > limitX && (limitY == null || firstAmount <= limitY)
       : wf.threeQuoteRequired;
   // Match the server's predicate in `validateAdvancePrereqs` exactly,
   // otherwise the counter and the advance-gate disagree (off-by-one
@@ -2174,15 +2182,12 @@ function OrderingPanel({
     setOrderNumber(wf.orderNumber ?? "");
     setOrderDate(toDateInput(wf.orderDate));
   }, [wf.orderNumber, wf.orderDate]);
-  // Defensive: clear the "missing" badge as soon as the field has a
-  // value locally — covers the case where the user filled the input
-  // after a failed Advance attempt and the onChange clear didn't fire
-  // (e.g. autofill, or value set via the date picker without a
-  // bubbling input event).
+  // Defensive: clear the "missing" badge as soon as the order number
+  // has a value locally — covers the case where the user filled the
+  // input after a failed Advance attempt.
   useEffect(() => {
     if (orderNumber) clearKey("orderNumber");
-    if (orderDate) clearKey("orderDate");
-  }, [orderNumber, orderDate, clearKey]);
+  }, [orderNumber, clearKey]);
   return (
     <div className="space-y-4">
       {/* Recap of prior steps lives on the dedicated Summary tab now;
@@ -2211,17 +2216,11 @@ function OrderingPanel({
             />
           </div>
           <div className="space-y-1">
-            <Label>
-              Order date<RequiredMark />
-            </Label>
+            <Label>Order date</Label>
             <Input
               type="date"
               value={orderDate}
-              onChange={(e) => {
-                setOrderDate(e.target.value);
-                if (e.target.value) clearKey("orderDate");
-              }}
-              className={missingInputCls(missing.has("orderDate"))}
+              onChange={(e) => setOrderDate(e.target.value)}
               data-testid="input-order-date"
             />
           </div>

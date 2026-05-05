@@ -309,7 +309,13 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
       .find((a): a is number => a != null);
     const tier = derivePublicationTier(firstAmount, settings);
     update.publicationTier = tier;
-    update.threeQuoteRequired = tier !== "STANDARD";
+    // Only the THREE_QUOTES tier (between Standard and Livre I
+    // thresholds) actually requires three competing supplier quotes.
+    // STANDARD is below the small-purchase limit, and LIVRE_I /
+    // LIVRE_II go through formal public publication where there is
+    // a single awarded supplier — none of those three need a 3-way
+    // comparison.
+    update.threeQuoteRequired = tier === "THREE_QUOTES";
   }
   if (b.managerApproved !== undefined) update.managerApproved = b.managerApproved;
   if (b.managerComment !== undefined) update.managerComment = b.managerComment;
@@ -437,8 +443,12 @@ async function validateAdvancePrereqs(
         return "Record the GT Invest decision before advancing.";
       return null;
     case "ORDERING":
-      if (!wf.orderNumber || !wf.orderDate)
-        return "Enter the order number and date before advancing.";
+      // Only the order number is mandatory — the order date is
+      // informational and may legitimately be left blank when the
+      // supplier has not confirmed it yet, so we don't gate the
+      // advance on it.
+      if (!wf.orderNumber)
+        return "Enter the order number before advancing.";
       if (!hasDoc("ORDER"))
         return "Attach the order document before advancing.";
       return null;

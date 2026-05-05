@@ -64,8 +64,10 @@ export function computeMissingFields(
         out.add("gtInvestDecision");
       return out;
     case "ORDERING":
+      // Order date is no longer required to advance — it's purely
+      // informational. Keep the order number and the attached order
+      // document as the only blocking prerequisites.
       if (!wf.orderNumber) out.add("orderNumber");
-      if (!wf.orderDate) out.add("orderDate");
       if (!hasDoc(docs, "ORDER")) out.add("doc:ORDER");
       return out;
     case "DELIVERY":

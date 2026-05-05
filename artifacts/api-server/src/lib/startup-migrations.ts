@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { logger } from "./logger";
+import { derivePublicationTier, getSettings } from "./settings";
 
 /**
  * One-shot, idempotent data migrations that run on server boot.
@@ -40,6 +41,57 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(
         { migrated: movedCount },
         "Startup migration: moved legacy NEW workflows to QUOTATION",
+      );
+    }
+
+    // Tier rule change: only THREE_QUOTES (between Standard and
+    // Livre I thresholds) requires three competing quotes. LIVRE_I
+    // and LIVRE_II are public-publication regimes with a single
+    // awarded supplier and only need one quote. Backfill any rows
+    // that were previously flagged as `three_quote_required = true`
+    // for a non-THREE_QUOTES tier (or that have a stale tier vs the
+    // current settings thresholds and stored quote amounts). Safe
+    // to re-run: rows already in the correct state are no-ops.
+    const settings = await getSettings();
+    type WfRow = {
+      id: number;
+      quotes: unknown;
+      publication_tier: string | null;
+      three_quote_required: boolean | null;
+    };
+    const rowsRes = (await db.execute(sql`
+      SELECT id, quotes, publication_tier, three_quote_required
+        FROM workflows
+       WHERE deleted_at IS NULL
+    `)) as { rows?: WfRow[] };
+    const allRows = rowsRes.rows ?? [];
+    let tierFixed = 0;
+    for (const r of allRows) {
+      const quotes = Array.isArray(r.quotes)
+        ? (r.quotes as Array<{ amount?: number | null }>)
+        : [];
+      const firstAmount = quotes
+        .map((q) => q?.amount)
+        .find((a): a is number => a != null);
+      const tier = derivePublicationTier(firstAmount, settings);
+      const expectedThreeQuote = tier === "THREE_QUOTES";
+      if (
+        r.publication_tier !== tier ||
+        r.three_quote_required !== expectedThreeQuote
+      ) {
+        await db.execute(sql`
+          UPDATE workflows
+             SET publication_tier = ${tier},
+                 three_quote_required = ${expectedThreeQuote}
+           WHERE id = ${r.id}
+        `);
+        tierFixed += 1;
+      }
+    }
+    if (tierFixed > 0) {
+      logger.info(
+        { migrated: tierFixed },
+        "Startup migration: re-derived publication tier / three_quote_required for existing workflows",
       );
     }
   } catch (err) {
