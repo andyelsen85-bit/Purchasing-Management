@@ -2363,7 +2363,6 @@ function DeliveryPanel({
   }, [setBeforeAdvance, save, wf.id, deliveredOn, deliveryNotes]);
   return (
     <div className="space-y-4">
-      <PriorStepsRecap wf={wf} throughStep="DELIVERY" />
     <Card>
       <CardHeader>
         <CardTitle>Delivery</CardTitle>
@@ -2624,7 +2623,6 @@ function InvoiceValidationPanel({
   const busy = save.isPending || reject.isPending || signing;
   return (
     <div className="space-y-4">
-      <PriorStepsRecap wf={wf} throughStep="VALIDATING_INVOICE" />
     <Card>
       <CardHeader>
         <CardTitle>Validate Invoice</CardTitle>
