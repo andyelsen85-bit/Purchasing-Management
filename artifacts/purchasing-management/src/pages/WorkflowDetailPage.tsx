@@ -2491,17 +2491,11 @@ function InvoicePanel({
             />
           </div>
           <div className="space-y-1">
-            <Label>
-              Invoice date<RequiredMark />
-            </Label>
+            <Label>Invoice date</Label>
             <Input
               type="date"
               value={invoiceDate}
-              onChange={(e) => {
-                setInvoiceDate(e.target.value);
-                if (e.target.value) clearKey("invoiceDate");
-              }}
-              className={missingInputCls(missing.has("invoiceDate"))}
+              onChange={(e) => setInvoiceDate(e.target.value)}
               data-testid="input-invoice-date"
             />
           </div>

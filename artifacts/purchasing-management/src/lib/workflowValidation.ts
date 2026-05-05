@@ -76,7 +76,6 @@ export function computeMissingFields(
     case "INVOICE":
       if (!wf.invoiceNumber) out.add("invoiceNumber");
       if (wf.invoiceAmount == null) out.add("invoiceAmount");
-      if (!wf.invoiceDate) out.add("invoiceDate");
       if (!hasDoc(docs, "INVOICE")) out.add("doc:INVOICE");
       return out;
     case "VALIDATING_INVOICE":

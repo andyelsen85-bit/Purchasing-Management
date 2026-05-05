@@ -461,12 +461,11 @@ async function validateAdvancePrereqs(
       // entry, partial deliveries).
       return null;
     case "INVOICE":
-      if (
-        !wf.invoiceNumber ||
-        wf.invoiceAmount == null ||
-        !wf.invoiceDate
-      )
-        return "Enter the invoice number, amount, and date before advancing.";
+      // Invoice date is informational (matches the Order/Delivery
+      // date rules) — only the number, amount and the attached
+      // invoice document are required to advance.
+      if (!wf.invoiceNumber || wf.invoiceAmount == null)
+        return "Enter the invoice number and amount before advancing.";
       if (!hasDoc("INVOICE"))
         return "Attach the invoice document before advancing.";
       return null;
