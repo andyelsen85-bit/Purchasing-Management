@@ -316,18 +316,8 @@ function QueuePanel() {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Pending GT Invest workflows</CardTitle>
-        <Button asChild variant="outline" size="sm">
-          <a
-            href="/api/gt-invest/export"
-            target="_blank"
-            rel="noreferrer"
-            data-testid="button-export-pdf"
-          >
-            <FileDown className="mr-2 h-4 w-4" /> Export merged PDF
-          </a>
-        </Button>
+      <CardHeader>
+        <CardTitle>Dossiers GT Invest en attente</CardTitle>
       </CardHeader>
       <CardContent>
         {orderedGroups.length === 0 ? (
@@ -360,14 +350,26 @@ function QueuePanel() {
                       data-testid={`gt-meeting-prepared-${g.meeting.id}`}
                     >
                       <CheckCircle2 className="h-3 w-3" />
-                      Prepared {new Date(g.meeting.preparedAt).toLocaleString()}
+                      Préparé le {new Date(g.meeting.preparedAt).toLocaleString()}
                       {g.meeting.preparedByName
-                        ? ` by ${g.meeting.preparedByName}`
+                        ? ` par ${g.meeting.preparedByName}`
                         : ""}
                     </Badge>
                   )}
                   {g.meeting && (
-                    <div className="ml-auto">
+                    <div className="ml-auto flex items-center gap-2">
+                      {g.workflows.length > 0 && (
+                        <Button asChild variant="outline" size="sm">
+                          <a
+                            href={`/api/gt-invest/dates/${g.meeting.id}/export`}
+                            target="_blank"
+                            rel="noreferrer"
+                            data-testid={`button-export-pdf-${g.meeting.id}`}
+                          >
+                            <FileDown className="mr-2 h-3.5 w-3.5" /> Exporter PDF
+                          </a>
+                        </Button>
+                      )}
                       <NotifyMeetingButton
                         dateId={g.meeting.id}
                         disabled={g.workflows.length === 0}
