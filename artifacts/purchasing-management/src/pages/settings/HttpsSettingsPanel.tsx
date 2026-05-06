@@ -12,6 +12,7 @@ import {
   useGetCertInfo,
   useGenerateCsr,
   useImportCert,
+  useImportCertWithKey,
 } from "@/lib/api";
 
 /**
@@ -48,6 +49,21 @@ export function HttpsSettingsPanel() {
         qc.invalidateQueries();
         setImportPem("");
         setImportChain("");
+      },
+    },
+  });
+
+  const [importKeyPem, setImportKeyPem] = useState("");
+  const [importKeyCertPem, setImportKeyCertPem] = useState("");
+  const [importKeyChain, setImportKeyChain] = useState("");
+
+  const importCertWithKey = useImportCertWithKey({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries();
+        setImportKeyPem("");
+        setImportKeyCertPem("");
+        setImportKeyChain("");
       },
     },
   });
@@ -299,6 +315,86 @@ export function HttpsSettingsPanel() {
               for HTTPS to use the new certificate.
             </AlertDescription>
           </Alert>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            3 — Importer certificat + clé privée (sans CSR)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Utilisez cette section si vous disposez déjà du certificat et de la
+            clé privée (ex. : certificat exporté depuis un autre serveur ou
+            fourni par votre CA). Le serveur vérifie que la clé et le
+            certificat correspondent avant de les enregistrer.
+          </p>
+          <div className="space-y-1">
+            <Label>Certificat (PEM)</Label>
+            <Textarea
+              rows={8}
+              className="font-mono text-xs"
+              value={importKeyCertPem}
+              onChange={(e) => setImportKeyCertPem(e.target.value)}
+              placeholder="-----BEGIN CERTIFICATE-----"
+              data-testid="textarea-cert-with-key-pem"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Clé privée (PEM)</Label>
+            <Textarea
+              rows={8}
+              className="font-mono text-xs"
+              value={importKeyPem}
+              onChange={(e) => setImportKeyPem(e.target.value)}
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              data-testid="textarea-private-key-pem"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Chaîne / intermédiaires (optionnel)</Label>
+            <Textarea
+              rows={4}
+              className="font-mono text-xs"
+              value={importKeyChain}
+              onChange={(e) => setImportKeyChain(e.target.value)}
+              data-testid="textarea-cert-with-key-chain"
+            />
+          </div>
+          {importCertWithKey.isError && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                {String(
+                  (importCertWithKey.error as { message?: string })?.message ??
+                    "Erreur lors de l'import.",
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className="flex justify-end">
+            <Button
+              onClick={() =>
+                importCertWithKey.mutate({
+                  data: {
+                    certPem: importKeyCertPem,
+                    privateKeyPem: importKeyPem,
+                    chainPem: importKeyChain || null,
+                  },
+                })
+              }
+              disabled={
+                !importKeyCertPem || !importKeyPem || importCertWithKey.isPending
+              }
+              data-testid="button-import-cert-with-key"
+            >
+              {importCertWithKey.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Importer certificat + clé
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

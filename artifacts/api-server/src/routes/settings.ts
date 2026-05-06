@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import ExcelJS from "exceljs";
+import multer from "multer";
 import {
   db,
   gtInvestDatesTable,
@@ -76,6 +78,7 @@ router.patch(
                 username: smtp.username,
                 password: smtp.password,
                 secure: smtp.secure,
+                skipTlsVerify: smtp.skipTlsVerify,
               }),
               ...(smtp.fromAddress != null ? { from: smtp.fromAddress } : {}),
             },
@@ -227,6 +230,7 @@ router.post(
     // stored secret. Only a *populated* override replaces it.
     const password = body.password ? body.password : stored.password ?? null;
     const fromAddress = body.fromAddress ?? stored.from ?? null;
+    const skipTlsVerify = body.skipTlsVerify ?? stored.skipTlsVerify ?? false;
 
     if (!host) {
       res.status(400).json({ ok: false, message: "SMTP host is required." });
@@ -239,6 +243,7 @@ router.post(
         port,
         secure,
         auth: username && password ? { user: username, pass: password } : undefined,
+        ...(skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
       });
       // verify() runs an EHLO (and AUTH if creds are supplied) without
       // sending anything — gives a fast, specific failure when the host
@@ -264,6 +269,61 @@ router.post(
       req.log.warn({ err: String(err) }, "SMTP test failed");
       res.json({ ok: false, message: String(err instanceof Error ? err.message : err) });
     }
+  },
+);
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+router.get(
+  "/settings/budget-positions/export",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (_req, res): Promise<void> => {
+    const s = await getSettings();
+    const positions = s.budgetPositions ?? [];
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Positions budgétaires");
+    ws.getColumn(1).header = "Position budgétaire";
+    ws.getColumn(1).width = 50;
+    for (const p of positions) ws.addRow([p]);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", 'attachment; filename="positions-budgetaires.xlsx"');
+    await wb.xlsx.write(res as import("stream").Writable);
+    res.end();
+  },
+);
+
+router.post(
+  "/settings/budget-positions/import",
+  requireAuth,
+  requireRole("ADMIN"),
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    if (!req.file) {
+      res.status(400).json({ error: "Fichier manquant." });
+      return;
+    }
+    const wb = new ExcelJS.Workbook();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await wb.xlsx.load(req.file.buffer as unknown as any);
+    const ws = wb.worksheets[0];
+    if (!ws) {
+      res.status(400).json({ error: "Aucune feuille trouvée dans le fichier." });
+      return;
+    }
+    const positions: string[] = [];
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const cell = row.getCell(1);
+      const val = String(cell.value ?? "").trim();
+      if (val) positions.push(val);
+    });
+    await updateSettingsRecord({ budgetPositions: positions });
+    await audit(getUser(req).id, "SETTINGS_UPDATE", "settings", undefined, "budget-positions-import");
+    res.json({ imported: positions.length, positions });
   },
 );
 

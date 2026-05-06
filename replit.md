@@ -271,21 +271,26 @@ Manages:
 - Reseller Companies (each company can have multiple contacts)
 - Contacts (name, email, linked to company)
 - Lists: GT Invest meeting dates, GT Invest result options
-- Mail server (SMTP host, port, credentials, sender address)
+- Mail server (SMTP host, port, credentials, sender address, **skip TLS verify toggle**)
 - Limit X (global price threshold for single vs 3-quote model)
 - Certificate signing toggle (enable/disable for Validating Invoice step)
 - GT Invest PDF export email recipients
 - Logo upload (top-left corner of app)
+- Budget positions: manual list + **Excel export/import** (server-side ExcelJS)
 
 ---
 
 ### HTTPS Management (Admin Area)
 - Generate CSR (fill FQDN, Org, SANs → download .csr)
 - Private key generated and stored server-side
-- Import signed certificate (.crt + chain)
+- Import signed certificate (.crt + chain) — requires prior CSR
+- **Direct import: certificate + private key together** (`POST /api/admin/cert-with-key`, validates key↔cert match)
 - Certificate dashboard: issuer, validity dates, SANs, fingerprint, expiry warning
 - Re-key/renew at any time
 - Port 443 = HTTPS; Port 80 = HTTP (redirects to HTTPS once cert installed)
+
+### Codegen Note
+- `lib/api-spec/fix-types-barrel.mjs` runs after orval to patch `types/index.ts` — removes re-exports that would create TS2308 name collisions with Zod schema consts in `api.ts`. Run automatically via `codegen` script.
 
 ---
 

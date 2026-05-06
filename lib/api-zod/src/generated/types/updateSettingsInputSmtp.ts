@@ -21,4 +21,9 @@ export type UpdateSettingsInputSmtp = {
   secure?: boolean | null;
   /** @nullable */
   fromAddress?: string | null;
+  /**
+   * When true, skip TLS certificate validation (useful for self-signed certs)
+   * @nullable
+   */
+  skipTlsVerify?: boolean | null;
 };

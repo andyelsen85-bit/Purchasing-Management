@@ -2217,6 +2217,7 @@ export const GetSettingsResponse = zod.object({
     passwordSet: zod.boolean(),
     secure: zod.boolean(),
     fromAddress: zod.string().nullish(),
+    skipTlsVerify: zod.boolean(),
   }),
 });
 
@@ -2274,6 +2275,12 @@ export const UpdateSettingsBody = zod.object({
       password: zod.string().nullish(),
       secure: zod.boolean().nullish(),
       fromAddress: zod.string().nullish(),
+      skipTlsVerify: zod
+        .boolean()
+        .nullish()
+        .describe(
+          "When true, skip TLS certificate validation (useful for self-signed certs)",
+        ),
     })
     .optional(),
 });
@@ -2328,6 +2335,7 @@ export const UpdateSettingsResponse = zod.object({
     passwordSet: zod.boolean(),
     secure: zod.boolean(),
     fromAddress: zod.string().nullish(),
+    skipTlsVerify: zod.boolean(),
   }),
 });
 
@@ -2430,6 +2438,35 @@ export const EmptyTrashResponse = zod.object({
 });
 
 /**
+ * Stores both the certificate and its private key without requiring a prior
+CSR to have been generated on this server. Validates that the key and
+certificate match before persisting. Admin-only.
+
+ * @summary Import certificate + private key directly (no CSR required)
+ */
+export const ImportCertWithKeyBody = zod
+  .object({
+    certPem: zod.string(),
+    privateKeyPem: zod.string(),
+    chainPem: zod.string().nullish(),
+  })
+  .describe(
+    "Import a certificate together with its private key, bypassing CSR\ngeneration. The server validates that the private key and certificate\nmatch before storing them.\n",
+  );
+
+/**
+ * @summary Import budget positions from an Excel file (replaces existing list)
+ */
+export const ImportBudgetPositionsBody = zod.object({
+  file: zod.instanceof(File).optional(),
+});
+
+export const ImportBudgetPositionsResponse = zod.object({
+  imported: zod.number(),
+  positions: zod.array(zod.string()).optional(),
+});
+
+/**
  * Runs a real LDAP search (and optional user bind) against the
 currently saved LDAP settings so the operator can confirm
 connectivity, credentials, and the AD group → role/department
@@ -2504,6 +2541,7 @@ export const TestSmtpBody = zod.object({
     .nullish()
     .describe("Optional. When omitted, the saved password is reused."),
   fromAddress: zod.string().nullish(),
+  skipTlsVerify: zod.boolean().nullish(),
 });
 
 export const TestSmtpResponse = zod.object({

@@ -49,7 +49,10 @@ import type {
   GtInvestResult,
   HealthStatus,
   HistoryEntry,
+  ImportBudgetPositions200,
+  ImportBudgetPositionsBody,
   ImportCertInput,
+  ImportCertWithKeyInput,
   LdapSyncRolesResult,
   LdapTestInput,
   LdapTestResult,
@@ -4619,6 +4622,262 @@ export const useEmptyTrash = <
   TContext
 > => {
   return useMutation(getEmptyTrashMutationOptions(options));
+};
+
+/**
+ * Stores both the certificate and its private key without requiring a prior
+CSR to have been generated on this server. Validates that the key and
+certificate match before persisting. Admin-only.
+
+ * @summary Import certificate + private key directly (no CSR required)
+ */
+export const getImportCertWithKeyUrl = () => {
+  return `/api/admin/cert-with-key`;
+};
+
+export const importCertWithKey = async (
+  importCertWithKeyInput: ImportCertWithKeyInput,
+  options?: RequestInit,
+): Promise<CertInfo> => {
+  return customFetch<CertInfo>(getImportCertWithKeyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(importCertWithKeyInput),
+  });
+};
+
+export const getImportCertWithKeyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importCertWithKey>>,
+    TError,
+    { data: BodyType<ImportCertWithKeyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importCertWithKey>>,
+  TError,
+  { data: BodyType<ImportCertWithKeyInput> },
+  TContext
+> => {
+  const mutationKey = ["importCertWithKey"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importCertWithKey>>,
+    { data: BodyType<ImportCertWithKeyInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return importCertWithKey(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportCertWithKeyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importCertWithKey>>
+>;
+export type ImportCertWithKeyMutationBody = BodyType<ImportCertWithKeyInput>;
+export type ImportCertWithKeyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Import certificate + private key directly (no CSR required)
+ */
+export const useImportCertWithKey = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importCertWithKey>>,
+    TError,
+    { data: BodyType<ImportCertWithKeyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof importCertWithKey>>,
+  TError,
+  { data: BodyType<ImportCertWithKeyInput> },
+  TContext
+> => {
+  return useMutation(getImportCertWithKeyMutationOptions(options));
+};
+
+/**
+ * @summary Export budget positions as Excel (.xlsx)
+ */
+export const getExportBudgetPositionsUrl = () => {
+  return `/api/settings/budget-positions/export`;
+};
+
+export const exportBudgetPositions = async (
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getExportBudgetPositionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportBudgetPositionsQueryKey = () => {
+  return [`/api/settings/budget-positions/export`] as const;
+};
+
+export const getExportBudgetPositionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportBudgetPositions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportBudgetPositions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportBudgetPositionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportBudgetPositions>>
+  > = ({ signal }) => exportBudgetPositions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportBudgetPositions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportBudgetPositionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportBudgetPositions>>
+>;
+export type ExportBudgetPositionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export budget positions as Excel (.xlsx)
+ */
+
+export function useExportBudgetPositions<
+  TData = Awaited<ReturnType<typeof exportBudgetPositions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportBudgetPositions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportBudgetPositionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Import budget positions from an Excel file (replaces existing list)
+ */
+export const getImportBudgetPositionsUrl = () => {
+  return `/api/settings/budget-positions/import`;
+};
+
+export const importBudgetPositions = async (
+  importBudgetPositionsBody: ImportBudgetPositionsBody,
+  options?: RequestInit,
+): Promise<ImportBudgetPositions200> => {
+  const formData = new FormData();
+  if (importBudgetPositionsBody.file !== undefined) {
+    formData.append(`file`, importBudgetPositionsBody.file);
+  }
+
+  return customFetch<ImportBudgetPositions200>(getImportBudgetPositionsUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getImportBudgetPositionsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importBudgetPositions>>,
+    TError,
+    { data: BodyType<ImportBudgetPositionsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importBudgetPositions>>,
+  TError,
+  { data: BodyType<ImportBudgetPositionsBody> },
+  TContext
+> => {
+  const mutationKey = ["importBudgetPositions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importBudgetPositions>>,
+    { data: BodyType<ImportBudgetPositionsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return importBudgetPositions(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportBudgetPositionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importBudgetPositions>>
+>;
+export type ImportBudgetPositionsMutationBody =
+  BodyType<ImportBudgetPositionsBody>;
+export type ImportBudgetPositionsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Import budget positions from an Excel file (replaces existing list)
+ */
+export const useImportBudgetPositions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importBudgetPositions>>,
+    TError,
+    { data: BodyType<ImportBudgetPositionsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof importBudgetPositions>>,
+  TError,
+  { data: BodyType<ImportBudgetPositionsBody> },
+  TContext
+> => {
+  return useMutation(getImportBudgetPositionsMutationOptions(options));
 };
 
 /**

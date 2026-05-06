@@ -94,6 +94,8 @@ export interface SmtpConfig {
   password?: string | null;
   secure?: boolean | null;
   from?: string | null;
+  /** When true, skip TLS certificate validation (useful for self-signed certs). */
+  skipTlsVerify?: boolean | null;
 }
 
 export interface NotificationContext {
@@ -155,6 +157,7 @@ export async function sendNotification(
         cfg.username && cfg.password
           ? { user: cfg.username, pass: cfg.password }
           : undefined,
+      ...(cfg.skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
     });
     await transport.sendMail({
       from: cfg.from ?? cfg.username ?? "noreply@example.com",

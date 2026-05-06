@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import forge from "node-forge";
 import { db, tlsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { GenerateCsrBody, ImportCertBody } from "@workspace/api-zod";
+import { GenerateCsrBody, ImportCertBody, ImportCertWithKeyBody } from "@workspace/api-zod";
 import { requireAuth, requireRole, getUser } from "../middlewares/auth";
 import { audit } from "../lib/audit";
 
@@ -165,6 +165,85 @@ router.post(
         chainPem: parsed.data.chainPem ?? null,
       })
       .where(eq(tlsTable.id, state.id));
+    const sans: string[] = [];
+    const sanExt = cert.getExtension("subjectAltName") as
+      | { altNames?: Array<{ value?: string }> }
+      | undefined;
+    if (sanExt?.altNames) for (const n of sanExt.altNames) if (n.value) sans.push(n.value);
+    const md = forge.md.sha256.create();
+    md.update(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes());
+    await audit(getUser(req).id, "CERT_IMPORT", "tls");
+    res.status(201).json({
+      present: true,
+      subject: cert.subject.attributes.map((a) => `${a.shortName}=${a.value}`).join(", "),
+      issuer: cert.issuer.attributes.map((a) => `${a.shortName}=${a.value}`).join(", "),
+      validFrom: cert.validity.notBefore,
+      validTo: cert.validity.notAfter,
+      sans,
+      fingerprint: md.digest().toHex(),
+    });
+  },
+);
+
+/**
+ * POST /admin/cert-with-key
+ *
+ * Imports a certificate together with its private key directly, without
+ * requiring a CSR to have been previously generated on this server.
+ * Validates that the private key and certificate match before persisting.
+ */
+router.post(
+  "/admin/cert-with-key",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req, res): Promise<void> => {
+    const parsed = ImportCertWithKeyBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    let cert: forge.pki.Certificate;
+    try {
+      cert = forge.pki.certificateFromPem(parsed.data.certPem);
+    } catch {
+      res.status(400).json({ error: "Invalid certificate PEM." });
+      return;
+    }
+
+    try {
+      const priv = forge.pki.privateKeyFromPem(parsed.data.privateKeyPem);
+      const certPub = cert.publicKey as forge.pki.rsa.PublicKey;
+      const derivedPub = forge.pki.setRsaPublicKey(
+        (priv as forge.pki.rsa.PrivateKey).n,
+        (priv as forge.pki.rsa.PrivateKey).e,
+      );
+      if (
+        forge.pki.publicKeyToPem(certPub).trim() !==
+        forge.pki.publicKeyToPem(derivedPub).trim()
+      ) {
+        res.status(400).json({
+          error: "La clé privée ne correspond pas au certificat fourni.",
+        });
+        return;
+      }
+    } catch (err) {
+      res.status(400).json({
+        error: `Impossible de valider la clé privée : ${String((err as Error).message ?? err)}`,
+      });
+      return;
+    }
+
+    const state = await getOrCreateState();
+    await db
+      .update(tlsTable)
+      .set({
+        certPem: parsed.data.certPem,
+        chainPem: parsed.data.chainPem ?? null,
+        privateKeyPem: parsed.data.privateKeyPem,
+      })
+      .where(eq(tlsTable.id, state.id));
+
     const sans: string[] = [];
     const sanExt = cert.getExtension("subjectAltName") as
       | { altNames?: Array<{ value?: string }> }

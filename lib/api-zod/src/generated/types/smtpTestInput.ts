@@ -24,4 +24,6 @@ export interface SmtpTestInput {
   password?: string | null;
   /** @nullable */
   fromAddress?: string | null;
+  /** @nullable */
+  skipTlsVerify?: boolean | null;
 }

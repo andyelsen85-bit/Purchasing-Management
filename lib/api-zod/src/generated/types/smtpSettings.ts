@@ -18,4 +18,5 @@ export interface SmtpSettings {
   secure: boolean;
   /** @nullable */
   fromAddress?: string | null;
+  skipTlsVerify: boolean;
 }

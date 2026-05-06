@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Save,
   Loader2,
@@ -1545,6 +1545,7 @@ function SmtpSettingsPanel() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fromAddress, setFromAddress] = useState("");
+  const [skipTlsVerify, setSkipTlsVerify] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string | null } | null>(null);
 
@@ -1557,6 +1558,7 @@ function SmtpSettingsPanel() {
     setUsername(s.smtp.username ?? "");
     setPassword("");
     setFromAddress(s.smtp.fromAddress ?? "");
+    setSkipTlsVerify(s.smtp.skipTlsVerify ?? false);
   }, [s]);
 
   return (
@@ -1599,6 +1601,19 @@ function SmtpSettingsPanel() {
               data-testid="switch-smtp-secure"
             />
           </div>
+          <div className="flex items-center justify-between rounded-md border p-3 sm:col-span-2">
+            <div className="space-y-0.5">
+              <Label>Ignorer les erreurs de certificat TLS</Label>
+              <p className="text-xs text-muted-foreground">
+                Accepter les certificats auto-signés ou non vérifiables du serveur SMTP.
+              </p>
+            </div>
+            <Switch
+              checked={skipTlsVerify}
+              onCheckedChange={setSkipTlsVerify}
+              data-testid="switch-smtp-skip-tls"
+            />
+          </div>
           <div className="space-y-1">
             <Label>Username</Label>
             <Input
@@ -1637,6 +1652,7 @@ function SmtpSettingsPanel() {
                     host: host || null,
                     port,
                     secure,
+                    skipTlsVerify,
                     username: username || null,
                     ...(password ? { password } : {}),
                     fromAddress: fromAddress || null,
@@ -1684,6 +1700,7 @@ function SmtpSettingsPanel() {
                       host: host || null,
                       port,
                       secure,
+                      skipTlsVerify,
                       username: username || null,
                       ...(password ? { password } : {}),
                       fromAddress: fromAddress || null,
@@ -2493,8 +2510,11 @@ function GtDatesPanel() {
 function BudgetPositionsPanel() {
   const { data: s } = useGetSettings();
   const save = useSaveSettings();
+  const qc = useQueryClient();
   const [positions, setPositions] = useState<string[]>([]);
   const [next, setNext] = useState("");
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!s) return;
@@ -2556,7 +2576,63 @@ function BudgetPositionsPanel() {
             ))
           )}
         </div>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              data-testid="button-export-budget-positions"
+            >
+              <a href="/api/settings/budget-positions/export" download>
+                <Download className="mr-2 h-4 w-4" /> Exporter Excel
+              </a>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={importing}
+              onClick={() => importInputRef.current?.click()}
+              data-testid="button-import-budget-positions"
+            >
+              {importing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Importer Excel
+            </Button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                e.target.value = "";
+                setImporting(true);
+                try {
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  const resp = await fetch("/api/settings/budget-positions/import", {
+                    method: "POST",
+                    body: fd,
+                    credentials: "include",
+                  });
+                  if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error((err as { error?: string }).error ?? "Erreur import");
+                  }
+                  await qc.invalidateQueries();
+                } catch (err) {
+                  alert(String(err instanceof Error ? err.message : err));
+                } finally {
+                  setImporting(false);
+                }
+              }}
+            />
+          </div>
           <Button
             onClick={() =>
               save.mutate({ data: { budgetPositions: positions } })
@@ -2567,7 +2643,7 @@ function BudgetPositionsPanel() {
             {save.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            <Save className="mr-2 h-4 w-4" /> Save
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
           </Button>
         </div>
       </CardContent>

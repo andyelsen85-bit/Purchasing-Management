@@ -795,6 +795,7 @@ export interface SmtpSettings {
   secure: boolean;
   /** @nullable */
   fromAddress?: string | null;
+  skipTlsVerify: boolean;
 }
 
 export interface ArchiveAttachmentsInput {
@@ -928,6 +929,11 @@ export type UpdateSettingsInputSmtp = {
   secure?: boolean | null;
   /** @nullable */
   fromAddress?: string | null;
+  /**
+   * When true, skip TLS certificate validation (useful for self-signed certs)
+   * @nullable
+   */
+  skipTlsVerify?: boolean | null;
 };
 
 export interface UpdateSettingsInput {
@@ -986,6 +992,8 @@ export interface SmtpTestInput {
   password?: string | null;
   /** @nullable */
   fromAddress?: string | null;
+  /** @nullable */
+  skipTlsVerify?: boolean | null;
 }
 
 export interface SmtpTestResult {
@@ -1070,6 +1078,19 @@ export interface CertInfo {
 
 export interface ImportCertInput {
   certPem: string;
+  /** @nullable */
+  chainPem?: string | null;
+}
+
+/**
+ * Import a certificate together with its private key, bypassing CSR
+generation. The server validates that the private key and certificate
+match before storing them.
+
+ */
+export interface ImportCertWithKeyInput {
+  certPem: string;
+  privateKeyPem: string;
   /** @nullable */
   chainPem?: string | null;
 }
@@ -1228,4 +1249,13 @@ export type ListAuditLogParams = {
 export type EmptyTrash200 = {
   /** Count of workflows permanently removed */
   deleted: number;
+};
+
+export type ImportBudgetPositionsBody = {
+  file?: Blob;
+};
+
+export type ImportBudgetPositions200 = {
+  imported: number;
+  positions?: string[];
 };

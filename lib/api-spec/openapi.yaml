@@ -887,6 +887,68 @@ paths:
                     type: integer
                     description: Count of workflows permanently removed
 
+  /admin/cert-with-key:
+    post:
+      operationId: importCertWithKey
+      tags: [admin]
+      summary: Import certificate + private key directly (no CSR required)
+      description: |
+        Stores both the certificate and its private key without requiring a prior
+        CSR to have been generated on this server. Validates that the key and
+        certificate match before persisting. Admin-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportCertWithKeyInput" }
+      responses:
+        "201":
+          description: Certificate imported and stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CertInfo" }
+
+  /settings/budget-positions/export:
+    get:
+      operationId: exportBudgetPositions
+      tags: [admin]
+      summary: Export budget positions as Excel (.xlsx)
+      responses:
+        "200":
+          description: Excel workbook with one position per row
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /settings/budget-positions/import:
+    post:
+      operationId: importBudgetPositions
+      tags: [admin]
+      summary: Import budget positions from an Excel file (replaces existing list)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Imported positions and count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [imported]
+                properties:
+                  imported: { type: integer }
+                  positions:
+                    type: array
+                    items: { type: string }
+
   # ---------------- ADMIN / LDAP TEST ----------------
   /admin/ldap-test:
     post:
@@ -1656,7 +1718,8 @@ components:
         passwordSet: { type: boolean }
         secure: { type: boolean }
         fromAddress: { type: ["string", "null"] }
-      required: [enabled, passwordSet, secure]
+        skipTlsVerify: { type: boolean }
+      required: [enabled, passwordSet, secure, skipTlsVerify]
 
     ArchiveAttachmentsInput:
       type: object
@@ -1795,6 +1858,7 @@ components:
             password: { type: ["string", "null"] }
             secure: { type: ["boolean", "null"] }
             fromAddress: { type: ["string", "null"] }
+            skipTlsVerify: { type: ["boolean", "null"], description: "When true, skip TLS certificate validation (useful for self-signed certs)" }
 
     GtInvestDate:
       type: object
@@ -1816,6 +1880,7 @@ components:
         username: { type: ["string", "null"] }
         password: { type: ["string", "null"], description: "Optional. When omitted, the saved password is reused." }
         fromAddress: { type: ["string", "null"] }
+        skipTlsVerify: { type: ["boolean", "null"] }
       required: [to]
 
     SmtpTestResult:
@@ -1914,6 +1979,18 @@ components:
         certPem: { type: string }
         chainPem: { type: ["string", "null"] }
       required: [certPem]
+
+    ImportCertWithKeyInput:
+      type: object
+      description: |
+        Import a certificate together with its private key, bypassing CSR
+        generation. The server validates that the private key and certificate
+        match before storing them.
+      properties:
+        certPem: { type: string }
+        privateKeyPem: { type: string }
+        chainPem: { type: ["string", "null"] }
+      required: [certPem, privateKeyPem]
 
     LdapTestInput:
       type: object

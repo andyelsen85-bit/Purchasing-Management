@@ -90,6 +90,7 @@ export interface SmtpConfigStored {
   password?: string | null;
   secure?: boolean;
   from?: string | null;
+  skipTlsVerify?: boolean;
 }
 
 export interface AppSettings {
@@ -179,6 +180,7 @@ const DEFAULT: AppSettings = {
     password: null,
     secure: false,
     from: null,
+    skipTlsVerify: false,
   },
 };
 
@@ -266,6 +268,7 @@ export function toPublicSettings(s: AppSettings) {
       // column name — translate it on the way out so the SMTP form
       // re-populates correctly after a save + reload.
       fromAddress: s.smtp?.from ?? null,
+      skipTlsVerify: !!s.smtp?.skipTlsVerify,
     },
   };
 }
