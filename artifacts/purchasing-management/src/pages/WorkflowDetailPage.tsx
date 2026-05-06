@@ -3152,7 +3152,7 @@ function InvestmentFormPanel({ wf }: { wf: Workflow }) {
 
         <IFSection title="4 · Aspects financiers">
           <IFRow
-            label="Coût estimé 5 ans (HTVA)"
+            label="4.1 Coût estimé 5 ans (HTVA)"
             value={
               f.estimatedAmount5y != null
                 ? `${f.estimatedAmount5y.toLocaleString("fr-BE")} €`
@@ -3160,23 +3160,23 @@ function InvestmentFormPanel({ wf }: { wf: Workflow }) {
             }
           />
           <IFRow
-            label="Procédure d'exception"
+            label="4.1 Procédure d'exception"
             value={
-              f.exceptionProcedure
+              f.exceptionProcedure && f.exceptionProcedure !== "NONE"
                 ? (EXCEPTION_PROCEDURE_LABEL[f.exceptionProcedure] ?? f.exceptionProcedure)
                 : null
             }
           />
-          <IFRow label="Justification procédure d'exception" value={f.exceptionJustification} />
+          <IFRow label="4.1.1 Justification procédure d'exception" value={f.exceptionJustification} />
           <IFRow
-            label="Position budgétaire connue ?"
+            label="4.2 Position budgétaire connue ?"
             value={
               f.budgetPositionKnown
                 ? (BUDGET_POSITION_LABEL[f.budgetPositionKnown] ?? f.budgetPositionKnown)
                 : null
             }
           />
-          <IFRow label="Position budgétaire" value={f.budgetPosition} />
+          <IFRow label="4.2.1 Position budgétaire" value={f.budgetPosition} />
         </IFSection>
 
         <IFSection title="5 · Fournisseur">

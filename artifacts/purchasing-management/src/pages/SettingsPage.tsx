@@ -2518,7 +2518,7 @@ function BudgetPositionsPanel() {
 
   useEffect(() => {
     if (!s) return;
-    setPositions(s.budgetPositions ?? []);
+    setPositions((s.budgetPositions ?? []).slice().sort((a, b) => a.localeCompare(b, "fr")));
   }, [s]);
 
   return (
@@ -2542,7 +2542,9 @@ function BudgetPositionsPanel() {
             onClick={() => {
               const v = next.trim();
               if (!v) return;
-              setPositions((r) => Array.from(new Set([...r, v])));
+              setPositions((r) =>
+                Array.from(new Set([...r, v])).sort((a, b) => a.localeCompare(b, "fr")),
+              );
               setNext("");
             }}
             data-testid="button-add-budget-position"

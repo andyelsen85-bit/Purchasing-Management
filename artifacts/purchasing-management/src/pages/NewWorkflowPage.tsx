@@ -200,10 +200,26 @@ export function NewWorkflowPage() {
 
   // ── Section 4 – Aspects financiers ────────────────────────────
   const [estimatedAmount5y, setEstimatedAmount5y] = useState("");
-  const [exceptionProcedure, setExceptionProcedure] = useState("");
   const [exceptionJustification, setExceptionJustification] = useState("");
   const [budgetPositionKnown, setBudgetPositionKnown] = useState("");
   const [budgetPosition, setBudgetPosition] = useState("");
+
+  // Derive the publication tier from the 5-year amount and the configured
+  // thresholds. Controls inline hints and the exceptionProcedure field.
+  const limitX = settings?.limitX ?? null;
+  const limitY = settings?.quoteThresholdLivreI ?? null;
+  const limitZ = settings?.quoteThresholdLivreII ?? null;
+  const amount5yNum = estimatedAmount5y ? Number(estimatedAmount5y) : null;
+  const tier: "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" =
+    amount5yNum == null
+      ? "STANDARD"
+      : limitZ != null && amount5yNum > limitZ
+        ? "LIVRE_II"
+        : limitY != null && amount5yNum > limitY
+          ? "LIVRE_I"
+          : limitX != null && amount5yNum > limitX
+            ? "THREE_QUOTES"
+            : "STANDARD";
 
   // ── Section 5 – Fournisseur ────────────────────────────────────
   const [supplierCompanyId, setSupplierCompanyId] = useState<string>("");
@@ -332,7 +348,8 @@ export function NewWorkflowPage() {
       decommissioned: boolVal(decommissioned),
       decommissionedNote: decommissionedNote || null,
       estimatedAmount5y: estimatedAmount5y ? Number(estimatedAmount5y) : null,
-      exceptionProcedure: exceptionProcedure || null,
+      exceptionProcedure:
+        tier === "LIVRE_I" ? "LIVRE_I" : tier === "LIVRE_II" ? "LIVRE_II" : "NONE",
       exceptionJustification: exceptionJustification || null,
       budgetPositionKnown: budgetPositionKnown || null,
       budgetPosition: budgetPosition || null,
@@ -402,15 +419,13 @@ export function NewWorkflowPage() {
           m.push("3.1.4 Précision sur le devenir de l'équipement");
       }
       if (!estimatedAmount5y) m.push("4.1 Coût estimé sur 5 ans");
-      if (!exceptionProcedure) m.push("4.3 Procédure d'exception");
       if (
-        (exceptionProcedure === "LIVRE_I" ||
-          exceptionProcedure === "LIVRE_II") &&
+        (tier === "LIVRE_I" || tier === "LIVRE_II") &&
         !exceptionJustification.trim()
       )
-        m.push("4.3.1 Justification de la procédure d'exception");
-      if (!budgetPositionKnown) m.push("4.4 Position budgétaire connue");
-      if (budgetPositionKnown === "YES" && !budgetPosition.trim()) m.push("4.4.1 Position budgétaire");
+        m.push("4.1.1 Justification détaillée de la procédure d'exception");
+      if (!budgetPositionKnown) m.push("4.2 Position budgétaire connue");
+      if (budgetPositionKnown === "YES" && !budgetPosition.trim()) m.push("4.2.1 Position budgétaire");
     }
     if (s === 4) {
       if (!supplierCompanyId) m.push("5.1 Nom du fournisseur");
@@ -562,7 +577,9 @@ export function NewWorkflowPage() {
   }
 
   const progressPct = ((step - 1) / TOTAL_STEPS) * 100;
-  const budgetPositionsList = settings?.budgetPositions ?? [];
+  const budgetPositionsList = (settings?.budgetPositions ?? [])
+    .slice()
+    .sort((a, b) => a.localeCompare(b, "fr"));
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -838,27 +855,25 @@ export function NewWorkflowPage() {
                     onChange={(e) => setEstimatedAmount5y(e.target.value)}
                     placeholder="Montant total HTVA"
                   />
+                  {tier === "THREE_QUOTES" && (
+                    <p className="text-xs text-amber-600">
+                      Besoin de 3 offres, étape suivante après création de la commande.
+                    </p>
+                  )}
+                  {tier === "LIVRE_I" && (
+                    <p className="text-xs text-amber-600">
+                      Procédure d&apos;exception Livre I (Marchés au-dessous des seuils européens).
+                    </p>
+                  )}
+                  {tier === "LIVRE_II" && (
+                    <p className="text-xs text-red-600">
+                      Procédure d&apos;exception Livre II (Marchés au-dessus des seuils européens).
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-1.5">
-                  <Label>4.3 La demande relève-t-elle d'une procédure d'exception ?<Req /></Label>
-                  <Select value={exceptionProcedure} onValueChange={setExceptionProcedure}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NONE">Non</SelectItem>
-                      <SelectItem value="LIVRE_I">
-                        Oui – Livre I (marchés au-dessous des seuils européens)
-                      </SelectItem>
-                      <SelectItem value="LIVRE_II">
-                        Oui – Livre II (marchés au-dessus des seuils européens)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {(exceptionProcedure === "LIVRE_I" || exceptionProcedure === "LIVRE_II") && (
+                {(tier === "LIVRE_I" || tier === "LIVRE_II") && (
                   <div className="space-y-1.5">
-                    <Label>4.3.1 Justification détaillée de la procédure d'exception<Req /></Label>
+                    <Label>4.1.1 Justification détaillée de la procédure d&apos;exception<Req /></Label>
                     <Textarea
                       rows={3}
                       value={exceptionJustification}
@@ -867,7 +882,7 @@ export function NewWorkflowPage() {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label>4.4 La position budgétaire est-elle connue ?<Req /></Label>
+                  <Label>4.2 La position budgétaire est-elle connue ?<Req /></Label>
                   <Select value={budgetPositionKnown} onValueChange={setBudgetPositionKnown}>
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner..." />
@@ -875,17 +890,16 @@ export function NewWorkflowPage() {
                     <SelectContent>
                       <SelectItem value="YES">Oui</SelectItem>
                       <SelectItem value="NO">Non</SelectItem>
-                      <SelectItem value="TO_CONFIRM">À confirmer</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {budgetPositionKnown === "YES" && (
                   <div className="space-y-1.5">
-                    <Label>4.4.1 Position budgétaire (selon liste GT Invest)<Req /></Label>
+                    <Label>4.2.1 Position budgétaire (selon liste GT Invest)<Req /></Label>
                     {budgetPositionsList.length === 0 ? (
                       <Alert variant="destructive">
                         <AlertDescription className="text-xs">
-                          Aucune position budgétaire n'est configurée. Un administrateur doit en ajouter dans Paramètres → GT Invest avant de pouvoir créer un workflow.
+                          Aucune position budgétaire n&apos;est configurée. Un administrateur doit en ajouter dans Paramètres → GT Invest avant de pouvoir créer un workflow.
                         </AlertDescription>
                       </Alert>
                     ) : (
