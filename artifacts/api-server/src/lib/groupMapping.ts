@@ -33,18 +33,18 @@ function groupMatches(groupDn: string, key: string): boolean {
 
 /**
  * Translate AD group memberships into app roles using the operator's
- * configured mapping. The default `DEPT_USER` role is always included
- * unless the mapping explicitly assigns something else, mirroring how
- * the LDAP user-provisioning path used to behave before group mapping
- * existed. Unknown role names in the mapping are silently dropped so
- * a typo in Settings can never elevate a user.
+ * configured mapping. Only groups explicitly matched by the mapping
+ * contribute roles — there is no implicit fallback role. Unknown role
+ * names in the mapping are silently dropped so a typo in Settings can
+ * never elevate a user. Returns an empty array when no group matches,
+ * which callers should treat as "access denied".
  */
 export function mapGroupsToRoles(
   groups: string[],
   mapping: Record<string, string> | null | undefined,
 ): Role[] {
-  const roles = new Set<Role>(["DEPT_USER"]);
-  if (!mapping) return Array.from(roles);
+  const roles = new Set<Role>();
+  if (!mapping) return [];
   for (const [key, roleName] of Object.entries(mapping)) {
     const role = roleName as Role;
     if (!VALID_ROLES.has(role)) continue;

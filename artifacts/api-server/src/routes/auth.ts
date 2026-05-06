@@ -70,6 +70,13 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     const useRoleMap = hasMapping(roleMap);
     const useDeptMap = hasMapping(deptMap);
     const derivedRoles = useRoleMap ? mapGroupsToRoles(groups, roleMap) : null;
+    // When role mapping is configured, a user with no matching group has no
+    // authorised role and must not be allowed in.
+    if (useRoleMap && derivedRoles !== null && derivedRoles.length === 0) {
+      await audit(null, "LOGIN_FAILED", "user", undefined, `LDAP: ${username}`, req.ip);
+      res.status(401).json({ error: "Aucun groupe AD ne correspond à un rôle autorisé" });
+      return;
+    }
     const derivedDeptIds = useDeptMap
       ? await mapGroupsToDepartmentIds(groups, deptMap)
       : null;
@@ -233,6 +240,13 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
     const kerbRoles = useKerbRoleMap
       ? mapGroupsToRoles(kerbGroups, kerbRoleMap)
       : null;
+    // When role mapping is configured, a user with no matching group has no
+    // authorised role and must not be allowed in.
+    if (useKerbRoleMap && kerbRoles !== null && kerbRoles.length === 0) {
+      await audit(null, "LOGIN_FAILED", "user", undefined, `KERBEROS: ${username}`, req.ip);
+      res.status(401).json({ error: "Aucun groupe AD ne correspond à un rôle autorisé" });
+      return;
+    }
     const kerbDeptIds = useKerbDeptMap
       ? await mapGroupsToDepartmentIds(kerbGroups, kerbDeptMap)
       : null;
