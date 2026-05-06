@@ -1034,29 +1034,24 @@ function QuotationPanel({
     return rows.map((r, i) => ({ ...r, winning: i === 0 }));
   }
 
-  // Dynamic "3 quotes required" check: derive from the first quote's
-  // amount and the configured limit, so the warning appears as soon
-  // as the user types it (before saving). Falls back to the persisted
-  // server flag if settings aren't loaded yet.
+  // 3 quotes required is determined by the investment form's 4.1 estimated
+  // amount (estimatedAmount5y), NOT the quote amounts entered in this step.
+  // Rule: amount must be in the X–Y band AND 4.1.1 must have been answered
+  // "Non" (i.e. exceptionProcedure !== "LIVRE_I").
   const limitX = settings?.limitX ?? null;
-  // Second threshold — above this the workflow becomes a Livre I /
-  // Livre II publication, which is a public bid with a single
-  // awarded supplier and therefore does NOT require three competing
-  // quotes. Only the band between Standard (X) and Livre I (Y)
-  // triggers the 3-quote rule.
   const limitY =
     (settings as { quoteThresholdLivreI?: number | null } | undefined)
       ?.quoteThresholdLivreI ?? null;
-  const firstAmount = quotes.find((q) => q.amount != null)?.amount ?? null;
-  // 3 quotes are required only when the amount is in the X–Y band AND
-  // the Livre I exception was NOT selected (exceptionProcedure !== "LIVRE_I").
-  const storedException =
-    (wf.investmentForm as { exceptionProcedure?: string } | null | undefined)
-      ?.exceptionProcedure ?? null;
+  const investmentFormData = wf.investmentForm as
+    | { estimatedAmount5y?: number | null; exceptionProcedure?: string | null }
+    | null
+    | undefined;
+  const formAmount = investmentFormData?.estimatedAmount5y ?? null;
+  const storedException = investmentFormData?.exceptionProcedure ?? null;
   const threeQuotesRequired =
-    limitX != null && firstAmount != null
-      ? firstAmount > limitX &&
-        (limitY == null || firstAmount <= limitY) &&
+    limitX != null && formAmount != null
+      ? formAmount > limitX &&
+        (limitY == null || formAmount <= limitY) &&
         storedException !== "LIVRE_I"
       : wf.threeQuoteRequired;
   // Match the server's predicate in `validateAdvancePrereqs` exactly,
