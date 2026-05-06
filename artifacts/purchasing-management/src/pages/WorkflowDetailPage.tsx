@@ -1048,9 +1048,16 @@ function QuotationPanel({
     (settings as { quoteThresholdLivreI?: number | null } | undefined)
       ?.quoteThresholdLivreI ?? null;
   const firstAmount = quotes.find((q) => q.amount != null)?.amount ?? null;
+  // 3 quotes are required only when the amount is in the X–Y band AND
+  // the Livre I exception was NOT selected (exceptionProcedure !== "LIVRE_I").
+  const storedException =
+    (wf.investmentForm as { exceptionProcedure?: string } | null | undefined)
+      ?.exceptionProcedure ?? null;
   const threeQuotesRequired =
     limitX != null && firstAmount != null
-      ? firstAmount > limitX && (limitY == null || firstAmount <= limitY)
+      ? firstAmount > limitX &&
+        (limitY == null || firstAmount <= limitY) &&
+        storedException !== "LIVRE_I"
       : wf.threeQuoteRequired;
   // Match the server's predicate in `validateAdvancePrereqs` exactly,
   // otherwise the counter and the advance-gate disagree (off-by-one
