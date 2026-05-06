@@ -3105,6 +3105,20 @@ function IFSection({ title, children }: { title: string; children: React.ReactNo
 
 function InvestmentFormPanel({ wf }: { wf: Workflow }) {
   const f = wf.investmentForm as InvestmentForm | null | undefined;
+  const { data: ifSettings } = useGetSettings();
+  const ifLimitX = ifSettings?.limitX ?? null;
+  const ifLimitY =
+    (ifSettings as { quoteThresholdLivreI?: number | null } | undefined)
+      ?.quoteThresholdLivreI ?? null;
+  const ifAmount = f?.estimatedAmount5y ?? null;
+  const ifTier: "STANDARD" | "BAND_XY" | "ABOVE_Y" =
+    ifAmount == null
+      ? "STANDARD"
+      : ifLimitY != null && ifAmount > ifLimitY
+        ? "ABOVE_Y"
+        : ifLimitX != null && ifAmount > ifLimitX
+          ? "BAND_XY"
+          : "STANDARD";
 
   if (!f) {
     return (
@@ -3166,15 +3180,34 @@ function InvestmentFormPanel({ wf }: { wf: Workflow }) {
                 : null
             }
           />
-          <IFRow
-            label="4.1 Procédure d'exception"
-            value={
-              f.exceptionProcedure && f.exceptionProcedure !== "NONE"
-                ? (EXCEPTION_PROCEDURE_LABEL[f.exceptionProcedure] ?? f.exceptionProcedure)
-                : null
-            }
-          />
-          <IFRow label="4.1.1 Justification procédure d'exception" value={f.exceptionJustification} />
+          {/* Q4.1.1 — only when amount is in the X–Y band */}
+          {ifTier === "BAND_XY" && (
+            <IFRow
+              label="4.1.1 Procédure d'exception Livre I ?"
+              value={f.exceptionProcedure === "LIVRE_I" ? "Oui" : "Non"}
+            />
+          )}
+          {/* Q4.1.2 — justification when Livre I exception was granted */}
+          {ifTier === "BAND_XY" && f.exceptionProcedure === "LIVRE_I" && (
+            <IFRow
+              label="4.1.2 Justification procédure d'exception Livre I"
+              value={f.exceptionJustification}
+            />
+          )}
+          {/* Q4.1.3 — only when amount is above Y */}
+          {ifTier === "ABOVE_Y" && (
+            <IFRow
+              label="4.1.3 Procédure d'exception Livre II ?"
+              value={f.exceptionProcedure === "LIVRE_II" ? "Oui" : "Non"}
+            />
+          )}
+          {/* Q4.1.4 — justification when Livre II exception was granted */}
+          {ifTier === "ABOVE_Y" && f.exceptionProcedure === "LIVRE_II" && (
+            <IFRow
+              label="4.1.4 Justification procédure d'exception Livre II"
+              value={f.exceptionJustification}
+            />
+          )}
           <IFRow
             label="4.2 Position budgétaire connue ?"
             value={
