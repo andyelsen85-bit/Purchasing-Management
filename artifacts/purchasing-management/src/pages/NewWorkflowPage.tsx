@@ -930,6 +930,11 @@ export function NewWorkflowPage() {
                         setExceptionJustification("");
                       }} />
                     </div>
+                    {livreIIException === "false" && (
+                      <p className="text-xs text-amber-600">
+                        Veuillez contacter le service juridique.
+                      </p>
+                    )}
                     {livreIIException === "true" && (
                       <div className="space-y-1.5">
                         <Label>
