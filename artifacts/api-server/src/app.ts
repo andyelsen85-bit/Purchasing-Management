@@ -5,6 +5,7 @@ import ConnectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { pool } from "@workspace/db";
 
 const PgStore = ConnectPgSimple(session);
 
@@ -101,13 +102,15 @@ app.use(express.urlencoded({ extended: true, limit: "32mb" }));
 // container restarts and scale across processes. Falls back to the
 // default MemoryStore only in development (where DATABASE_URL may not
 // be set and the MemoryStore warning is acceptable).
+// Use the shared pg Pool from @workspace/db so we don't open a second
+// connection pool. The "session" table is defined in the Drizzle schema
+// and created by `db push` — no createTableIfMissing needed (which would
+// try to read a bundled SQL file that esbuild cannot resolve at runtime).
 const sessionStore =
-  process.env.NODE_ENV === "production" && process.env.DATABASE_URL
+  process.env.NODE_ENV === "production"
     ? new PgStore({
-        conString: process.env.DATABASE_URL,
-        // Table is created automatically on first use if it doesn't exist.
-        createTableIfMissing: true,
-        // Prune expired sessions once per hour.
+        pool,
+        tableName: "session",
         pruneSessionInterval: 60 * 60,
       })
     : undefined; // undefined = default MemoryStore (dev only)

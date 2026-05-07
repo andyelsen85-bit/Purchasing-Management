@@ -10,6 +10,7 @@ import {
   date,
   uniqueIndex,
   index,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 // ---------------- USERS ----------------
@@ -386,4 +387,12 @@ export const tlsTable = pgTable("tls_state", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+});
+
+// ---------------- SESSION STORE ----------------
+// Required by connect-pg-simple. Drizzle manages creation via db push.
+export const sessionTable = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire", { precision: 6, withTimezone: false }).notNull(),
 });
