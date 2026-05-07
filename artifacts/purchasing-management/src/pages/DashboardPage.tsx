@@ -1,10 +1,8 @@
-import { Link } from "wouter";
 import {
   AlertTriangle,
   CheckCircle2,
   Clock,
   ListChecks,
-  ArrowRight,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -20,7 +18,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGetDashboardSummary } from "@/lib/api";
 import { STEP_LABEL, type Step } from "@/lib/steps";
-import { fmtTime } from "@/lib/date";
 
 function StatCard({
   label,
@@ -170,48 +167,6 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Activité récente</CardTitle>
-            <Link href="/workflows">
-              <a
-                className="flex items-center gap-1 text-xs text-primary hover:underline"
-                data-testid="link-all-workflows"
-              >
-                Tout <ArrowRight className="h-3 w-3" />
-              </a>
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-3 max-h-80 overflow-auto">
-            {isLoading ? (
-              <Skeleton className="h-40" />
-            ) : (data?.recent ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">Aucune activité.</p>
-            ) : (
-              (data?.recent ?? []).map((h) => (
-                <div
-                  key={h.id}
-                  className="flex items-start gap-3 border-b pb-2 last:border-b-0 last:pb-0"
-                  data-testid={`activity-${h.id}`}
-                >
-                  <div className="mt-0.5 flex h-2 w-2 shrink-0 rounded-full bg-primary" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2 text-sm">
-                      <span className="font-medium">{h.action}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {fmtTime(h.createdAt)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {h.actorName}
-                      {h.toStep ? ` → ${STEP_LABEL[h.toStep as Step] ?? h.toStep}` : ""}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
