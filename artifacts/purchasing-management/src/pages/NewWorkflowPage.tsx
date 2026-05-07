@@ -580,7 +580,7 @@ export function NewWorkflowPage() {
       toast({
         variant: "destructive",
         title: "Création impossible",
-        description: extractApiError(err, "La commande n'a pas pu être créée."),
+        description: extractApiError(err, "La demande n'a pas pu être créée."),
       });
     } finally {
       setSubmitting(false);
@@ -660,7 +660,7 @@ export function NewWorkflowPage() {
           {/* ── STEP 1 ─────────────────────────────────────────────── */}
           {step === 1 && (
             <>
-              <SectionTitle number="0" label="Commande" />
+              <SectionTitle number="0" label="Demande" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="title">Titre de la Demande<Req /></Label>
@@ -1359,7 +1359,7 @@ export function NewWorkflowPage() {
             data-testid="button-submit"
           >
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Créer la commande
+            Créer la demande
           </Button>
         )}
       </div>

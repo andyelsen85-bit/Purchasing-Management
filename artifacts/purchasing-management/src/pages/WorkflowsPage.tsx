@@ -50,16 +50,16 @@ export function WorkflowsPage() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">
-            Commandes
+            Demandes
           </h1>
           <p className="text-sm text-muted-foreground">
-            Toutes les commandes d'achat de l'organisation
+            Toutes les demandes d'achat de l'organisation
           </p>
         </div>
         <Link href="/workflows/new">
           <a>
             <Button data-testid="button-new-workflow">
-              <Plus className="mr-2 h-4 w-4" /> Nouvelle commande
+              <Plus className="mr-2 h-4 w-4" /> Nouvelle demande
             </Button>
           </a>
         </Link>
@@ -104,7 +104,7 @@ export function WorkflowsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ACTIVE">Actives seulement</SelectItem>
-              <SelectItem value="ALL">Toutes les commandes</SelectItem>
+              <SelectItem value="ALL">Toutes les demandes</SelectItem>
               <SelectItem value="DONE">Terminées</SelectItem>
               <SelectItem value="REJECTED">Clôturées</SelectItem>
             </SelectContent>
@@ -138,7 +138,7 @@ export function WorkflowsPage() {
               className="p-12 text-center text-sm text-muted-foreground"
               data-testid="status-no-workflows"
             >
-              Aucune commande trouvée.
+              Aucune demande trouvée.
             </div>
           ) : (
             <div className="divide-y">

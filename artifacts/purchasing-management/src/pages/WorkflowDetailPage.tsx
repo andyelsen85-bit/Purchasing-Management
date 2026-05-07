@@ -106,7 +106,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
       <div className="p-6">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>Commande introuvable.</AlertDescription>
+          <AlertDescription>Demande introuvable.</AlertDescription>
         </Alert>
       </div>
     );
@@ -125,7 +125,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
         onClick={() => setLocation("/workflows")}
         data-testid="button-back"
       >
-        <ArrowLeft className="mr-2 h-4 w-4" /> Retour aux commandes
+        <ArrowLeft className="mr-2 h-4 w-4" /> Retour aux demandes
       </Button>
 
       <div className="flex items-start justify-between gap-4">
@@ -413,7 +413,7 @@ function ActionBar({
           className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={() => {
             const reason = window.prompt(
-              "Clôturer cette commande ? Vous pouvez saisir une raison facultative.",
+              "Clôturer cette demande ? Vous pouvez saisir une raison facultative.",
               "",
             );
             if (reason === null) return;
@@ -456,7 +456,7 @@ function ActionBar({
           onClick={() => {
             if (
               !window.confirm(
-                "Déplacer cette commande vers la corbeille ? Les admins peuvent la restaurer depuis Paramètres → Corbeille.",
+                "Déplacer cette demande vers la corbeille ? Les admins peuvent la restaurer depuis Paramètres → Corbeille.",
               )
             )
               return;
@@ -756,7 +756,7 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-5 w-5" />
-            Commande terminée
+            Demande terminée
           </CardTitle>
           <Button asChild variant="outline" size="sm">
             <a
@@ -936,7 +936,7 @@ function RejectedPanel({ wf }: { wf: Workflow }) {
     <Card className="border-destructive/40">
       <CardHeader>
         <CardTitle className="text-destructive">
-          Commande refusée et clôturée
+          Demande refusée et clôturée
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
@@ -1721,7 +1721,7 @@ function ManagerApprovePanel({
               onClick={() => {
                 if (
                   !confirm(
-                    "Refuser et clôturer cette commande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
+                    "Refuser et clôturer cette demande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
                   )
                 )
                   return;
@@ -1821,7 +1821,7 @@ function FinancialApprovePanel({
   function rejectDecision() {
     if (
       !confirm(
-        "Refuser et clôturer cette commande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
+        "Refuser et clôturer cette demande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
       )
     )
       return;
@@ -1838,7 +1838,7 @@ function FinancialApprovePanel({
         <CardHeader>
           <CardTitle>Validation financière</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Choisissez un circuit — K-Order ou GT Invest — puis approuvez pour faire avancer la commande.
+            Choisissez un circuit — K-Order ou GT Invest — puis approuvez pour faire avancer la demande.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2607,7 +2607,7 @@ function InvoiceValidationPanel({
       <CardHeader>
         <CardTitle>Validation de la facture</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Validez pour passer au Paiement, ou refusez pour clôturer la commande. Utilisez <em>Exporter PDF groupé</em> pour télécharger le dossier complet.
+          Validez pour passer au Paiement, ou refusez pour clôturer la demande. Utilisez <em>Exporter PDF groupé</em> pour télécharger le dossier complet.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -2648,7 +2648,7 @@ function InvoiceValidationPanel({
             onClick={() => {
               if (
                 !confirm(
-                  "Refuser cette facture et clôturer la commande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
+                  "Refuser cette facture et clôturer la demande ? Cette action peut être annulée par un Admin ou un Financier-Tous.",
                 )
               )
                 return;
@@ -2709,7 +2709,7 @@ function PaymentPanel({
         <div>
           <Button
             onClick={() => {
-              if (!confirm("Marquer cette commande comme payée et la clôturer ?"))
+              if (!confirm("Marquer cette demande comme payée et la clôturer ?"))
                 return;
               advance.mutate({ id: wf.id, data: { branch: null } });
             }}

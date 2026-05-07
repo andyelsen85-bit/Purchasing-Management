@@ -71,7 +71,7 @@ export function DashboardPage() {
           Tableau de bord
         </h1>
         <p className="text-sm text-muted-foreground">
-          Vue d'ensemble de toutes les commandes en cours et terminées
+          Vue d'ensemble de toutes les demandes en cours et terminées
         </p>
       </header>
 
@@ -83,7 +83,7 @@ export function DashboardPage() {
         ) : (
           <>
             <StatCard
-              label="Commandes actives"
+              label="Demandes actives"
               value={data?.totalActive ?? 0}
               icon={ListChecks}
               tone="primary"
@@ -117,7 +117,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Commandes par étape</CardTitle>
+            <CardTitle>Demandes par étape</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (

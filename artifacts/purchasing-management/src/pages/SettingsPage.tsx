@@ -323,7 +323,7 @@ function DeletedWorkflowsPanel() {
         qc.invalidateQueries({ queryKey: getListDeletedWorkflowsQueryKey() });
         toast({
           title: "Corbeille vidée",
-          description: `${data.deleted} commande${data.deleted !== 1 ? "s" : ""} supprimée${data.deleted !== 1 ? "s" : ""} définitivement.`,
+          description: `${data.deleted} demande${data.deleted !== 1 ? "s" : ""} supprimée${data.deleted !== 1 ? "s" : ""} définitivement.`,
         });
       },
       onError: (err) => {
@@ -342,7 +342,7 @@ function DeletedWorkflowsPanel() {
   function handleEmptyTrash() {
     if (
       !confirm(
-        `Vider définitivement la corbeille ? Cette action supprimera ${rows.length} commande${rows.length !== 1 ? "s" : ""} et toutes leurs pièces jointes de manière irréversible.`,
+        `Vider définitivement la corbeille ? Cette action supprimera ${rows.length} demande${rows.length !== 1 ? "s" : ""} et toutes leurs pièces jointes de manière irréversible.`,
       )
     )
       return;
@@ -372,7 +372,7 @@ function DeletedWorkflowsPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Les commandes supprimées par un administrateur sont conservées ici
+          Les demandes supprimées par un administrateur sont conservées ici
           (historique, documents et journal d'audit préservés). Restaurez-en
           une pour la faire réapparaître dans la liste, ou videz la corbeille
           pour les supprimer définitivement.
@@ -617,7 +617,7 @@ function BackupRestorePanel() {
           <h3 className="text-sm font-semibold">Télécharger la sauvegarde</h3>
           <p className="text-sm text-muted-foreground">
             Exporte l'ensemble des données (utilisateurs, départements,
-            sociétés, commandes, documents, notes, historique, journal
+            sociétés, demandes, documents, notes, historique, journal
             d'audit, paramètres, GT Invest et certificats TLS) dans un
             seul fichier JSON. Les pièces jointes sont encodées en
             base64 — ce fichier est une image complète et autonome de
@@ -645,7 +645,7 @@ function BackupRestorePanel() {
             <ShieldAlert className="h-4 w-4" />
             <AlertDescription>
               La restauration <strong>écrase intégralement</strong>{" "}
-              toutes les tables (utilisateurs, commandes, documents,
+              toutes les tables (utilisateurs, demandes, documents,
               paramètres…) avec le contenu du fichier importé. Toutes
               les données créées après la sauvegarde seront perdues.
               Vous serez déconnecté et devrez vous reconnecter avec un

@@ -62,7 +62,7 @@ interface NavItem {
 // menu items that would 403 the moment they click something inside.
 const NAV: NavItem[] = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard },
-  { to: "/workflows", label: "Commandes", icon: ListChecks },
+  { to: "/workflows", label: "Demandes", icon: ListChecks },
   { to: "/workflows-by-step", label: "Par étape", icon: Columns3 },
   {
     to: "/gt-invest",
