@@ -22,10 +22,7 @@ const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 export function LoginPage() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
-  // Public bootstrap config — must work BEFORE the user signs in, so
-  // we hit the unauthenticated /auth/public-config endpoint instead of
-  // /settings (which requires auth and otherwise leaves ldapEnabled
-  // false on this page, hiding the AD toggle entirely).
+
   const [settings, setSettings] = useState<PublicConfig | null>(null);
   useEffect(() => {
     fetch(`${API_BASE}/api/auth/public-config`, { credentials: "include" })
@@ -33,31 +30,14 @@ export function LoginPage() {
       .then((j: PublicConfig | null) => setSettings(j))
       .catch(() => setSettings(null));
   }, []);
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  // Default the AD toggle to ON whenever LDAP is enabled in Settings.
-  // Otherwise operators with an AD account silently land on the local
-  // path and get "Invalid credentials" because their AD username has
-  // no row in the local users table. They can still flip it off for
-  // the local admin account (e.g. break-glass "admin/admin").
   const [useLdap, setUseLdap] = useState(false);
   const [ldapToggleTouched, setLdapToggleTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tryingSso, setTryingSso] = useState(true);
-  const ssoTried = useRef(false);
 
-  // First-deployment bootstrap: when the database has no admin yet, the
-  // page renders an inline "create administrator" form instead of the
-  // login form. The /api/auth/setup endpoint self-disables as soon as
-  // any admin exists, so this can never be used to hijack a provisioned
-  // instance.
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
-  const [setupUsername, setSetupUsername] = useState("admin");
-  const [setupDisplayName, setSetupDisplayName] = useState("Administrator");
-  const [setupEmail, setSetupEmail] = useState("");
-  const [setupPassword, setSetupPassword] = useState("");
-  const [setupConfirm, setSetupConfirm] = useState("");
-  const [setupBusy, setSetupBusy] = useState(false);
   useEffect(() => {
     fetch(`${API_BASE}/api/auth/setup-status`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : { needsSetup: false }))
@@ -65,24 +45,46 @@ export function LoginPage() {
       .catch(() => setNeedsSetup(false));
   }, []);
 
+  const [setupUsername, setSetupUsername] = useState("admin");
+  const [setupDisplayName, setSetupDisplayName] = useState("Administrateur");
+  const [setupEmail, setSetupEmail] = useState("");
+  const [setupPassword, setSetupPassword] = useState("");
+  const [setupConfirm, setSetupConfirm] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+
   const ldapEnabled = Boolean(settings?.ldap?.enabled);
   useEffect(() => {
     if (ldapEnabled && !ldapToggleTouched) setUseLdap(true);
   }, [ldapEnabled, ldapToggleTouched]);
 
-  // Silent Kerberos / SPNEGO attempt: when the browser is on a domain-joined
-  // machine and configured to send Negotiate tokens for this host, the call
-  // succeeds without any user interaction. Any other outcome (401, network
-  // error, browser refusing the prompt) just reveals the form fallback below.
-  // Skip entirely on first boot (no users yet) and when Kerberos is disabled.
+  // SSO state: null = undecided (still loading), true = attempting, false = done/skipped
+  const [ssoState, setSsoState] = useState<"loading" | "trying" | "done">("loading");
+  const ssoTried = useRef(false);
+
+  // Wait for BOTH needsSetup AND settings before deciding on SSO.
+  // Previously, the effect fired as soon as needsSetup resolved while settings
+  // was still null, making !settings?.ldap?.kerberosEnabled evaluate to true
+  // and permanently skipping the probe before settings could load.
   useEffect(() => {
     if (ssoTried.current) return;
-    if (needsSetup === null) return; // wait for setup probe
+    // Both must be known before we can decide
+    if (needsSetup === null || settings === null) return;
+
     ssoTried.current = true;
-    if (needsSetup || !settings?.ldap?.kerberosEnabled) {
-      setTryingSso(false);
+
+    if (needsSetup || !settings.ldap.kerberosEnabled) {
+      // Not applicable: first boot OR Kerberos disabled in settings
+      setSsoState("done");
       return;
     }
+
+    // Kerberos is enabled — attempt the SPNEGO silent probe.
+    // On a domain-joined Windows machine with the app URL in the browser's
+    // Intranet Zone / trusted sites list, Edge and Firefox will automatically
+    // attach an `Authorization: Negotiate <krb5-token>` header. The server
+    // first responds 401 + `WWW-Authenticate: Negotiate`; the browser retries
+    // transparently, so JS only ever sees the final 200 (success) or an error.
+    setSsoState("trying");
     const ctrl = new AbortController();
     fetch(`${API_BASE}/api/auth/negotiate`, {
       method: "GET",
@@ -91,36 +93,26 @@ export function LoginPage() {
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        if (!r.ok) return;
+        if (!r.ok) return; // fall through to form
         const user = (await r.json()) as { id: number; roles: string[] };
-        qc.setQueryData(getGetSessionQueryKey(), {
-          authenticated: true,
-          user,
-        });
+        qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user });
         setLocation("/");
       })
       .catch(() => {
-        /* fall through to form */
+        /* network error or abort — fall through to form */
       })
-      .finally(() => setTryingSso(false));
+      .finally(() => setSsoState("done"));
+
     return () => ctrl.abort();
-  }, [qc, setLocation, needsSetup, settings?.ldap?.kerberosEnabled]);
+  }, [qc, setLocation, needsSetup, settings]);
 
   const login = useLogin({
     mutation: {
       onSuccess: (res) => {
-        qc.setQueryData(getGetSessionQueryKey(), {
-          authenticated: true,
-          user: res,
-        });
+        qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user: res });
         setLocation("/");
       },
       onError: (err) => {
-        // The server returns { error: "<detailed reason>" } in the
-        // response body — extractErrorMessage knows to read `.data.error`
-        // first so AD bind diagnostics (raw codes, locked / expired
-        // accounts, "user not found" hints) actually reach the user
-        // instead of being collapsed to "HTTP 401 Unauthorized".
         setError(extractErrorMessage(err));
       },
     },
@@ -136,11 +128,11 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
     if (setupPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError("Le mot de passe doit contenir au moins 8 caractères.");
       return;
     }
     if (setupPassword !== setupConfirm) {
-      setError("Passwords do not match.");
+      setError("Les mots de passe ne correspondent pas.");
       return;
     }
     setSetupBusy(true);
@@ -158,7 +150,7 @@ export function LoginPage() {
       });
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { error?: string };
-        setError(j.error ?? `Setup failed (HTTP ${r.status})`);
+        setError(j.error ?? `Échec de la configuration (HTTP ${r.status})`);
         return;
       }
       const user = await r.json();
@@ -170,6 +162,8 @@ export function LoginPage() {
       setSetupBusy(false);
     }
   }
+
+  const isLoading = ssoState === "loading" || ssoState === "trying";
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-950 p-4">
@@ -190,27 +184,27 @@ export function LoginPage() {
             {settings?.appName ?? "Purchasing Management"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Sign in to continue to the procurement workspace
+            Connectez-vous pour accéder à l'espace de gestion des achats
           </p>
         </CardHeader>
         <CardContent>
-          {needsSetup === null || tryingSso ? (
+          {isLoading ? (
             <div
               className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
               data-testid="sso-attempt"
             >
               <Loader2 className="h-5 w-5 animate-spin" />
-              {needsSetup === null
-                ? "Loading…"
-                : "Trying single sign-on…"}
+              {ssoState === "trying"
+                ? "Connexion SSO en cours…"
+                : "Chargement…"}
             </div>
           ) : needsSetup ? (
             <form className="space-y-4" onSubmit={onSetupSubmit}>
               <Alert>
                 <ShieldCheck className="h-4 w-4" />
                 <AlertDescription>
-                  Welcome! No administrator exists yet. Create one to
-                  finish setting up this instance.
+                  Bienvenue ! Aucun administrateur n'existe encore. Créez-en un
+                  pour terminer la configuration de cette instance.
                 </AlertDescription>
               </Alert>
               {error && (
@@ -219,7 +213,7 @@ export function LoginPage() {
                 </Alert>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="setup-username">Username</Label>
+                <Label htmlFor="setup-username">Nom d'utilisateur</Label>
                 <Input
                   id="setup-username"
                   autoFocus
@@ -231,7 +225,7 @@ export function LoginPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="setup-display">Display name</Label>
+                <Label htmlFor="setup-display">Nom affiché</Label>
                 <Input
                   id="setup-display"
                   value={setupDisplayName}
@@ -240,7 +234,7 @@ export function LoginPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="setup-email">Email (optional)</Label>
+                <Label htmlFor="setup-email">E-mail (optionnel)</Label>
                 <Input
                   id="setup-email"
                   type="email"
@@ -250,7 +244,7 @@ export function LoginPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="setup-password">Password</Label>
+                <Label htmlFor="setup-password">Mot de passe</Label>
                 <Input
                   id="setup-password"
                   type="password"
@@ -262,11 +256,11 @@ export function LoginPage() {
                   data-testid="input-setup-password"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Minimum 8 characters.
+                  Minimum 8 caractères.
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="setup-confirm">Confirm password</Label>
+                <Label htmlFor="setup-confirm">Confirmer le mot de passe</Label>
                 <Input
                   id="setup-confirm"
                   type="password"
@@ -289,75 +283,75 @@ export function LoginPage() {
                 ) : (
                   <ShieldCheck className="mr-2 h-4 w-4" />
                 )}
-                Create administrator
+                Créer l'administrateur
               </Button>
             </form>
           ) : (
-          <form className="space-y-4" onSubmit={onSubmit}>
-            {error && (
-              <Alert variant="destructive" data-testid="alert-login-error">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <div className="space-y-1.5">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                autoComplete="username"
-                data-testid="input-username"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                data-testid="input-password"
-              />
-            </div>
-            {ldapEnabled && (
-              <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
-                <div>
-                  <Label htmlFor="useLdap" className="text-sm">
-                    Use LDAP / Active Directory
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Disable for local accounts
-                  </p>
-                </div>
-                <Switch
-                  id="useLdap"
-                  checked={useLdap}
-                  onCheckedChange={(v) => {
-                    setLdapToggleTouched(true);
-                    setUseLdap(v);
-                  }}
-                  data-testid="switch-useldap"
+            <form className="space-y-4" onSubmit={onSubmit}>
+              {error && (
+                <Alert variant="destructive" data-testid="alert-login-error">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="username">Nom d'utilisateur</Label>
+                <Input
+                  id="username"
+                  autoFocus
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  autoComplete="username"
+                  data-testid="input-username"
                 />
               </div>
-            )}
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={login.isPending}
-              data-testid="button-login-submit"
-            >
-              {login.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Lock className="mr-2 h-4 w-4" />
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Mot de passe</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  data-testid="input-password"
+                />
+              </div>
+              {ldapEnabled && (
+                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
+                  <div>
+                    <Label htmlFor="useLdap" className="text-sm">
+                      Utiliser LDAP / Active Directory
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Décochez pour les comptes locaux
+                    </p>
+                  </div>
+                  <Switch
+                    id="useLdap"
+                    checked={useLdap}
+                    onCheckedChange={(v) => {
+                      setLdapToggleTouched(true);
+                      setUseLdap(v);
+                    }}
+                    data-testid="switch-useldap"
+                  />
+                </div>
               )}
-              Sign in
-            </Button>
-          </form>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={login.isPending}
+                data-testid="button-login-submit"
+              >
+                {login.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Lock className="mr-2 h-4 w-4" />
+                )}
+                Se connecter
+              </Button>
+            </form>
           )}
         </CardContent>
       </Card>
