@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGetDashboardSummary } from "@/lib/api";
 import { STEP_LABEL, type Step } from "@/lib/steps";
+import { fmtTime } from "@/lib/date";
 
 function StatCard({
   label,
@@ -198,10 +199,7 @@ export function DashboardPage() {
                     <div className="flex items-center justify-between gap-2 text-sm">
                       <span className="font-medium">{h.action}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        {new Date(h.createdAt).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {fmtTime(h.createdAt)}
                       </span>
                     </div>
                     <div className="text-xs text-muted-foreground truncate">

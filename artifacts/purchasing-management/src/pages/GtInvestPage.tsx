@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { extractErrorMessage } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/date";
 import {
   useListGtInvestWorkflows,
   useListGtInvestDates,
@@ -107,7 +108,7 @@ function formatMeetingDate(date: string, label: string | null | undefined) {
   try {
     const d = new Date(`${date}T00:00:00`);
     if (!Number.isNaN(d.getTime())) {
-      pretty = d.toLocaleDateString(undefined, {
+      pretty = d.toLocaleDateString("fr-BE", {
         weekday: "short",
         year: "numeric",
         month: "short",
@@ -350,7 +351,7 @@ function QueuePanel() {
                       data-testid={`gt-meeting-prepared-${g.meeting.id}`}
                     >
                       <CheckCircle2 className="h-3 w-3" />
-                      Préparé le {new Date(g.meeting.preparedAt).toLocaleString()}
+                      Préparé le {fmtDateTime(g.meeting.preparedAt)}
                       {g.meeting.preparedByName
                         ? ` par ${g.meeting.preparedByName}`
                         : ""}

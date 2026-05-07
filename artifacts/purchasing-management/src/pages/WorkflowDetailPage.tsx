@@ -67,6 +67,7 @@ import {
 } from "@/lib/api";
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
+import { fmtDate as fmtDateUtil, fmtDateTime as fmtDateTimeUtil } from "@/lib/date";
 import { GT_DECISION_OPTIONS, gtDecisionLabel } from "@/pages/GtInvestPage";
 import {
   MissingFieldsProvider,
@@ -703,10 +704,8 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
   const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
   const gtResult = gtDecisionLabel(wf.gtInvestDecision);
 
-  const fmtDate = (s: string | null | undefined) =>
-    s ? new Date(s).toLocaleDateString() : "—";
-  const fmtDateTime = (s: string | null | undefined) =>
-    s ? new Date(s).toLocaleString() : "—";
+  const fmtDate = fmtDateUtil;
+  const fmtDateTime = fmtDateTimeUtil;
   const fmtMoney = (n: number | null | undefined, _c?: string | null) =>
     n != null ? `${n} €` : "—";
   const fmtBool = (b: boolean | null | undefined) =>
@@ -1161,7 +1160,7 @@ function QuotationPanel({
           </div>
           <div>
             <div className="text-xs text-muted-foreground">Date souhaitée</div>
-            <div>{wf.neededBy ? new Date(wf.neededBy).toLocaleDateString() : "—"}</div>
+            <div>{wf.neededBy ? fmtDateUtil(wf.neededBy) : "—"}</div>
           </div>
         </CardContent>
       </Card>
@@ -2072,10 +2071,8 @@ function PriorStepsRecap({
   const gtDate = dates?.find((d) => d.id === wf.gtInvestDateId)?.date ?? null;
   const gtResult = gtDecisionLabel(wf.gtInvestDecision);
 
-  const fmtDate = (s: string | null | undefined) =>
-    s ? new Date(s).toLocaleDateString() : "—";
-  const fmtDateTime = (s: string | null | undefined) =>
-    s ? new Date(s).toLocaleString() : "—";
+  const fmtDate = fmtDateUtil;
+  const fmtDateTime = fmtDateTimeUtil;
   const fmtMoney = (n: number | null | undefined, c?: string | null) =>
     n != null ? `${n} ${c ?? ""}`.trim() : "—";
   const fmtBool = (b: boolean | null | undefined) =>

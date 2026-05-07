@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { extractErrorMessage } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/date";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -398,7 +399,7 @@ function DeletedWorkflowsPanel() {
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {w.departmentName} · étape {w.currentStep} · supprimé le{" "}
-                    {new Date(w.deletedAt).toLocaleString("fr-FR")}
+                    {fmtDateTime(w.deletedAt)}
                     {w.deletedByName ? ` par ${w.deletedByName}` : ""}
                   </div>
                 </div>
@@ -457,7 +458,7 @@ function AuditLogPanel() {
                 data-testid={`audit-${e.id}`}
               >
                 <div className="col-span-3 text-xs text-muted-foreground">
-                  {new Date(e.createdAt).toLocaleString()}
+                  {fmtDateTime(e.createdAt)}
                 </div>
                 <div className="col-span-2 font-medium">{e.action}</div>
                 <div className="col-span-2 text-muted-foreground">
@@ -903,7 +904,7 @@ function AttachmentArchivePanel() {
           >
             <p className="mb-1 font-semibold">
               {preview.dryRun ? "Preview" : "Completed"} — cutoff{" "}
-              {new Date(preview.cutoffIso).toLocaleString()}
+              {fmtDateTime(preview.cutoffIso)}
             </p>
             <ul className="ml-5 list-disc space-y-0.5">
               <li>
