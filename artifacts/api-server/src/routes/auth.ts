@@ -128,6 +128,30 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  // Permission gate: user must have at least one role and, when that role is
+  // department-scoped, must be assigned to at least one department.
+  const ALL_DEPT_ROLES: Role[] = [
+    "ADMIN",
+    "FINANCIAL_ALL",
+    "FINANCIAL_INVOICE",
+    "FINANCIAL_PAYMENT",
+    "GT_INVEST",
+    "GT_INVEST_NOTIFICATIONS",
+    "READ_ONLY_ALL",
+  ];
+  const hasAnyRole = user.roles.length > 0;
+  const hasAllDeptRole = user.roles.some((r) => ALL_DEPT_ROLES.includes(r));
+  const hasDept = user.departmentIds.length > 0;
+
+  if (!hasAnyRole || (!hasAllDeptRole && !hasDept)) {
+    await audit(user.id, "LOGIN_FAILED", "user", user.id, "no-permission", req.ip);
+    res.status(403).json({
+      error:
+        "Accès refusé. Votre compte n'est associé à aucun département ni à aucun rôle. Contactez votre administrateur.",
+    });
+    return;
+  }
+
   req.session.user = user;
   await audit(user.id, "LOGIN", "user", user.id, undefined, req.ip);
   res.json(user);
