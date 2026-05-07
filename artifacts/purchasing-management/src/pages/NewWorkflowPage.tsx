@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { ArrowLeft, ArrowRight, Loader2, ClipboardList, Upload, FileText, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -1209,11 +1210,9 @@ export function NewWorkflowPage() {
                   <Label htmlFor="commissioningDate">
                     10.2 Date souhaitée de mise en production / service<Req />
                   </Label>
-                  <Input
-                    id="commissioningDate"
-                    type="date"
+                  <DatePicker
                     value={commissioningDate}
-                    onChange={(e) => setCommissioningDate(e.target.value)}
+                    onChange={setCommissioningDate}
                     data-testid="input-neededby"
                   />
                 </div>

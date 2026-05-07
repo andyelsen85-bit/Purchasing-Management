@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   ArrowLeft,
   ArrowRight,
@@ -2288,10 +2289,9 @@ function OrderingPanel({
           </div>
           <div className="space-y-1">
             <Label>Date de commande</Label>
-            <Input
-              type="date"
+            <DatePicker
               value={orderDate}
-              onChange={(e) => setOrderDate(e.target.value)}
+              onChange={setOrderDate}
               data-testid="input-order-date"
             />
           </div>
@@ -2353,10 +2353,9 @@ function DeliveryPanel({
       <CardContent className="space-y-3">
         <div className="space-y-1">
           <Label>Livré le</Label>
-          <Input
-            type="date"
+          <DatePicker
             value={deliveredOn}
-            onChange={(e) => setDeliveredOn(e.target.value)}
+            onChange={setDeliveredOn}
             data-testid="input-delivered-on"
           />
         </div>
@@ -2469,10 +2468,9 @@ function InvoicePanel({
           </div>
           <div className="space-y-1">
             <Label>Date de facture</Label>
-            <Input
-              type="date"
+            <DatePicker
               value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.target.value)}
+              onChange={setInvoiceDate}
               data-testid="input-invoice-date"
             />
           </div>

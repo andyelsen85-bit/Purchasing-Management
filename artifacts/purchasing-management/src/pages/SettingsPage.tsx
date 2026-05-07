@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Save,
   Loader2,
@@ -2546,10 +2547,9 @@ function GtDatesPanel() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-[180px_1fr_auto] gap-2">
-          <Input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
             data-testid="input-gt-date"
           />
           <Input
