@@ -94,22 +94,45 @@ function getWinningPrice(w: WfForPdf): number | null {
   return w.estimatedAmount != null ? Number(w.estimatedAmount) : null;
 }
 
+/**
+ * Format a price as "1 234,56 EUR" using plain ASCII spaces so WinAnsi
+ * can encode the result.  toLocaleString("fr-FR") uses U+202F (narrow
+ * no-break space) as the thousands separator which WinAnsi cannot encode.
+ */
 function fmtCurrency(amount: number | null, currency: unknown): string {
-  if (amount == null) return "—";
+  if (amount == null) return "-";
   const cur = String(currency ?? "EUR");
-  return (
-    amount.toLocaleString("fr-FR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }) +
-    " " +
-    cur
-  );
+  const [intStr, decStr] = amount.toFixed(2).split(".");
+  const thousands = intStr.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return `${thousands},${decStr} ${cur}`;
 }
 
 function trunc(s: string | null | undefined, max: number): string {
   if (!s) return "";
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+/**
+ * Strip / replace any character that WinAnsi (Windows-1252) cannot encode.
+ * Keeps Latin-1 (U+0000–U+00FF) and the known Windows-1252 extras intact;
+ * replaces Unicode spaces with a plain ASCII space; drops everything else.
+ */
+function pdfSafe(s: string | null | undefined): string {
+  if (!s) return "";
+  const WIN1252_EXTRAS = new Set([
+    0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
+    0x2030, 0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C,
+    0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A,
+    0x0153, 0x017E, 0x0178,
+  ]);
+  return [...s].map((c) => {
+    const cp = c.codePointAt(0)!;
+    if (cp <= 0x00FF) return c;                    // Latin-1 — always safe
+    if (WIN1252_EXTRAS.has(cp)) return c;           // Win-1252 extras — safe
+    if ((cp >= 0x2000 && cp <= 0x200A) ||
+        cp === 0x202F || cp === 0x205F) return " "; // Unicode spaces → ASCII space
+    return "";                                      // everything else — strip
+  }).join("");
 }
 
 // ── Shared PDF builder ────────────────────────────────────────────────────────
@@ -135,7 +158,6 @@ async function buildMeetingPdf(
 
   // Layout constants (shared between orientations)
   const INFO_H      = 24;  // info/subtitle band below header
-  const TH_H        = 22;  // table header row height
   const ROW_H       = 19;  // data row height
   const FOOTER_H    = 28;
   const TABLE_MIN_Y = FOOTER_H + 6; // lowest y a row may start
@@ -159,14 +181,16 @@ async function buildMeetingPdf(
   const MUTED      = rgb(0.44, 0.44, 0.44);
   const HDR_SUB    = rgb(0.70, 0.86, 0.95);  // light blue for header subtitles
 
-  // Column layout — landscape usable width = 762 pt
-  const COLS = [
-    { label: "Département",        x: ML,          w: 120, align: "left"  },
-    { label: "Référence",          x: ML + 120,    w: 95,  align: "left"  },
-    { label: "Objet",              x: ML + 215,    w: 220, align: "left"  },
-    { label: "Prix TTC",           x: ML + 435,    w: 100, align: "right" },
-    { label: "Position budgétaire",x: ML + 535,    w: 227, align: "left"  },
-  ] as const;
+  // Column widths for the grouped cover table (landscape UW = 762)
+  // Référence | Objet | Prix HTVA
+  const COL_REF = 120;
+  const COL_OBJ = 510;
+  const COL_PRC = 132; // right-aligned price; 120+510+132 = 762 ✓
+  const X_REF = ML;
+  const X_OBJ = ML + COL_REF;
+  const X_PRC = ML + COL_REF + COL_OBJ;
+  const DEPT_H = 24; // department group header height
+  const POS_H  = 18; // budget-position sub-header + column-label bar height
 
   const meetingLabel = `${meeting.date}${meeting.label ? ` — ${meeting.label}` : ""}`;
   const genDate = new Date().toLocaleDateString("fr-FR", {
@@ -221,15 +245,6 @@ async function buildMeetingPdf(
     });
   }
 
-  function drawTableHeader(page: Page, d: PageDims, y: number) {
-    page.drawRectangle({ x: ML, y, width: d.uw, height: TH_H, color: NAVY_MID });
-    for (const col of COLS) {
-      const tw = fontBold.widthOfTextAtSize(col.label, 7.5);
-      const tx = col.align === "right" ? col.x + col.w - tw - 4 : col.x + 4;
-      page.drawText(col.label, { x: tx, y: y + 7, size: 7.5, font: fontBold, color: WHITE });
-    }
-  }
-
   function drawFooter(page: Page, d: PageDims, pageNum: number) {
     page.drawRectangle({ x: 0, y: 0, width: d.pw, height: FOOTER_H, color: INFO_BG });
     page.drawLine({ start: { x: 0, y: FOOTER_H }, end: { x: d.pw, y: FOOTER_H }, thickness: 0.5, color: BORDER });
@@ -241,93 +256,120 @@ async function buildMeetingPdf(
     });
   }
 
-  // ── Cover page(s) — landscape A4 ───────────────────────────────────────────
+  // ── Build items sorted by dept → budgetPos → reference ────────────────────
+  interface PdfItem { deptName: string; budgetPos: string; reference: string; title: string; price: string; }
+  const pdfItems: PdfItem[] = sorted.map((w) => {
+    const inv = (w.investmentForm ?? {}) as InvForm;
+    return {
+      deptName:  pdfSafe(w.departmentName) || "-",
+      budgetPos: pdfSafe(inv.budgetPosition) || "-",
+      reference: pdfSafe(w.reference),
+      title:     pdfSafe(w.title ?? ""),
+      price:     fmtCurrency(getWinningPrice(w), w.currency),
+    };
+  }).sort((a, b) => {
+    const d = a.deptName.localeCompare(b.deptName, "fr");
+    if (d !== 0) return d;
+    const p = a.budgetPos.localeCompare(b.budgetPos, "fr");
+    if (p !== 0) return p;
+    return a.reference.localeCompare(b.reference, "fr");
+  });
+
+  // ── Cover page(s) — landscape A4, grouped layout ────────────────────────────
   let pgNum = 1;
   let cvPage = merged.addPage([LAND.pw, LAND.ph]);
   drawHeader(cvPage, LAND, true, pgNum);
   drawInfoBand(cvPage, LAND);
   drawFooter(cvPage, LAND, pgNum);
 
-  // Table header starts right below the info band on the first page
-  let thY = LAND.headerBot - INFO_H - TH_H;
-  drawTableHeader(cvPage, LAND, thY);
-  let rowY = thY - ROW_H;
+  let curY = LAND.headerBot - INFO_H - 2;
 
-  for (let i = 0; i < sorted.length; i++) {
-    const w = sorted[i];
+  /** Draw the Référence / Objet / Prix HTVA column label bar on the current page. */
+  function drawColHeader() {
+    cvPage.drawRectangle({ x: ML, y: curY - POS_H, width: LAND.uw, height: POS_H, color: NAVY_MID });
+    cvPage.drawLine({ start: { x: X_OBJ, y: curY - POS_H }, end: { x: X_OBJ, y: curY }, thickness: 0.3, color: WHITE });
+    cvPage.drawLine({ start: { x: X_PRC, y: curY - POS_H }, end: { x: X_PRC, y: curY }, thickness: 0.3, color: WHITE });
+    cvPage.drawText("R\xE9f\xE9rence", { x: X_REF + 4, y: curY - POS_H + 5, size: 7.5, font: fontBold, color: WHITE });
+    cvPage.drawText("Objet",           { x: X_OBJ + 4, y: curY - POS_H + 5, size: 7.5, font: fontBold, color: WHITE });
+    const pL  = "Prix HTVA";
+    const pLW = fontBold.widthOfTextAtSize(pL, 7.5);
+    cvPage.drawText(pL, { x: X_PRC + COL_PRC - pLW - 4, y: curY - POS_H + 5, size: 7.5, font: fontBold, color: WHITE });
+    curY -= POS_H;
+  }
 
-    if (rowY < TABLE_MIN_Y) {
-      pgNum++;
-      cvPage = merged.addPage([LAND.pw, LAND.ph]);
-      drawHeader(cvPage, LAND, false, pgNum);
-      drawFooter(cvPage, LAND, pgNum);
-      thY = LAND.headerBot - 6 - TH_H;
-      drawTableHeader(cvPage, LAND, thY);
-      rowY = thY - ROW_H;
-    }
+  drawColHeader();
 
-    // Alternating row background
-    if (i % 2 === 1) {
-      cvPage.drawRectangle({ x: ML, y: rowY, width: LAND.uw, height: ROW_H, color: ROW_ALT });
-    }
-
-    // Row bottom border
-    cvPage.drawLine({
-      start: { x: ML, y: rowY },
-      end:   { x: ML + LAND.uw, y: rowY },
-      thickness: 0.3,
-      color: BORDER,
-    });
-
-    // Column dividers
-    for (let c = 1; c < COLS.length; c++) {
-      cvPage.drawLine({
-        start: { x: COLS[c].x, y: rowY },
-        end:   { x: COLS[c].x, y: rowY + ROW_H },
-        thickness: 0.3,
-        color: BORDER,
+  /** Open a new landscape page and re-print the running context headers. */
+  function newCoverPage(contDept: string, contPos: string) {
+    pgNum++;
+    cvPage = merged.addPage([LAND.pw, LAND.ph]);
+    drawHeader(cvPage, LAND, false, pgNum);
+    drawFooter(cvPage, LAND, pgNum);
+    curY = LAND.headerBot - 6;
+    drawColHeader();
+    if (contDept) {
+      cvPage.drawRectangle({ x: ML, y: curY - DEPT_H, width: LAND.uw, height: DEPT_H, color: NAVY });
+      cvPage.drawText(trunc(contDept + " (suite)", 80), {
+        x: ML + 8, y: curY - DEPT_H + 8, size: 10, font: fontBold, color: WHITE,
       });
+      curY -= DEPT_H;
     }
-
-    // Cell values
-    const price  = fmtCurrency(getWinningPrice(w), w.currency);
-    const inv    = ((w.investmentForm ?? {}) as InvForm);
-    const cells: string[] = [
-      trunc(w.departmentName, 26),
-      trunc(w.reference, 20),
-      trunc(w.title, 40),
-      price,
-      trunc(inv.budgetPosition, 40),
-    ];
-
-    for (let c = 0; c < COLS.length; c++) {
-      const col  = COLS[c];
-      const text = cells[c] ?? "";
-      const tw   = fontReg.widthOfTextAtSize(text, 8);
-      const tx   = col.align === "right" ? col.x + col.w - tw - 4 : col.x + 4;
-      cvPage.drawText(text, { x: tx, y: rowY + 5, size: 8, font: fontReg, color: TXT });
+    if (contPos) {
+      cvPage.drawRectangle({ x: ML, y: curY - POS_H, width: LAND.uw, height: POS_H, color: NAVY_MID });
+      cvPage.drawText(trunc(contPos, 80), {
+        x: ML + 16, y: curY - POS_H + 5, size: 8, font: fontBold, color: WHITE,
+      });
+      curY -= POS_H;
     }
-
-    rowY -= ROW_H;
   }
 
-  // Left and right border lines enclosing the entire table
-  const tableTopY    = thY + TH_H;
-  const tableBottomY = rowY + ROW_H;
-  for (const xPos of [ML, ML + LAND.uw]) {
-    cvPage.drawLine({
-      start: { x: xPos, y: tableBottomY },
-      end:   { x: xPos, y: tableTopY },
-      thickness: 0.5,
-      color: BORDER,
-    });
+  let lastDept = "";
+  let lastPos  = "";
+  let rowAlt   = false;
+
+  for (const item of pdfItems) {
+    // ── Department header ──────────────────────────────────────────────────
+    if (item.deptName !== lastDept) {
+      if (curY - DEPT_H - POS_H - ROW_H < TABLE_MIN_Y) newCoverPage("", "");
+      cvPage.drawRectangle({ x: ML, y: curY - DEPT_H, width: LAND.uw, height: DEPT_H, color: NAVY });
+      cvPage.drawText(trunc(item.deptName, 80), {
+        x: ML + 8, y: curY - DEPT_H + 8, size: 10, font: fontBold, color: WHITE,
+      });
+      curY -= DEPT_H;
+      lastDept = item.deptName;
+      lastPos  = "";
+      rowAlt   = false;
+    }
+
+    // ── Budget-position sub-header ─────────────────────────────────────────
+    if (item.budgetPos !== lastPos) {
+      if (curY - POS_H - ROW_H < TABLE_MIN_Y) newCoverPage(lastDept, "");
+      cvPage.drawRectangle({ x: ML, y: curY - POS_H, width: LAND.uw, height: POS_H, color: NAVY_MID });
+      cvPage.drawText(trunc(item.budgetPos, 80), {
+        x: ML + 16, y: curY - POS_H + 5, size: 8, font: fontBold, color: WHITE,
+      });
+      curY -= POS_H;
+      lastPos = item.budgetPos;
+      rowAlt  = false;
+    }
+
+    // ── Demand row ────────────────────────────────────────────────────────
+    if (curY - ROW_H < TABLE_MIN_Y) newCoverPage(lastDept, lastPos);
+    if (rowAlt) {
+      cvPage.drawRectangle({ x: ML, y: curY - ROW_H, width: LAND.uw, height: ROW_H, color: ROW_ALT });
+    }
+    cvPage.drawLine({ start: { x: ML,    y: curY - ROW_H }, end: { x: ML + LAND.uw, y: curY - ROW_H }, thickness: 0.3, color: BORDER });
+    cvPage.drawLine({ start: { x: X_OBJ, y: curY - ROW_H }, end: { x: X_OBJ,        y: curY          }, thickness: 0.3, color: BORDER });
+    cvPage.drawLine({ start: { x: X_PRC, y: curY - ROW_H }, end: { x: X_PRC,        y: curY          }, thickness: 0.3, color: BORDER });
+
+    cvPage.drawText(trunc(item.reference, 18), { x: X_REF + 4, y: curY - ROW_H + 5, size: 8, font: fontReg, color: TXT });
+    cvPage.drawText(trunc(item.title,     85), { x: X_OBJ + 4, y: curY - ROW_H + 5, size: 8, font: fontReg, color: TXT });
+    const priceW = fontReg.widthOfTextAtSize(item.price, 8);
+    cvPage.drawText(item.price, { x: X_PRC + COL_PRC - priceW - 4, y: curY - ROW_H + 5, size: 8, font: fontReg, color: TXT });
+
+    curY -= ROW_H;
+    rowAlt = !rowAlt;
   }
-  cvPage.drawLine({
-    start: { x: ML, y: tableBottomY },
-    end:   { x: ML + LAND.uw, y: tableBottomY },
-    thickness: 0.5,
-    color: BORDER,
-  });
 
   // ── Helper: separator/cover page before each workflow's attachments ─────────
   function drawWorkflowSeparator(
