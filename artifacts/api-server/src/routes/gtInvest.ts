@@ -129,21 +129,23 @@ async function buildMeetingPdf(
   const fontReg  = await merged.embedFont(StandardFonts.Helvetica);
   const fontBold = await merged.embedFont(StandardFonts.HelveticaBold);
 
-  // Page dimensions (A4)
-  const PW = 595;
-  const PH = 842;
+  // Shared margins
   const ML = 40;
   const MR = 40;
-  const UW = PW - ML - MR; // 515 pt usable width
 
-  // Layout constants
-  const HEADER_H    = 108;
-  const HEADER_BOT  = PH - HEADER_H; // 734 — y of bottom edge of header band
-  const INFO_H      = 24;            // info/subtitle band below header
-  const TH_H        = 22;            // table header row height
-  const ROW_H       = 19;            // data row height
+  // Layout constants (shared between orientations)
+  const INFO_H      = 24;  // info/subtitle band below header
+  const TH_H        = 22;  // table header row height
+  const ROW_H       = 19;  // data row height
   const FOOTER_H    = 28;
-  const TABLE_MIN_Y = FOOTER_H + 6;  // lowest y a row may start
+  const TABLE_MIN_Y = FOOTER_H + 6; // lowest y a row may start
+
+  // Per-orientation dimension packs
+  interface PageDims { pw: number; ph: number; uw: number; headerH: number; headerBot: number; }
+  // Portrait A4  (595 × 842) — used for separator + attachment pages
+  const PORT: PageDims = { pw: 595, ph: 842, uw: 515, headerH: 108, headerBot: 734 };
+  // Landscape A4 (842 × 595) — used for the summary/cover table pages
+  const LAND: PageDims = { pw: 842, ph: 595, uw: 762, headerH: 80,  headerBot: 515 };
 
   // Colour palette — CHdN navy blue scheme
   const NAVY       = rgb(0.00, 0.22, 0.44);  // #003870
@@ -157,14 +159,13 @@ async function buildMeetingPdf(
   const MUTED      = rgb(0.44, 0.44, 0.44);
   const HDR_SUB    = rgb(0.70, 0.86, 0.95);  // light blue for header subtitles
 
-  // Column layout (total = UW = 515)
-  // Widths tuned so "Pos. budgétaire" gets enough room for real values
+  // Column layout — landscape usable width = 762 pt
   const COLS = [
-    { label: "Département",       x: ML,          w: 95,  align: "left"  },
-    { label: "Référence",         x: ML + 95,     w: 72,  align: "left"  },
-    { label: "Objet",             x: ML + 167,    w: 138, align: "left"  },
-    { label: "Prix TTC",          x: ML + 305,    w: 85,  align: "right" },
-    { label: "Position budgét.",  x: ML + 390,    w: 125, align: "left"  },
+    { label: "Département",        x: ML,          w: 120, align: "left"  },
+    { label: "Référence",          x: ML + 120,    w: 95,  align: "left"  },
+    { label: "Objet",              x: ML + 215,    w: 220, align: "left"  },
+    { label: "Prix TTC",           x: ML + 435,    w: 100, align: "right" },
+    { label: "Position budgétaire",x: ML + 535,    w: 227, align: "left"  },
   ] as const;
 
   const meetingLabel = `${meeting.date}${meeting.label ? ` — ${meeting.label}` : ""}`;
@@ -178,51 +179,50 @@ async function buildMeetingPdf(
 
   // ── Inner helpers ───────────────────────────────────────────────────────────
 
-  function drawHeader(page: ReturnType<typeof merged.addPage>, isFirst: boolean, pageNum: number) {
-    // Main navy band
-    page.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: HEADER_H, color: NAVY });
-    // Thin accent stripe at bottom of band
-    page.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: 5, color: ACCENT });
-    // Right decorative side strip
-    page.drawRectangle({ x: PW - 10, y: HEADER_BOT, width: 10, height: HEADER_H, color: NAVY_MID });
+  type Page = ReturnType<typeof merged.addPage>;
+
+  function drawHeader(page: Page, d: PageDims, isFirst: boolean, pageNum: number) {
+    page.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: d.headerH, color: NAVY });
+    page.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: 5, color: ACCENT });
+    page.drawRectangle({ x: d.pw - 10, y: d.headerBot, width: 10, height: d.headerH, color: NAVY_MID });
 
     if (isFirst) {
       page.drawText("GT INVEST PACK", {
-        x: ML, y: PH - 43, size: 24, font: fontBold, color: WHITE,
+        x: ML, y: d.ph - 43, size: 24, font: fontBold, color: WHITE,
       });
       page.drawText(`Réunion du ${meetingLabel}`, {
-        x: ML, y: PH - 67, size: 11, font: fontReg, color: HDR_SUB,
+        x: ML, y: d.ph - 67, size: 11, font: fontReg, color: HDR_SUB,
       });
       page.drawText(
         `${sorted.length} dossier${sorted.length !== 1 ? "s" : ""}  ·  ${appName}`,
-        { x: ML, y: PH - 85, size: 9, font: fontReg, color: HDR_SUB },
+        { x: ML, y: d.ph - 85, size: 9, font: fontReg, color: HDR_SUB },
       );
     } else {
       page.drawText("GT INVEST PACK", {
-        x: ML, y: PH - 43, size: 20, font: fontBold, color: WHITE,
+        x: ML, y: d.ph - 43, size: 20, font: fontBold, color: WHITE,
       });
       page.drawText(`Réunion du ${meetingLabel}  ·  page ${pageNum}`, {
-        x: ML, y: PH - 66, size: 10, font: fontReg, color: HDR_SUB,
+        x: ML, y: d.ph - 66, size: 10, font: fontReg, color: HDR_SUB,
       });
     }
   }
 
-  function drawInfoBand(page: ReturnType<typeof merged.addPage>) {
-    const y = HEADER_BOT - INFO_H;
-    page.drawRectangle({ x: 0, y, width: PW, height: INFO_H, color: INFO_BG });
-    page.drawLine({ start: { x: 0, y }, end: { x: PW, y }, thickness: 0.5, color: BORDER });
+  function drawInfoBand(page: Page, d: PageDims) {
+    const y = d.headerBot - INFO_H;
+    page.drawRectangle({ x: 0, y, width: d.pw, height: INFO_H, color: INFO_BG });
+    page.drawLine({ start: { x: 0, y }, end: { x: d.pw, y }, thickness: 0.5, color: BORDER });
     page.drawText(`Généré le ${genDate}`, {
       x: ML, y: y + 8, size: 7.5, font: fontReg, color: MUTED,
     });
     const right = `${sorted.length} demande${sorted.length !== 1 ? "s" : ""}`;
     page.drawText(right, {
-      x: PW - MR - fontReg.widthOfTextAtSize(right, 7.5),
+      x: d.pw - MR - fontReg.widthOfTextAtSize(right, 7.5),
       y: y + 8, size: 7.5, font: fontReg, color: MUTED,
     });
   }
 
-  function drawTableHeader(page: ReturnType<typeof merged.addPage>, y: number) {
-    page.drawRectangle({ x: ML, y, width: UW, height: TH_H, color: NAVY_MID });
+  function drawTableHeader(page: Page, d: PageDims, y: number) {
+    page.drawRectangle({ x: ML, y, width: d.uw, height: TH_H, color: NAVY_MID });
     for (const col of COLS) {
       const tw = fontBold.widthOfTextAtSize(col.label, 7.5);
       const tx = col.align === "right" ? col.x + col.w - tw - 4 : col.x + 4;
@@ -230,27 +230,27 @@ async function buildMeetingPdf(
     }
   }
 
-  function drawFooter(page: ReturnType<typeof merged.addPage>, pageNum: number) {
-    page.drawRectangle({ x: 0, y: 0, width: PW, height: FOOTER_H, color: INFO_BG });
-    page.drawLine({ start: { x: 0, y: FOOTER_H }, end: { x: PW, y: FOOTER_H }, thickness: 0.5, color: BORDER });
+  function drawFooter(page: Page, d: PageDims, pageNum: number) {
+    page.drawRectangle({ x: 0, y: 0, width: d.pw, height: FOOTER_H, color: INFO_BG });
+    page.drawLine({ start: { x: 0, y: FOOTER_H }, end: { x: d.pw, y: FOOTER_H }, thickness: 0.5, color: BORDER });
     page.drawText(appName, { x: ML, y: 9, size: 7, font: fontReg, color: MUTED });
     const pg = `Page ${pageNum}`;
     page.drawText(pg, {
-      x: PW - MR - fontReg.widthOfTextAtSize(pg, 7),
+      x: d.pw - MR - fontReg.widthOfTextAtSize(pg, 7),
       y: 9, size: 7, font: fontReg, color: MUTED,
     });
   }
 
-  // ── Cover page(s) ──────────────────────────────────────────────────────────
+  // ── Cover page(s) — landscape A4 ───────────────────────────────────────────
   let pgNum = 1;
-  let cvPage = merged.addPage([PW, PH]);
-  drawHeader(cvPage, true, pgNum);
-  drawInfoBand(cvPage);
-  drawFooter(cvPage, pgNum);
+  let cvPage = merged.addPage([LAND.pw, LAND.ph]);
+  drawHeader(cvPage, LAND, true, pgNum);
+  drawInfoBand(cvPage, LAND);
+  drawFooter(cvPage, LAND, pgNum);
 
   // Table header starts right below the info band on the first page
-  let thY = HEADER_BOT - INFO_H - TH_H;
-  drawTableHeader(cvPage, thY);
+  let thY = LAND.headerBot - INFO_H - TH_H;
+  drawTableHeader(cvPage, LAND, thY);
   let rowY = thY - ROW_H;
 
   for (let i = 0; i < sorted.length; i++) {
@@ -258,23 +258,23 @@ async function buildMeetingPdf(
 
     if (rowY < TABLE_MIN_Y) {
       pgNum++;
-      cvPage = merged.addPage([PW, PH]);
-      drawHeader(cvPage, false, pgNum);
-      drawFooter(cvPage, pgNum);
-      thY = HEADER_BOT - 6 - TH_H;
-      drawTableHeader(cvPage, thY);
+      cvPage = merged.addPage([LAND.pw, LAND.ph]);
+      drawHeader(cvPage, LAND, false, pgNum);
+      drawFooter(cvPage, LAND, pgNum);
+      thY = LAND.headerBot - 6 - TH_H;
+      drawTableHeader(cvPage, LAND, thY);
       rowY = thY - ROW_H;
     }
 
     // Alternating row background
     if (i % 2 === 1) {
-      cvPage.drawRectangle({ x: ML, y: rowY, width: UW, height: ROW_H, color: ROW_ALT });
+      cvPage.drawRectangle({ x: ML, y: rowY, width: LAND.uw, height: ROW_H, color: ROW_ALT });
     }
 
     // Row bottom border
     cvPage.drawLine({
       start: { x: ML, y: rowY },
-      end:   { x: ML + UW, y: rowY },
+      end:   { x: ML + LAND.uw, y: rowY },
       thickness: 0.3,
       color: BORDER,
     });
@@ -293,11 +293,11 @@ async function buildMeetingPdf(
     const price  = fmtCurrency(getWinningPrice(w), w.currency);
     const inv    = ((w.investmentForm ?? {}) as InvForm);
     const cells: string[] = [
-      trunc(w.departmentName, 16),
-      trunc(w.reference, 12),
-      trunc(w.title, 23),
+      trunc(w.departmentName, 26),
+      trunc(w.reference, 20),
+      trunc(w.title, 40),
       price,
-      trunc(inv.budgetPosition, 21),
+      trunc(inv.budgetPosition, 40),
     ];
 
     for (let c = 0; c < COLS.length; c++) {
@@ -314,7 +314,7 @@ async function buildMeetingPdf(
   // Left and right border lines enclosing the entire table
   const tableTopY    = thY + TH_H;
   const tableBottomY = rowY + ROW_H;
-  for (const xPos of [ML, ML + UW]) {
+  for (const xPos of [ML, ML + LAND.uw]) {
     cvPage.drawLine({
       start: { x: xPos, y: tableBottomY },
       end:   { x: xPos, y: tableTopY },
@@ -324,7 +324,7 @@ async function buildMeetingPdf(
   }
   cvPage.drawLine({
     start: { x: ML, y: tableBottomY },
-    end:   { x: ML + UW, y: tableBottomY },
+    end:   { x: ML + LAND.uw, y: tableBottomY },
     thickness: 0.5,
     color: BORDER,
   });
@@ -336,41 +336,42 @@ async function buildMeetingPdf(
     hasAttachment: boolean,
     attachmentFilename: string,
   ) {
-    const sep = merged.addPage([PW, PH]);
+    const d = PORT;
+    const sep = merged.addPage([d.pw, d.ph]);
 
     // ── Header band ──
-    sep.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: HEADER_H, color: NAVY });
-    sep.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: 5, color: ACCENT });
-    sep.drawRectangle({ x: PW - 10, y: HEADER_BOT, width: 10, height: HEADER_H, color: NAVY_MID });
+    sep.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: d.headerH, color: NAVY });
+    sep.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: 5, color: ACCENT });
+    sep.drawRectangle({ x: d.pw - 10, y: d.headerBot, width: 10, height: d.headerH, color: NAVY_MID });
     sep.drawText(trunc(w.reference, 38), {
-      x: ML, y: PH - 43, size: 20, font: fontBold, color: WHITE,
+      x: ML, y: d.ph - 43, size: 20, font: fontBold, color: WHITE,
     });
     sep.drawText(trunc(`${w.departmentName}  ·  ${w.title}`, 72), {
-      x: ML, y: PH - 66, size: 10, font: fontReg, color: HDR_SUB,
+      x: ML, y: d.ph - 66, size: 10, font: fontReg, color: HDR_SUB,
     });
     // Position badge (top-right of header)
     const badge = `Dossier ${position} / ${sorted.length}`;
     const badgeW = fontBold.widthOfTextAtSize(badge, 9);
     sep.drawText(badge, {
-      x: PW - MR - 14 - badgeW, y: PH - 26, size: 9, font: fontBold, color: WHITE,
+      x: d.pw - MR - 14 - badgeW, y: d.ph - 26, size: 9, font: fontBold, color: WHITE,
     });
 
     // ── Info band ──
-    const infoY = HEADER_BOT - INFO_H;
-    sep.drawRectangle({ x: 0, y: infoY, width: PW, height: INFO_H, color: INFO_BG });
-    sep.drawLine({ start: { x: 0, y: infoY }, end: { x: PW, y: infoY }, thickness: 0.5, color: BORDER });
+    const infoY = d.headerBot - INFO_H;
+    sep.drawRectangle({ x: 0, y: infoY, width: d.pw, height: INFO_H, color: INFO_BG });
+    sep.drawLine({ start: { x: 0, y: infoY }, end: { x: d.pw, y: infoY }, thickness: 0.5, color: BORDER });
     sep.drawText("Récapitulatif du dossier", {
       x: ML, y: infoY + 8, size: 7.5, font: fontBold, color: NAVY_MID,
     });
     sep.drawText(`Réunion du ${meetingLabel}`, {
-      x: PW - MR - fontReg.widthOfTextAtSize(`Réunion du ${meetingLabel}`, 7.5),
+      x: d.pw - MR - fontReg.widthOfTextAtSize(`Réunion du ${meetingLabel}`, 7.5),
       y: infoY + 8, size: 7.5, font: fontReg, color: MUTED,
     });
 
     // ── Detail card ──
     const cardX = ML;
     const cardY = infoY - 200;
-    const cardW = UW;
+    const cardW = d.uw;
     const cardH = 190;
     sep.drawRectangle({ x: cardX, y: cardY, width: cardW, height: cardH, color: INFO_BG });
     sep.drawRectangle({ x: cardX, y: cardY + cardH - 4, width: cardW, height: 4, color: NAVY_MID });
@@ -401,14 +402,14 @@ async function buildMeetingPdf(
 
     // ── "Pièces jointes ci-après" label ──
     const arrowY = cardY - 55;
-    sep.drawLine({ start: { x: ML, y: arrowY + 20 }, end: { x: PW - MR, y: arrowY + 20 }, thickness: 1, color: ACCENT });
+    sep.drawLine({ start: { x: ML, y: arrowY + 20 }, end: { x: d.pw - MR, y: arrowY + 20 }, thickness: 1, color: ACCENT });
     const arrow = hasAttachment ? "PIÈCE JOINTE CI-APRÈS  →" : "AUCUNE PIÈCE JOINTE PDF POUR CE DOSSIER";
     const arrowW = fontBold.widthOfTextAtSize(arrow, 12);
     sep.drawText(arrow, {
-      x: (PW - arrowW) / 2, y: arrowY, size: 12, font: fontBold,
+      x: (d.pw - arrowW) / 2, y: arrowY, size: 12, font: fontBold,
       color: hasAttachment ? NAVY_MID : MUTED,
     });
-    sep.drawLine({ start: { x: ML, y: arrowY - 8 }, end: { x: PW - MR, y: arrowY - 8 }, thickness: 1, color: ACCENT });
+    sep.drawLine({ start: { x: ML, y: arrowY - 8 }, end: { x: d.pw - MR, y: arrowY - 8 }, thickness: 1, color: ACCENT });
   }
 
   // ── Attachment pages — one separator + docs per workflow ──────────────────
@@ -437,24 +438,25 @@ async function buildMeetingPdf(
         logWarn?.({ err: String(err), workflowId: w.id, msg: "Failed to merge PDF" });
       }
     } else {
-      const info = merged.addPage([PW, PH]);
-      info.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: HEADER_H, color: NAVY });
-      info.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: 5, color: ACCENT });
-      info.drawRectangle({ x: PW - 10, y: HEADER_BOT, width: 10, height: HEADER_H, color: NAVY_MID });
+      const dp = PORT;
+      const info = merged.addPage([dp.pw, dp.ph]);
+      info.drawRectangle({ x: 0, y: dp.headerBot, width: dp.pw, height: dp.headerH, color: NAVY });
+      info.drawRectangle({ x: 0, y: dp.headerBot, width: dp.pw, height: 5, color: ACCENT });
+      info.drawRectangle({ x: dp.pw - 10, y: dp.headerBot, width: 10, height: dp.headerH, color: NAVY_MID });
       info.drawText(trunc(w.reference, 35), {
-        x: ML, y: PH - 43, size: 18, font: fontBold, color: WHITE,
+        x: ML, y: dp.ph - 43, size: 18, font: fontBold, color: WHITE,
       });
       info.drawText(trunc(`${w.departmentName} — ${w.title}`, 70), {
-        x: ML, y: PH - 66, size: 10, font: fontReg, color: HDR_SUB,
+        x: ML, y: dp.ph - 66, size: 10, font: fontReg, color: HDR_SUB,
       });
       info.drawText(`Pièce jointe : ${winner.filename}`, {
-        x: ML, y: PH - 180, size: 11, font: fontReg, color: TXT,
+        x: ML, y: dp.ph - 180, size: 11, font: fontReg, color: TXT,
       });
       info.drawText(`Type : ${winner.mimeType}`, {
-        x: ML, y: PH - 198, size: 9, font: fontReg, color: MUTED,
+        x: ML, y: dp.ph - 198, size: 9, font: fontReg, color: MUTED,
       });
       info.drawText("(Pièce non-PDF — impossible de l'incorporer dans le pack)", {
-        x: ML, y: PH - 216, size: 9, font: fontReg, color: MUTED,
+        x: ML, y: dp.ph - 216, size: 9, font: fontReg, color: MUTED,
       });
     }
   }
