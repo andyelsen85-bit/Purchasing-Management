@@ -675,6 +675,12 @@ export interface AuditEntry {
   createdAt: string;
 }
 
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  /** @minLength 6 */
+  newPassword: string;
+}
+
 export interface LoginRequest {
   username: string;
   password: string;

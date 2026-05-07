@@ -15,6 +15,7 @@ export * from "./archiveAttachmentsResult";
 export * from "./auditEntry";
 export * from "./branch";
 export * from "./certInfo";
+export * from "./changePasswordRequest";
 export * from "./company";
 export * from "./companyWithContacts";
 export * from "./contact";

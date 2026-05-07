@@ -76,6 +76,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionResponse" }
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change own password (local accounts only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "204": { description: Password changed }
+        "400":
+          description: Validation error or current password wrong
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+        "403":
+          description: LDAP accounts cannot change password here
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+
   /auth/negotiate:
     get:
       operationId: kerberosNegotiate
@@ -1635,6 +1658,13 @@ components:
         details: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
       required: [id, action, createdAt]
+
+    ChangePasswordRequest:
+      type: object
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string, minLength: 6 }
+      required: [currentPassword, newPassword]
 
     LoginRequest:
       type: object

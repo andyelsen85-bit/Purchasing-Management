@@ -454,6 +454,74 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+router.post(
+  "/auth/change-password",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const sessionUser = req.session!.user!;
+
+    // LDAP / Kerberos accounts are managed by the directory — they cannot
+    // change their password through this app.
+    if (sessionUser.source !== "LOCAL") {
+      res.status(403).json({
+        error:
+          "Les comptes LDAP ne peuvent pas changer leur mot de passe ici. Utilisez les outils d'administration de votre annuaire.",
+      });
+      return;
+    }
+
+    const { currentPassword, newPassword } = req.body ?? {};
+    if (
+      typeof currentPassword !== "string" ||
+      !currentPassword ||
+      typeof newPassword !== "string" ||
+      !newPassword
+    ) {
+      res
+        .status(400)
+        .json({ error: "Mot de passe actuel et nouveau mot de passe requis." });
+      return;
+    }
+    if (newPassword.length < 6) {
+      res.status(400).json({
+        error: "Le nouveau mot de passe doit contenir au moins 6 caractères.",
+      });
+      return;
+    }
+
+    const [row] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, sessionUser.id));
+    if (!row?.passwordHash) {
+      res
+        .status(400)
+        .json({ error: "Aucun mot de passe configuré pour ce compte." });
+      return;
+    }
+
+    const ok = await verifyPassword(currentPassword, row.passwordHash);
+    if (!ok) {
+      res.status(400).json({ error: "Mot de passe actuel incorrect." });
+      return;
+    }
+
+    const newHash = await hashPassword(newPassword);
+    await db
+      .update(usersTable)
+      .set({ passwordHash: newHash })
+      .where(eq(usersTable.id, sessionUser.id));
+    await audit(
+      sessionUser.id,
+      "CHANGE_PASSWORD",
+      "user",
+      sessionUser.id,
+      "Mot de passe modifié",
+    );
+    res.status(204).end();
+  },
+);
+
 router.get("/auth/session", requireAuth, async (req, res): Promise<void> => {
   // Rebuild from DB so role changes are reflected
   const fresh = await buildSessionUser(req.session!.user!.id);

@@ -15,6 +15,7 @@ import {
   Plus,
   Eye,
   EyeOff,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -26,11 +27,21 @@ import {
 } from "@/components/ui/resizable";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   useGetSettings,
   useLogout,
   useListDepartments,
   useListWorkflows,
   getGetSessionQueryKey,
+  useChangePassword,
 } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@/components/AuthGate";
@@ -74,6 +85,55 @@ export function AppShell({ user, children }: Props) {
   const { data: departments } = useListDepartments();
   const logout = useLogout();
   const qc = useQueryClient();
+
+  // ── Change password dialog ────────────────────────────────────────────────
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const changePassword = useChangePassword({
+    mutation: {
+      onSuccess: () => {
+        setPwSuccess(true);
+        setPwError(null);
+        setPwCurrent("");
+        setPwNew("");
+        setPwConfirm("");
+      },
+      onError: (err: unknown) => {
+        const msg =
+          (err as { response?: { data?: { error?: string } } })?.response?.data
+            ?.error ?? "Une erreur est survenue.";
+        setPwError(msg);
+      },
+    },
+  });
+
+  function openPwDialog() {
+    setPwOpen(true);
+    setPwCurrent("");
+    setPwNew("");
+    setPwConfirm("");
+    setPwError(null);
+    setPwSuccess(false);
+  }
+
+  function submitChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError(null);
+    if (pwNew !== pwConfirm) {
+      setPwError("Les nouveaux mots de passe ne correspondent pas.");
+      return;
+    }
+    if (pwNew.length < 6) {
+      setPwError("Le nouveau mot de passe doit contenir au moins 6 caractères.");
+      return;
+    }
+    changePassword.mutate({ data: { currentPassword: pwCurrent, newPassword: pwNew } });
+  }
+  // ─────────────────────────────────────────────────────────────────────────
   const [dark, setDark] = useState<boolean>(() => {
     return (
       typeof document !== "undefined" &&
@@ -273,6 +333,18 @@ export function AppShell({ user, children }: Props) {
                   )}
                   {dark ? "Clair" : "Sombre"}
                 </Button>
+                {user.source === "LOCAL" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                    onClick={openPwDialog}
+                    title="Changer le mot de passe"
+                    data-testid="button-change-password"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -425,6 +497,83 @@ export function AppShell({ user, children }: Props) {
           </main>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {/* ── Change password dialog ─────────────────────────────────────── */}
+      <Dialog open={pwOpen} onOpenChange={(o) => { if (!changePassword.isPending) setPwOpen(o); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Changer le mot de passe</DialogTitle>
+          </DialogHeader>
+
+          {pwSuccess ? (
+            <div className="py-4 text-center text-sm text-green-600 dark:text-green-400">
+              Mot de passe modifié avec succès.
+            </div>
+          ) : (
+            <form onSubmit={submitChangePassword} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="pw-current">Mot de passe actuel</Label>
+                <Input
+                  id="pw-current"
+                  type="password"
+                  autoComplete="current-password"
+                  value={pwCurrent}
+                  onChange={(e) => setPwCurrent(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pw-new">Nouveau mot de passe</Label>
+                <Input
+                  id="pw-new"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pw-confirm">Confirmer le nouveau mot de passe</Label>
+                <Input
+                  id="pw-confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </div>
+
+              {pwError && (
+                <p className="text-sm text-destructive">{pwError}</p>
+              )}
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPwOpen(false)}
+                  disabled={changePassword.isPending}
+                >
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={changePassword.isPending}>
+                  {changePassword.isPending ? "Enregistrement…" : "Enregistrer"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {pwSuccess && (
+            <DialogFooter>
+              <Button onClick={() => setPwOpen(false)}>Fermer</Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

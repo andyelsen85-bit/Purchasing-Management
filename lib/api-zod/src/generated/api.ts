@@ -78,6 +78,16 @@ export const GetSessionResponse = zod.object({
 });
 
 /**
+ * @summary Change own password (local accounts only)
+ */
+export const changePasswordBodyNewPasswordMin = 6;
+
+export const ChangePasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string().min(changePasswordBodyNewPasswordMin),
+});
+
+/**
  * Browsers send the user's Kerberos ticket via the
 `Authorization: Negotiate <base64-token>` header. When no header
 is present we reply with `401 WWW-Authenticate: Negotiate` to
