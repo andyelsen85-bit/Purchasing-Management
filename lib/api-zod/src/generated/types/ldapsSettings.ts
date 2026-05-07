@@ -47,6 +47,8 @@ and attribute names.
   kerberosEnabled: boolean;
   /** @nullable */
   servicePrincipalName?: string | null;
+  /** @nullable */
+  proxyUserHeader?: string | null;
   groupRoleMap?: LdapsSettingsGroupRoleMap;
   groupDepartmentMap?: LdapsSettingsGroupDepartmentMap;
 }

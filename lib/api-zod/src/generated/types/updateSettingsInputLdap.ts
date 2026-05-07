@@ -45,6 +45,8 @@ export type UpdateSettingsInputLdap = {
   kerberosEnabled?: boolean | null;
   /** @nullable */
   servicePrincipalName?: string | null;
+  /** @nullable */
+  proxyUserHeader?: string | null;
   groupRoleMap?: UpdateSettingsInputLdapGroupRoleMap;
   groupDepartmentMap?: UpdateSettingsInputLdapGroupDepartmentMap;
 };

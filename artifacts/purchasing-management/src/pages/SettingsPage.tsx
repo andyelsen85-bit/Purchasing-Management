@@ -1170,6 +1170,7 @@ function LdapSettingsPanel() {
   const [caCertSet, setCaCertSet] = useState(false);
   const [kerberos, setKerberos] = useState(false);
   const [spn, setSpn] = useState("");
+  const [proxyUserHeader, setProxyUserHeader] = useState("");
 
   useEffect(() => {
     if (!s) return;
@@ -1202,6 +1203,8 @@ function LdapSettingsPanel() {
     setCaCertSet(s.ldap.caCertSet);
     setKerberos(s.ldap.kerberosEnabled);
     setSpn(s.ldap.servicePrincipalName ?? "");
+    const ld2 = s.ldap as { proxyUserHeader?: string | null };
+    setProxyUserHeader(ld2.proxyUserHeader ?? "");
   }, [s]);
 
   return (
@@ -1472,9 +1475,9 @@ function LdapSettingsPanel() {
         </div>
         <div className="flex items-center justify-between rounded-md border p-3">
           <div>
-            <Label>Enable Kerberos / GSSAPI</Label>
+            <Label>Activer Kerberos / GSSAPI</Label>
             <p className="text-xs text-muted-foreground">
-              Negotiate single sign-on for Windows clients
+              Authentification SSO silencieuse pour les postes Windows du domaine
             </p>
           </div>
           <Switch
@@ -1484,14 +1487,32 @@ function LdapSettingsPanel() {
           />
         </div>
         {kerberos && (
-          <div className="space-y-1">
-            <Label>Service principal name</Label>
-            <Input
-              value={spn}
-              onChange={(e) => setSpn(e.target.value)}
-              placeholder="HTTP/host.domain.lan"
-              data-testid="input-spn"
-            />
+          <div className="space-y-3 rounded-md border p-3">
+            <div className="space-y-1">
+              <Label>Service Principal Name (SPN)</Label>
+              <Input
+                value={spn}
+                onChange={(e) => setSpn(e.target.value)}
+                placeholder="HTTP/serveur.hopital.chdn.lan@HOPITAL.CHDN.LAN"
+                data-testid="input-spn"
+              />
+              <p className="text-xs text-muted-foreground">
+                Format : <code>HTTP/hostname.domaine@DOMAINE.LAN</code>. Laissez vide si vous utilisez uniquement l'en-tête proxy ci-dessous.
+              </p>
+            </div>
+            <div className="space-y-1 border-t pt-3">
+              <Label>En-tête proxy SSO (alternative sans keytab)</Label>
+              <Input
+                value={proxyUserHeader}
+                onChange={(e) => setProxyUserHeader(e.target.value)}
+                placeholder="X-Remote-User"
+                data-testid="input-proxy-user-header"
+              />
+              <p className="text-xs text-muted-foreground">
+                Si votre reverse proxy (nginx, IIS, Apache) gère l'authentification Windows et transmet le nom d'utilisateur dans un en-tête HTTP, indiquez ici le nom de cet en-tête (ex. <code>X-Remote-User</code>). Aucun keytab ni module Kerberos natif requis.
+                Laissez vide pour utiliser la validation SPNEGO intégrée.
+              </p>
+            </div>
           </div>
         )}
         <div className="flex justify-end">
@@ -1516,7 +1537,8 @@ function LdapSettingsPanel() {
                     emailAttribute: emailAttr.trim() || null,
                     groupMembershipAttribute: groupAttr.trim() || null,
                     kerberosEnabled: kerberos,
-                    servicePrincipalName: spn || null,
+                    servicePrincipalName: spn.trim() || null,
+                    proxyUserHeader: proxyUserHeader.trim() || null,
                   },
                 },
               })

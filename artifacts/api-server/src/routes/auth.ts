@@ -160,23 +160,64 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
   // the browser to attempt a full ticket exchange and potentially show an auth
   // dialog — we must short-circuit before that happens.
   const settings = await getSettings();
-  const spn =
-    process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
-  const hasKeytab = Boolean(process.env.KRB5_KEYTAB);
-  const kerberosReady =
-    !!settings.ldap?.kerberosEnabled && !!spn && hasKeytab;
 
-  const header = req.headers["authorization"];
-  const hasToken = !!header && /^Negotiate\s+/i.test(header);
+  // ── Path A: trusted reverse-proxy header ──────────────────────────────────
+  // When a reverse proxy (nginx with auth_gssapi, IIS with Windows Auth,
+  // Apache mod_auth_kerb) handles the SPNEGO exchange and forwards the
+  // authenticated Windows username via a configurable HTTP header, we trust
+  // that header directly — no keytab or kerberos npm package needed.
+  const proxyHeader = settings.ldap?.proxyUserHeader?.trim();
+  if (proxyHeader) {
+    const proxyUsername = req.headers[proxyHeader.toLowerCase()];
+    if (proxyUsername && typeof proxyUsername === "string" && proxyUsername.trim()) {
+      const username = proxyUsername.trim().split("@")[0].split("\\").pop()!;
+      // Find or create the user from the proxy-supplied identity
+      const [existing] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.username, username));
+      let userRow = existing;
+      if (!userRow) {
+        const [created] = await db
+          .insert(usersTable)
+          .values({ username, displayName: username, source: "KERBEROS", roles: ["DEPT_USER"] })
+          .returning();
+        userRow = created;
+      } else if (existing.source !== "KERBEROS") {
+        await db.update(usersTable).set({ source: "KERBEROS" }).where(eq(usersTable.id, existing.id));
+      }
+      if (!userRow) { res.status(500).json({ error: "Failed to provision user" }); return; }
+      const sessionUser = await buildSessionUser(userRow.id);
+      if (!sessionUser) { res.status(500).json({ error: "Failed to load user" }); return; }
+      req.session.user = sessionUser;
+      await audit(sessionUser.id, "LOGIN", "user", sessionUser.id, "proxy-sso", req.ip);
+      res.json(sessionUser);
+      return;
+    }
+    // Header is configured but not present in this request — fall through to
+    // the form (the proxy didn't authenticate this client).
+    res.status(401).json({ error: "SSO proxy header not present" });
+    return;
+  }
+
+  // ── Path B: built-in SPNEGO / Kerberos ────────────────────────────────────
+  const spn = process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
+  // kerberosReady no longer requires KRB5_KEYTAB env var — the kerberos
+  // module will find the keytab at the OS default location if the env var
+  // isn't set explicitly (e.g. /etc/krb5.keytab on Linux).
+  const kerberosReady = !!settings.ldap?.kerberosEnabled && !!spn;
+
+  const authHeader = req.headers["authorization"];
+  const hasToken = !!authHeader && /^Negotiate\s+/i.test(authHeader);
 
   if (!hasToken) {
     if (!kerberosReady) {
-      // Kerberos not configured — signal the client to fall through to the
-      // form without triggering a browser SPNEGO exchange.
+      // Neither SSO path is configured — fast-fail so the client shows the
+      // form without triggering a browser SPNEGO dialog.
       res.status(401).json({ error: "Kerberos not configured on this server" });
       return;
     }
-    // Issue the SPNEGO challenge; browser will retry with a Kerberos ticket.
+    // Issue the SPNEGO challenge; browser will retry with its Kerberos ticket.
     res.setHeader("WWW-Authenticate", "Negotiate");
     res.status(401).json({ error: "Negotiate required" });
     return;
@@ -185,10 +226,12 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
   if (!kerberosReady) {
     res.status(501).json({
       error:
-        "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, ou utilisez le formulaire de connexion LDAP/local.",
+        "Kerberos non configuré sur ce serveur. Activez Kerberos dans Paramètres → LDAP et renseignez le SPN, ou configurez un en-tête de proxy SSO.",
     });
     return;
   }
+
+  const header = authHeader;
 
   // Try to dynamically load the optional `kerberos` native module. It is
   // only present on hosts that have built it against libkrb5 — so we
@@ -216,7 +259,7 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
     return;
   }
 
-  const token = header.replace(/^Negotiate\s+/i, "").trim();
+  const token = header!.replace(/^Negotiate\s+/i, "").trim();
   try {
     const ctx = await kerberosMod!.initializeServer(spn);
     const next = await ctx.step(token);
