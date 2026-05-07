@@ -1,9 +1,12 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import session from "express-session";
+import ConnectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+const PgStore = ConnectPgSimple(session);
 
 const app: Express = express();
 
@@ -53,13 +56,9 @@ const corsAllowlist = (process.env.CORS_ORIGINS ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-if (process.env.NODE_ENV === "production" && corsAllowlist.length === 0) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    "CORS_ORIGINS is not set in production: cross-origin requests will be denied. " +
-      "Same-origin requests (the proxied SPA hitting /api on the same host) still work.",
-  );
-}
+// When CORS_ORIGINS is not set in production the app is assumed to be
+// deployed in single-origin mode (SPA + API served by the same process
+// via WEB_DIST). Same-origin requests work fine — no warning needed.
 // CORS is scoped to /api below — static SPA assets must NOT go through
 // CORS at all. The browser sometimes sends an Origin header on
 // same-origin asset loads (e.g. <script crossorigin>, modulepreload),
@@ -98,8 +97,24 @@ const corsMiddleware = cors((req, cb) => {
 app.use(express.json({ limit: "32mb" }));
 app.use(express.urlencoded({ extended: true, limit: "32mb" }));
 
+// Use PostgreSQL as the session store in production so sessions survive
+// container restarts and scale across processes. Falls back to the
+// default MemoryStore only in development (where DATABASE_URL may not
+// be set and the MemoryStore warning is acceptable).
+const sessionStore =
+  process.env.NODE_ENV === "production" && process.env.DATABASE_URL
+    ? new PgStore({
+        conString: process.env.DATABASE_URL,
+        // Table is created automatically on first use if it doesn't exist.
+        createTableIfMissing: true,
+        // Prune expired sessions once per hour.
+        pruneSessionInterval: 60 * 60,
+      })
+    : undefined; // undefined = default MemoryStore (dev only)
+
 app.use(
   session({
+    store: sessionStore,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
