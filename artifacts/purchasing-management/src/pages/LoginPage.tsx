@@ -125,37 +125,23 @@ export function LoginPage() {
         <Card className="overflow-hidden shadow-2xl border-0" data-testid="card-login">
 
           {/* ── Branded header ── */}
-          <div
-            className="relative flex flex-col items-center justify-center px-8 py-8 text-center"
-            style={{
-              background: "linear-gradient(160deg, #2a3510 0%, #1e2a0c 60%, #2c2010 100%)",
-            }}
-          >
+          <div className="relative flex flex-col items-center justify-center bg-white px-8 pt-8 pb-5 text-center">
             {/* Decorative swoosh accent line */}
             <div
-              className="absolute bottom-0 left-0 right-0 h-1"
+              className="absolute bottom-0 left-0 right-0 h-[3px]"
               style={{
                 background: "linear-gradient(90deg, #96b423 0%, #96b423 50%, #966e3c 50%, #966e3c 100%)",
               }}
             />
 
-            {/* Logo */}
-            {settings?.logoDataUrl ? (
-              <img
-                src={settings.logoDataUrl}
-                alt="Logo"
-                className="h-20 w-auto object-contain mb-3"
-              />
-            ) : (
-              <img
-                src={LOGO_URL}
-                alt="CHdN"
-                className="h-24 w-auto object-contain mb-3"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-            )}
+            <img
+              src={LOGO_URL}
+              alt="CHdN"
+              className="h-24 w-auto object-contain mb-3"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
 
-            <h1 className="text-white text-sm font-semibold tracking-widest uppercase opacity-80">
+            <h1 className="text-[#3a4a10] text-xs font-semibold tracking-widest uppercase opacity-80">
               {settings?.appName ?? "Gestion des Achats"}
             </h1>
           </div>

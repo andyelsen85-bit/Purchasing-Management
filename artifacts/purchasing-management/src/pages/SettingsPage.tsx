@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   Save,
   Loader2,
-  Image as ImageIcon,
   Trash2,
   Plus,
   Pencil,
@@ -941,7 +940,6 @@ function AppSettingsPanel() {
   const { data: s } = useGetSettings();
   const save = useSaveSettings();
   const [appName, setAppName] = useState("");
-  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [limitX, setLimitX] = useState<number>(10000);
   const [limitY, setLimitY] = useState<number>(50000);
   const [limitZ, setLimitZ] = useState<number>(200000);
@@ -952,7 +950,6 @@ function AppSettingsPanel() {
   useEffect(() => {
     if (!s) return;
     setAppName(s.appName);
-    setLogoDataUrl(s.logoDataUrl ?? null);
     setLimitX(
       (s as { quoteThresholdStandard?: number }).quoteThresholdStandard ??
         s.limitX,
@@ -968,14 +965,6 @@ function AppSettingsPanel() {
     setSigningEnabled(s.certSigningEnabled);
     setSigningPort(s.signingAgentPort ?? 9443);
   }, [s]);
-
-  function onLogo(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => setLogoDataUrl(String(reader.result || ""));
-    reader.readAsDataURL(f);
-  }
 
   return (
     <Card>
@@ -1043,41 +1032,6 @@ function AppSettingsPanel() {
 
         <Separator />
 
-        <div className="space-y-1">
-          <Label>Logo</Label>
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-md border bg-muted">
-              {logoDataUrl ? (
-                <img
-                  src={logoDataUrl}
-                  alt=""
-                  className="h-full w-full rounded object-cover"
-                />
-              ) : (
-                <ImageIcon className="h-6 w-6 text-muted-foreground" />
-              )}
-            </div>
-            <Input
-              type="file"
-              accept="image/*"
-              onChange={onLogo}
-              data-testid="input-logo"
-            />
-            {logoDataUrl && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setLogoDataUrl(null)}
-                data-testid="button-remove-logo"
-              >
-                <Trash2 className="mr-2 h-4 w-4 text-destructive" /> Remove
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <Separator />
-
         <div className="space-y-2">
           <div className="flex items-center justify-between rounded-md border p-3">
             <div>
@@ -1119,7 +1073,6 @@ function AppSettingsPanel() {
               save.mutate({
                 data: {
                   appName,
-                  logoDataUrl,
                   limitX,
                   quoteThresholdStandard: limitX,
                   quoteThresholdLivreI: limitY,

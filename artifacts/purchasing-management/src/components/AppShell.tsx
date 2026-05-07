@@ -10,7 +10,6 @@ import {
   LogOut,
   Moon,
   Sun,
-  Package,
   FolderTree,
   ChevronRight,
   Plus,
@@ -187,19 +186,15 @@ export function AppShell({ user, children }: Props) {
           className="bg-sidebar text-sidebar-foreground"
         >
           <div className="flex h-full flex-col" data-testid="sidebar-main">
-            <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-              {settings?.logoDataUrl ? (
+            <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-white px-1">
                 <img
-                  src={settings.logoDataUrl}
-                  alt="Logo"
-                  className="h-8 w-8 rounded object-cover"
+                  src={`${import.meta.env.BASE_URL ?? "/"}logo-chdn.png`}
+                  alt="CHdN"
+                  className="h-8 w-auto object-contain"
                   data-testid="img-app-logo"
                 />
-              ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded bg-sidebar-primary text-sidebar-primary-foreground">
-                  <Package className="h-4 w-4" />
-                </div>
-              )}
+              </div>
               <div className="min-w-0">
                 <div
                   className="truncate text-sm font-semibold"
