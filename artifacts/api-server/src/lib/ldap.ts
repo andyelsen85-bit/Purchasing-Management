@@ -212,6 +212,112 @@ function friendlyError(err: unknown): string {
   return `LDAP error: ${raw}`;
 }
 
+// ─── Shared nested-group resolution ──────────────────────────────────────────
+
+/**
+ * BFS over `memberOf` attributes.
+ *
+ * Starting from `seed` (a user's direct memberOf values), fetches each
+ * group's own `memberOf` attribute and queues any parent groups not yet
+ * visited, until the tree is exhausted. All discovered DNs are added to
+ * `acc` in-place. Uses `client` (must be bound as a service account).
+ */
+async function bfsMemberOf(
+  client: ldap.Client,
+  seed: string[],
+  acc: Set<string>,
+): Promise<void> {
+  const queue = [...seed];
+  const visited = new Set<string>(seed);
+  while (queue.length > 0) {
+    const dn = queue.shift()!;
+    const parents = await new Promise<string[]>((r) => {
+      const out: string[] = [];
+      client.search(dn, { scope: "base", attributes: ["memberOf"] }, (err, s) => {
+        if (err) return r([]);
+        s.on("searchEntry", (entry) => {
+          for (const a of entry.pojo.attributes ?? []) {
+            if (a.type === "memberOf")
+              for (const v of a.values ?? []) out.push(String(v));
+          }
+        });
+        s.on("error", () => r([]));
+        s.on("end", () => r(out));
+      });
+    });
+    for (const p of parents) {
+      if (!visited.has(p)) {
+        visited.add(p);
+        acc.add(p);
+        queue.push(p);
+      }
+    }
+  }
+}
+
+/**
+ * Resolve all transitive group memberships for `userDn`.
+ *
+ * Tries `LDAP_MATCHING_RULE_IN_CHAIN` (AD OID 1.2.840.113556.1.4.1941)
+ * first — one server-side query that returns every group transitively.
+ * Falls back to `bfsMemberOf` in three cases:
+ *   1. The server returns a hard error for the OID filter.
+ *   2. The server silently accepts the OID but returns zero entries —
+ *      many non-AD / older-AD servers do this instead of erroring,
+ *      which previously caused nested groups to be silently dropped.
+ *   3. The server signals sizeLimitExceeded (status 4) — results were
+ *      truncated, BFS fills in what was missed.
+ *
+ * Returns the union of `directGroups` and all transitively discovered
+ * parent groups (deduplicated). `client` must already be bound as a
+ * service account with read access to the directory.
+ */
+async function resolveAllGroups(
+  client: ldap.Client,
+  baseDn: string,
+  userDn: string,
+  directGroups: string[],
+): Promise<string[]> {
+  return new Promise<string[]>((resolve) => {
+    const all = new Set(directGroups);
+    const filter = `(member:1.2.840.113556.1.4.1941:=${userDn})`;
+    client.search(
+      baseDn,
+      { filter, scope: "sub", attributes: ["dn"] },
+      (err, search) => {
+        if (err) {
+          bfsMemberOf(client, directGroups, all).then(() =>
+            resolve(Array.from(all)),
+          );
+          return;
+        }
+        let oidFoundAny = false;
+        search.on("searchEntry", (entry) => {
+          if (entry.pojo.objectName) {
+            all.add(entry.pojo.objectName);
+            oidFoundAny = true;
+          }
+        });
+        search.on("error", () =>
+          bfsMemberOf(client, directGroups, all).then(() =>
+            resolve(Array.from(all)),
+          ),
+        );
+        search.on("end", async (result) => {
+          const status =
+            (result as unknown as { status?: number })?.status ?? 0;
+          if (!oidFoundAny || status === 4) {
+            await bfsMemberOf(client, directGroups, all);
+          }
+          resolve(Array.from(all));
+        });
+      },
+    );
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function ldapAuthenticate(
   cfg: LdapConfig,
   username: string,
@@ -233,102 +339,6 @@ export async function ldapAuthenticate(
         /* ignore */
       }
       resolve(r);
-    };
-
-    /**
-     * Recursive AD group resolution.
-     *
-     * Active Directory exposes the magic OID 1.2.840.113556.1.4.1941 —
-     * `LDAP_MATCHING_RULE_IN_CHAIN` — which walks the entire group tree
-     * server-side. A single search with this filter returns every group
-     * the user is a (transitive) member of.
-     *
-     * We fall back to client-side BFS over `memberOf` in two cases:
-     *   1. The server returns an error for the OID search (explicit rejection).
-     *   2. The server silently accepts the OID but returns zero entries —
-     *      many non-AD or older AD servers do this instead of erroring, which
-     *      previously caused nested groups to be silently dropped.
-     *   3. The server signals sizeLimitExceeded (status 4), meaning results
-     *      were truncated — BFS then fills in what was missed.
-     */
-    const resolveNestedGroups = (
-      userDn: string,
-      directGroups: string[],
-    ): Promise<string[]> =>
-      new Promise<string[]>((resolveOuter) => {
-        const all = new Set(directGroups);
-        const filter = `(member:1.2.840.113556.1.4.1941:=${userDn})`;
-        client.search(
-          cfg.baseDn!,
-          { filter, scope: "sub", attributes: ["dn"] },
-          (err, search) => {
-            if (err) {
-              fallbackBfs(directGroups, all).then(() =>
-                resolveOuter(Array.from(all)),
-              );
-              return;
-            }
-            let oidFoundAny = false;
-            search.on("searchEntry", (entry) => {
-              if (entry.pojo.objectName) {
-                all.add(entry.pojo.objectName);
-                oidFoundAny = true;
-              }
-            });
-            search.on("error", () =>
-              fallbackBfs(directGroups, all).then(() =>
-                resolveOuter(Array.from(all)),
-              ),
-            );
-            search.on("end", async (result) => {
-              // status 4 = sizeLimitExceeded — results were truncated.
-              const status =
-                (result as unknown as { status?: number })?.status ?? 0;
-              if (!oidFoundAny || status === 4) {
-                // The OID returned nothing (server likely doesn't support it)
-                // or results were cut short — run BFS to cover all levels.
-                await fallbackBfs(directGroups, all);
-              }
-              resolveOuter(Array.from(all));
-            });
-          },
-        );
-      });
-
-    const fallbackBfs = async (
-      seed: string[],
-      acc: Set<string>,
-    ): Promise<void> => {
-      const queue = [...seed];
-      const visited = new Set(seed);
-      while (queue.length > 0) {
-        const dn = queue.shift()!;
-        const parents = await new Promise<string[]>((r) => {
-          const out: string[] = [];
-          client.search(
-            dn,
-            { scope: "base", attributes: ["memberOf"] },
-            (err, s) => {
-              if (err) return r([]);
-              s.on("searchEntry", (entry) => {
-                for (const a of entry.pojo.attributes ?? []) {
-                  if (a.type === "memberOf")
-                    for (const v of a.values ?? []) out.push(String(v));
-                }
-              });
-              s.on("error", () => r([]));
-              s.on("end", () => r(out));
-            },
-          );
-        });
-        for (const p of parents) {
-          if (!visited.has(p)) {
-            visited.add(p);
-            acc.add(p);
-            queue.push(p);
-          }
-        }
-      }
     };
 
     // RFC 4515 §3 escaping for LDAP search filter assertion values.
@@ -428,7 +438,7 @@ export async function ldapAuthenticate(
                   error: `${friendly} (DN: ${foundDn}) — raw: ${raw}`,
                 });
               }
-              const allGroups = await resolveNestedGroups(foundDn!, groups);
+              const allGroups = await resolveAllGroups(client, cfg.baseDn!, foundDn!, groups);
               finish({ ok: true, displayName, email, groups: allGroups });
             });
           });
@@ -723,6 +733,27 @@ export async function runLdapDiagnostics(
     durationMs: since(tSearch),
   });
 
+  // ----- Resolve nested groups (same OID-then-BFS as ldapAuthenticate) -----
+  // Done here, before user bind, so the test page always shows the full
+  // transitive group set regardless of whether a password was supplied.
+  const tGroups = t0();
+  const allGroups = await resolveAllGroups(
+    client,
+    cfg.baseDn!,
+    search.foundDn!,
+    search.groups,
+  );
+  const nested = allGroups.length - search.groups.length;
+  steps.push({
+    name: "Resolve groups (nested)",
+    status: "ok",
+    detail:
+      nested > 0
+        ? `${allGroups.length} total (${search.groups.length} direct + ${nested} nested)`
+        : `${allGroups.length} group(s) — no additional nested groups found`,
+    durationMs: since(tGroups),
+  });
+
   // ----- Bind as user (if password provided) -----
   if (!password) {
     steps.push({
@@ -737,7 +768,7 @@ export async function runLdapDiagnostics(
       error: null,
       displayName: search.displayName,
       email: search.email,
-      groups: search.groups,
+      groups: allGroups,
       steps,
     };
   }
@@ -758,7 +789,7 @@ export async function runLdapDiagnostics(
       error: userConn.error,
       displayName: search.displayName,
       email: search.email,
-      groups: search.groups,
+      groups: allGroups,
       steps,
     };
   }
@@ -797,7 +828,7 @@ export async function runLdapDiagnostics(
       error: bindErr,
       displayName: search.displayName,
       email: search.email,
-      groups: search.groups,
+      groups: allGroups,
       steps,
     };
   }
@@ -807,13 +838,6 @@ export async function runLdapDiagnostics(
     durationMs: since(tUserBind),
   });
 
-  // Group resolution success is implied by the search step above.
-  steps.push({
-    name: "Resolve groups",
-    status: "ok",
-    detail: `${search.groups.length} direct group(s) (nested AD chains expanded at sign-in).`,
-  });
-
   cleanup();
   return {
     ok: true,
@@ -821,7 +845,7 @@ export async function runLdapDiagnostics(
     error: null,
     displayName: search.displayName,
     email: search.email,
-    groups: search.groups,
+    groups: allGroups,
     steps,
   };
 }
@@ -905,67 +929,7 @@ export async function lookupLdapGroups(
 
   if (!foundDn) return finish(directGroups);
 
-  // BFS fallback — walks the group tree via memberOf attributes
-  const bfs = async (seed: string[], acc: Set<string>): Promise<void> => {
-    const queue = [...seed];
-    const visited = new Set(seed);
-    while (queue.length > 0) {
-      const dn = queue.shift()!;
-      const parents = await new Promise<string[]>((r) => {
-        const out: string[] = [];
-        client.search(dn, { scope: "base", attributes: ["memberOf"] }, (e, s) => {
-          if (e) return r([]);
-          s.on("searchEntry", (entry) => {
-            for (const at of entry.pojo.attributes ?? []) {
-              if (at.type === "memberOf")
-                for (const v of at.values ?? []) out.push(String(v));
-            }
-          });
-          s.on("error", () => r([]));
-          s.on("end", () => r(out));
-        });
-      });
-      for (const p of parents) {
-        if (!visited.has(p)) {
-          visited.add(p);
-          acc.add(p);
-          queue.push(p);
-        }
-      }
-    }
-  };
-
-  // Try LDAP_MATCHING_RULE_IN_CHAIN first; BFS if it returns nothing
-  const all = await new Promise<Set<string>>((r) => {
-    const acc = new Set(directGroups);
-    const oidFilter = `(member:1.2.840.113556.1.4.1941:=${foundDn})`;
-    client.search(
-      cfg.baseDn!,
-      { filter: oidFilter, scope: "sub", attributes: ["dn"] },
-      (err, search) => {
-        if (err) {
-          bfs(directGroups, acc).then(() => r(acc));
-          return;
-        }
-        let oidFoundAny = false;
-        search.on("searchEntry", (entry) => {
-          if (entry.pojo.objectName) {
-            acc.add(entry.pojo.objectName);
-            oidFoundAny = true;
-          }
-        });
-        search.on("error", () => bfs(directGroups, acc).then(() => r(acc)));
-        search.on("end", async (result) => {
-          const status =
-            (result as unknown as { status?: number })?.status ?? 0;
-          if (!oidFoundAny || status === 4) {
-            await bfs(directGroups, acc);
-          }
-          r(acc);
-        });
-      },
-    );
-  });
-
-  return finish(Array.from(all));
+  const resolved = await resolveAllGroups(client, cfg.baseDn!, foundDn, directGroups);
+  return finish(resolved);
 }
+
