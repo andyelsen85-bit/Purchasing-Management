@@ -108,31 +108,21 @@ export function LoginPage() {
 
   if (needsSetup === null) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-[#f5f7ee] to-[#eef0e2]">
-        <Loader2 className="h-6 w-6 animate-spin text-[#6b8020]" />
+      <div className="flex min-h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div
-      className="flex min-h-screen w-full items-center justify-center p-4"
-      style={{
-        background: "linear-gradient(135deg, #f4f6e8 0%, #e8ead8 50%, #ede8dc 100%)",
-      }}
-    >
+    <div className="flex min-h-screen w-full items-center justify-center p-4 bg-background">
       <div className="w-full max-w-md">
         <Card className="overflow-hidden shadow-2xl border-0" data-testid="card-login">
 
           {/* ── Branded header ── */}
           <div className="relative flex flex-col items-center justify-center bg-white px-8 pt-8 pb-5 text-center">
-            {/* Decorative swoosh accent line */}
-            <div
-              className="absolute bottom-0 left-0 right-0 h-[3px]"
-              style={{
-                background: "linear-gradient(90deg, #96b423 0%, #96b423 50%, #966e3c 50%, #966e3c 100%)",
-              }}
-            />
+            {/* Brand wave divider */}
+            <div className="brand-wave absolute bottom-0 left-0 right-0 rounded-none" />
 
             <img
               src={LOGO_URL}
@@ -141,7 +131,7 @@ export function LoginPage() {
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
 
-            <h1 className="text-[#3a4a10] text-xs font-semibold tracking-widest uppercase opacity-80">
+            <h1 className="text-foreground text-xs font-semibold tracking-widest uppercase opacity-70">
               {settings?.appName ?? "Gestion des Achats"}
             </h1>
           </div>

@@ -1,0 +1,44 @@
+Rebrand my app to the CHdN (Centre Hospitalier du Nord) visual identity.
+
+Use this exact color palette derived from the CHdN charte graphique. The two signature colors are an olive green and a warm brown — the rest are supporting tones from the same palette.
+
+Palette (RGB → HEX → HSL):
+
+Primary green — 150, 180, 35 → #96B423 → hsl(74, 67%, 42%)
+Lime green — 190, 205, 35 → #BDCD23 → hsl(65, 71%, 47%)
+Pale yellow — 215, 225, 120 → #D7E178 → hsl(66, 60%, 68%)
+Bright yellow — 240, 240, 85 → #F0F055 → hsl(60, 84%, 64%)
+Ochre — 200, 150, 60 → #C8963C → hsl(38, 56%, 51%)
+Brown (accent) — 150, 110, 60 → #966E3C → hsl(30, 43%, 41%)
+Sand — 190, 165, 125 → #BEA57D → hsl(35, 35%, 62%)
+How to map them:
+
+--primary = green #96B423. Buttons, links, focus rings, active states.
+--accent = brown #966E3C.
+--background = warm off-white hsl(60, 30%, 98%) (not cool gray).
+--foreground = dark espresso hsl(30, 25%, 12%) (not slate).
+--success = a slightly darker green hsl(74, 67%, 36%).
+--warning = ochre hsl(38, 56%, 51%).
+--secondary / --muted = pale sand tints (hsl(35, 35%, 92%), hsl(60, 25%, 94%)).
+--border / --input = hsl(35, 25%, 86%).
+Sidebar: use the actual brand brown as the background — hsl(30, 43%, 22%) light theme, hsl(30, 43%, 14%) dark theme — with the green as the active-item highlight (hsl(74, 67%, 55%)).
+Chart colors should cycle in this order: green, lime, ochre, brown, sand.
+Build a dark mode by lifting the brown and green slightly (green → 50% lightness, brown → 50% lightness) on a deep brown background (hsl(30, 25%, 7%)).
+Add a brand wave utility class — a thin horizontal gradient bar that mirrors the green-to-brown wave inside the CHdN logo. Use it as a divider on the login page and any branded headers:
+
+.brand-wave {
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    hsl(74 67% 42%) 0%,
+    hsl(65 71% 47%) 25%,
+    hsl(38 56% 51%) 65%,
+    hsl(30 43% 41%) 100%
+  );
+}
+
+Logo placement: the CHdN logo must always sit on a white background, even when surrounded by the brown sidebar — wrap it in a small white panel/pill with rounded corners and a soft shadow. On the login page, give it a full-width white banner capped by the .brand-wave divider.
+
+General feeling: warm, organic, hospital-but-not-sterile. Avoid cool blues and grays entirely. Replace any existing blue primary + slate gray theme with this palette across CSS variables (:root and .dark), Tailwind theme tokens if applicable, and any hardcoded colors in components.
