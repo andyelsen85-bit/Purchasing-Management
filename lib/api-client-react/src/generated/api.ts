@@ -63,7 +63,9 @@ import type {
   ListWorkflowsParams,
   LoginRequest,
   Note,
+  NotificationBatchStatus,
   NotificationEntry,
+  NotificationFlushResult,
   NotifyGtInvestMeetingResult,
   RejectWorkflowInput,
   SessionResponse,
@@ -3768,6 +3770,166 @@ export function useListNotifications<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get notification batch queue status (admin)
+ */
+export const getGetNotificationBatchStatusUrl = () => {
+  return `/api/notifications/batch-status`;
+};
+
+export const getNotificationBatchStatus = async (
+  options?: RequestInit,
+): Promise<NotificationBatchStatus> => {
+  return customFetch<NotificationBatchStatus>(
+    getGetNotificationBatchStatusUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetNotificationBatchStatusQueryKey = () => {
+  return [`/api/notifications/batch-status`] as const;
+};
+
+export const getGetNotificationBatchStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNotificationBatchStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getNotificationBatchStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetNotificationBatchStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getNotificationBatchStatus>>
+  > = ({ signal }) => getNotificationBatchStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNotificationBatchStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNotificationBatchStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNotificationBatchStatus>>
+>;
+export type GetNotificationBatchStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get notification batch queue status (admin)
+ */
+
+export function useGetNotificationBatchStatus<
+  TData = Awaited<ReturnType<typeof getNotificationBatchStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getNotificationBatchStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNotificationBatchStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Immediately flush the pending notification queue (admin)
+ */
+export const getFlushNotificationQueueUrl = () => {
+  return `/api/notifications/flush`;
+};
+
+export const flushNotificationQueue = async (
+  options?: RequestInit,
+): Promise<NotificationFlushResult> => {
+  return customFetch<NotificationFlushResult>(getFlushNotificationQueueUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getFlushNotificationQueueMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flushNotificationQueue>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof flushNotificationQueue>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["flushNotificationQueue"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof flushNotificationQueue>>,
+    void
+  > = () => {
+    return flushNotificationQueue(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FlushNotificationQueueMutationResult = NonNullable<
+  Awaited<ReturnType<typeof flushNotificationQueue>>
+>;
+
+export type FlushNotificationQueueMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Immediately flush the pending notification queue (admin)
+ */
+export const useFlushNotificationQueue = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flushNotificationQueue>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof flushNotificationQueue>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getFlushNotificationQueueMutationOptions(options));
+};
 
 export const getListAuditLogUrl = (params?: ListAuditLogParams) => {
   const normalizedParams = new URLSearchParams();

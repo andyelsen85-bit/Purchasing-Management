@@ -2140,7 +2140,7 @@ export const listNotificationsQueryLimitDefault = 100;
 export const ListNotificationsQueryParams = zod.object({
   limit: zod.coerce.number().default(listNotificationsQueryLimitDefault),
   workflowId: zod.coerce.number().optional(),
-  status: zod.enum(["PENDING", "SENT", "FAILED"]).optional(),
+  status: zod.enum(["PENDING", "QUEUED", "SENT", "FAILED"]).optional(),
 });
 
 export const ListNotificationsResponseItem = zod.object({
@@ -2159,6 +2159,26 @@ export const ListNotificationsResponseItem = zod.object({
 export const ListNotificationsResponse = zod.array(
   ListNotificationsResponseItem,
 );
+
+/**
+ * @summary Get notification batch queue status (admin)
+ */
+export const GetNotificationBatchStatusResponse = zod.object({
+  pendingCount: zod.number(),
+  intervalMinutes: zod.number(),
+  lastSentAt: zod.coerce.date().nullable(),
+  nextSendAt: zod.coerce.date().nullable(),
+});
+
+/**
+ * @summary Immediately flush the pending notification queue (admin)
+ */
+export const FlushNotificationQueueResponse = zod.object({
+  sent: zod.number(),
+  failed: zod.number(),
+  skipped: zod.number(),
+  message: zod.string().nullish(),
+});
 
 export const ListAuditLogQueryParams = zod.object({
   limit: zod.coerce.number().optional(),
@@ -2229,6 +2249,13 @@ export const GetSettingsResponse = zod.object({
     fromAddress: zod.string().nullish(),
     skipTlsVerify: zod.boolean(),
   }),
+  notificationIntervalMinutes: zod
+    .number()
+    .describe("Minutes between automated notification batch sends"),
+  notificationLastSentAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("ISO timestamp of the last batch flush"),
 });
 
 export const UpdateSettingsBody = zod.object({
@@ -2242,6 +2269,7 @@ export const UpdateSettingsBody = zod.object({
   certSigningEnabled: zod.boolean().nullish(),
   signingAgentPort: zod.number().nullish(),
   archiveRetentionDays: zod.number().nullish(),
+  notificationIntervalMinutes: zod.number().nullish(),
   gtInvestRecipients: zod.array(zod.string()).optional(),
   budgetPositions: zod.array(zod.string()).optional(),
   ldap: zod
@@ -2347,6 +2375,13 @@ export const UpdateSettingsResponse = zod.object({
     fromAddress: zod.string().nullish(),
     skipTlsVerify: zod.boolean(),
   }),
+  notificationIntervalMinutes: zod
+    .number()
+    .describe("Minutes between automated notification batch sends"),
+  notificationLastSentAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("ISO timestamp of the last batch flush"),
 });
 
 export const ListGtInvestDatesResponseItem = zod.object({

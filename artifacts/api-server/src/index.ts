@@ -4,6 +4,8 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db, tlsTable } from "@workspace/db";
 import { runStartupMigrations } from "./lib/startup-migrations";
+import { getSettings } from "./lib/settings";
+import { flushNotificationQueue } from "./lib/email";
 
 const rawPort = process.env["PORT"];
 
@@ -90,6 +92,30 @@ async function configureListeners(): Promise<{ ok: boolean; mode: string }> {
 (globalThis as {
   __reloadHttps?: () => Promise<{ ok: boolean; mode: string }>;
 }).__reloadHttps = configureListeners;
+
+// ─── Notification batch timer ──────────────────────────────────────────────────
+// Checks every 60 seconds whether the configured notification interval has
+// elapsed since the last flush, and if so sends all queued notifications as
+// one combined HTML email per recipient.
+setInterval(() => {
+  void (async () => {
+    try {
+      const settings = await getSettings();
+      const intervalMs = (settings.notificationIntervalMinutes ?? 15) * 60 * 1000;
+      const lastSentMs = settings.notificationLastSentAt
+        ? new Date(settings.notificationLastSentAt).getTime()
+        : 0;
+      if (Date.now() - lastSentMs >= intervalMs) {
+        const result = await flushNotificationQueue();
+        if (result.sent > 0 || result.failed > 0) {
+          logger.info(result, "Notification batch flush completed");
+        }
+      }
+    } catch (err) {
+      logger.warn({ err: String(err) }, "Notification batch timer error");
+    }
+  })();
+}, 60_000);
 
 void (async () => {
   try {

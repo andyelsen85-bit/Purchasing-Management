@@ -41,7 +41,7 @@ import {
 } from "../lib/permissions";
 import { audit } from "../lib/audit";
 import { getSettings, derivePublicationTier } from "../lib/settings";
-import { sendNotification, recipientsForStep } from "../lib/email";
+import { queueNotification, recipientsForStep } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -542,11 +542,10 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
     next,
   );
   if (recipients.length > 0) {
-    void sendNotification(
-      settings.smtp,
+    void queueNotification(
       recipients,
-      `${wf.reference}: advanced to ${next}`,
-      `Workflow ${wf.reference} (${wf.title}) advanced from ${wf.currentStep} to ${next}.\n\nOpen the workflow in Purchasing Management to review.`,
+      `${wf.reference} : avancé à ${next}`,
+      `Le workflow ${wf.reference} (${wf.title}) est passé de l'étape ${wf.currentStep} à ${next}.\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
       { workflowId: wf.id, step: next },
     );
   }
@@ -640,11 +639,10 @@ router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void
     "REJECTED",
   );
   if (recipients.length > 0) {
-    void sendNotification(
-      settings.smtp,
+    void queueNotification(
       recipients,
-      `${wf.reference}: rejected and closed`,
-      `Workflow ${wf.reference} (${wf.title}) was rejected at ${wf.currentStep} by ${user.displayName} and is now closed.${comment ? `\n\nReason: ${comment}` : ""}`,
+      `${wf.reference} : rejeté et clôturé`,
+      `Le workflow ${wf.reference} (${wf.title}) a été rejeté à l'étape ${wf.currentStep} par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}`,
       { workflowId: wf.id, step: "REJECTED" },
     );
   }
@@ -828,12 +826,13 @@ router.post(
       );
       if (recipients.length > 0) {
         const subjVerb =
-          nextStepValue === "REJECTED" ? "rejected and closed" : `advanced to ${nextStepValue}`;
-        void sendNotification(
-          settings.smtp,
+          nextStepValue === "REJECTED"
+            ? "rejeté et clôturé"
+            : `avancé à ${nextStepValue}`;
+        void queueNotification(
           recipients,
-          `${wf.reference}: ${subjVerb}`,
-          `Workflow ${wf.reference} (${wf.title}) — GT Invest decision: ${decision}.`,
+          `${wf.reference} : ${subjVerb}`,
+          `Le workflow ${wf.reference} (${wf.title}) — Décision GT Invest : ${decision}.`,
           { workflowId: wf.id, step: nextStepValue },
         );
       }

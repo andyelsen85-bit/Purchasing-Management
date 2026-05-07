@@ -13,6 +13,9 @@ import {
   PlugZap,
   CheckCircle2,
   XCircle,
+  Bell,
+  Clock,
+  SendHorizonal,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { extractErrorMessage } from "@/lib/utils";
@@ -60,6 +63,9 @@ import {
   useArchiveAttachments,
   getListUsersQueryKey,
   getListDeletedWorkflowsQueryKey,
+  useGetNotificationBatchStatus,
+  useFlushNotificationQueue,
+  getGetNotificationBatchStatusQueryKey,
 } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, RefreshCw } from "lucide-react";
@@ -1493,10 +1499,35 @@ function LdapSettingsPanel() {
   );
 }
 
+function useCountdown(nextSendAt: string | null) {
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!nextSendAt) {
+      setRemaining(null);
+      return;
+    }
+    function tick() {
+      const diff = new Date(nextSendAt!).getTime() - Date.now();
+      setRemaining(Math.max(0, Math.floor(diff / 1000)));
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [nextSendAt]);
+
+  if (remaining === null) return null;
+  if (remaining <= 0) return "imminent";
+  const m = Math.floor(remaining / 60);
+  const s = remaining % 60;
+  return m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
+}
+
 function SmtpSettingsPanel() {
   const { data: s } = useGetSettings();
   const save = useSaveSettings();
   const test = useTestSmtp();
+  const qc = useQueryClient();
   const [enabled, setEnabled] = useState(false);
   const [host, setHost] = useState("");
   const [port, setPort] = useState(465);
@@ -1505,8 +1536,27 @@ function SmtpSettingsPanel() {
   const [password, setPassword] = useState("");
   const [fromAddress, setFromAddress] = useState("");
   const [skipTlsVerify, setSkipTlsVerify] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(15);
   const [testTo, setTestTo] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string | null } | null>(null);
+
+  const { data: batchStatus, refetch: refetchBatchStatus } = useGetNotificationBatchStatus({
+    query: {
+      queryKey: getGetNotificationBatchStatusQueryKey(),
+      refetchInterval: 30_000,
+    },
+  });
+  const flush = useFlushNotificationQueue({
+    mutation: {
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: getGetNotificationBatchStatusQueryKey() });
+        void refetchBatchStatus();
+      },
+    },
+  });
+  const [flushResult, setFlushResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const countdown = useCountdown(batchStatus?.nextSendAt ?? null);
 
   useEffect(() => {
     if (!s) return;
@@ -1518,6 +1568,7 @@ function SmtpSettingsPanel() {
     setPassword("");
     setFromAddress(s.smtp.fromAddress ?? "");
     setSkipTlsVerify(s.smtp.skipTlsVerify ?? false);
+    setIntervalMinutes(s.notificationIntervalMinutes ?? 15);
   }, [s]);
 
   return (
@@ -1600,6 +1651,20 @@ function SmtpSettingsPanel() {
               data-testid="input-smtp-from"
             />
           </div>
+          <div className="space-y-1">
+            <Label>Intervalle de notification (minutes)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={1440}
+              value={intervalMinutes}
+              onChange={(e) => setIntervalMinutes(Math.max(1, Number(e.target.value)))}
+              data-testid="input-notification-interval"
+            />
+            <p className="text-xs text-muted-foreground">
+              Délai entre deux envois groupés des notifications en attente.
+            </p>
+          </div>
         </div>
         <div className="flex justify-end">
           <Button
@@ -1616,6 +1681,7 @@ function SmtpSettingsPanel() {
                     ...(password ? { password } : {}),
                     fromAddress: fromAddress || null,
                   },
+                  notificationIntervalMinutes: intervalMinutes,
                 },
               })
             }
@@ -1625,7 +1691,7 @@ function SmtpSettingsPanel() {
             {save.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            <Save className="mr-2 h-4 w-4" /> Save
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
           </Button>
         </div>
 
@@ -1683,11 +1749,90 @@ function SmtpSettingsPanel() {
           {testResult && (
             <Alert variant={testResult.ok ? "default" : "destructive"}>
               <AlertDescription data-testid="text-smtp-test-result">
-                {testResult.ok ? "Success: " : "Failed: "}
-                {testResult.message ?? (testResult.ok ? "test email sent." : "unknown error")}
+                {testResult.ok ? "Succès : " : "Échec : "}
+                {testResult.message ?? (testResult.ok ? "e-mail de test envoyé." : "erreur inconnue")}
               </AlertDescription>
             </Alert>
           )}
+        </section>
+
+        <Separator />
+
+        {/* Notification batch status & manual flush */}
+        <section className="space-y-3" data-testid="section-notification-batch">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">File de notifications</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Les notifications de workflow ne sont pas envoyées immédiatement — elles sont regroupées
+            et expédiées en un seul e-mail par destinataire selon l'intervalle configuré ci-dessus.
+          </p>
+
+          {batchStatus ? (
+            <div className="rounded-md border bg-muted/30 p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">En attente</p>
+                  <p className="font-semibold text-lg" data-testid="text-pending-count">
+                    {batchStatus.pendingCount}
+                    <span className="text-xs font-normal text-muted-foreground ml-1">notification{batchStatus.pendingCount !== 1 ? "s" : ""}</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Prochain envoi dans</p>
+                  <p className="font-semibold text-lg flex items-center gap-1" data-testid="text-countdown">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    {countdown === null
+                      ? "—"
+                      : countdown === "imminent"
+                      ? <span className="text-amber-600">imminent</span>
+                      : countdown}
+                  </p>
+                </div>
+              </div>
+              {batchStatus.lastSentAt && (
+                <p className="text-xs text-muted-foreground">
+                  Dernier envoi : {fmtDateTime(batchStatus.lastSentAt)}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-md border bg-muted/30 p-4">
+              <p className="text-xs text-muted-foreground">Chargement du statut…</p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setFlushResult(null);
+                flush.mutate(undefined, {
+                  onSuccess: (r) =>
+                    setFlushResult({ ok: true, message: r.message ?? "Envoi terminé." }),
+                  onError: (e) =>
+                    setFlushResult({ ok: false, message: extractErrorMessage(e) }),
+                });
+              }}
+              disabled={flush.isPending}
+              data-testid="button-flush-notifications"
+            >
+              {flush.isPending
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <SendHorizonal className="mr-2 h-4 w-4" />}
+              Envoyer maintenant
+            </Button>
+            {flushResult && (
+              <span
+                className={`text-xs ${flushResult.ok ? "text-green-700" : "text-destructive"}`}
+                data-testid="text-flush-result"
+              >
+                {flushResult.message}
+              </span>
+            )}
+          </div>
         </section>
       </CardContent>
     </Card>

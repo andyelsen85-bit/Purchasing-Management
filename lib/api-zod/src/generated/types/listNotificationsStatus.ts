@@ -11,6 +11,7 @@ export type ListNotificationsStatus =
 
 export const ListNotificationsStatus = {
   PENDING: "PENDING",
+  QUEUED: "QUEUED",
   SENT: "SENT",
   FAILED: "FAILED",
 } as const;

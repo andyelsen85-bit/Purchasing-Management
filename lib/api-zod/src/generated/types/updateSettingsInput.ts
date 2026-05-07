@@ -29,6 +29,8 @@ export interface UpdateSettingsInput {
   signingAgentPort?: number | null;
   /** @nullable */
   archiveRetentionDays?: number | null;
+  /** @nullable */
+  notificationIntervalMinutes?: number | null;
   gtInvestRecipients?: string[];
   budgetPositions?: string[];
   ldap?: UpdateSettingsInputLdap;

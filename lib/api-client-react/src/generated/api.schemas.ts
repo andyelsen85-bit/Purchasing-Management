@@ -848,6 +848,30 @@ export interface AppSettings {
   budgetPositions: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
+  /** Minutes between automated notification batch sends */
+  notificationIntervalMinutes: number;
+  /**
+   * ISO timestamp of the last batch flush
+   * @nullable
+   */
+  notificationLastSentAt?: string | null;
+}
+
+export interface NotificationBatchStatus {
+  pendingCount: number;
+  intervalMinutes: number;
+  /** @nullable */
+  lastSentAt: string | null;
+  /** @nullable */
+  nextSendAt: string | null;
+}
+
+export interface NotificationFlushResult {
+  sent: number;
+  failed: number;
+  skipped: number;
+  /** @nullable */
+  message?: string | null;
 }
 
 /**
@@ -963,6 +987,8 @@ export interface UpdateSettingsInput {
   signingAgentPort?: number | null;
   /** @nullable */
   archiveRetentionDays?: number | null;
+  /** @nullable */
+  notificationIntervalMinutes?: number | null;
   gtInvestRecipients?: string[];
   budgetPositions?: string[];
   ldap?: UpdateSettingsInputLdap;
@@ -1244,6 +1270,7 @@ export type ListNotificationsStatus =
 
 export const ListNotificationsStatus = {
   PENDING: "PENDING",
+  QUEUED: "QUEUED",
   SENT: "SENT",
   FAILED: "FAILED",
 } as const;

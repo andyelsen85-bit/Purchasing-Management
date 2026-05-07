@@ -136,6 +136,17 @@ export interface AppSettings {
   budgetPositions: string[];
   ldap: LdapConfigStored;
   smtp: SmtpConfigStored;
+  /**
+   * How many minutes between automated notification batch sends.
+   * Defaults to 15. Admin-configurable from the SMTP settings tab.
+   */
+  notificationIntervalMinutes: number;
+  /**
+   * ISO timestamp of the last time the notification batch was flushed.
+   * Null until the first flush. Used to compute the countdown to the
+   * next send shown in the Settings page.
+   */
+  notificationLastSentAt: string | null;
 }
 
 const DEFAULT: AppSettings = {
@@ -182,6 +193,8 @@ const DEFAULT: AppSettings = {
     from: null,
     skipTlsVerify: false,
   },
+  notificationIntervalMinutes: 15,
+  notificationLastSentAt: null,
 };
 
 export async function getSettings(): Promise<AppSettings> {
@@ -270,6 +283,8 @@ export function toPublicSettings(s: AppSettings) {
       fromAddress: s.smtp?.from ?? null,
       skipTlsVerify: !!s.smtp?.skipTlsVerify,
     },
+    notificationIntervalMinutes: s.notificationIntervalMinutes ?? 15,
+    notificationLastSentAt: s.notificationLastSentAt ?? null,
   };
 }
 

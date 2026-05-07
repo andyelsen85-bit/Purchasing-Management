@@ -734,7 +734,7 @@ paths:
         - name: status
           in: query
           required: false
-          schema: { type: string, enum: [PENDING, SENT, FAILED] }
+          schema: { type: string, enum: [PENDING, QUEUED, SENT, FAILED] }
       responses:
         "200":
           description: Notifications
@@ -743,6 +743,30 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/NotificationEntry" }
+
+  /notifications/batch-status:
+    get:
+      operationId: getNotificationBatchStatus
+      tags: [notifications]
+      summary: Get notification batch queue status (admin)
+      responses:
+        "200":
+          description: Batch queue status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationBatchStatus" }
+
+  /notifications/flush:
+    post:
+      operationId: flushNotificationQueue
+      tags: [notifications]
+      summary: Immediately flush the pending notification queue (admin)
+      responses:
+        "200":
+          description: Flush result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationFlushResult" }
 
   # ---------------- AUDIT (admin only) ----------------
   /audit-log:
@@ -1819,6 +1843,8 @@ components:
           items: { type: string }
         ldap: { $ref: "#/components/schemas/LdapsSettings" }
         smtp: { $ref: "#/components/schemas/SmtpSettings" }
+        notificationIntervalMinutes: { type: integer, description: "Minutes between automated notification batch sends" }
+        notificationLastSentAt: { type: ["string", "null"], format: date-time, description: "ISO timestamp of the last batch flush" }
       required:
         - appName
         - limitX
@@ -1828,6 +1854,25 @@ components:
         - budgetPositions
         - ldap
         - smtp
+        - notificationIntervalMinutes
+
+    NotificationBatchStatus:
+      type: object
+      required: [pendingCount, intervalMinutes, lastSentAt, nextSendAt]
+      properties:
+        pendingCount: { type: integer }
+        intervalMinutes: { type: integer }
+        lastSentAt: { type: ["string", "null"], format: date-time }
+        nextSendAt: { type: ["string", "null"], format: date-time }
+
+    NotificationFlushResult:
+      type: object
+      required: [sent, failed, skipped]
+      properties:
+        sent: { type: integer }
+        failed: { type: integer }
+        skipped: { type: integer }
+        message: { type: ["string", "null"] }
 
     UpdateSettingsInput:
       type: object
@@ -1842,6 +1887,7 @@ components:
         certSigningEnabled: { type: ["boolean", "null"] }
         signingAgentPort: { type: ["integer", "null"] }
         archiveRetentionDays: { type: ["integer", "null"] }
+        notificationIntervalMinutes: { type: ["integer", "null"] }
         gtInvestRecipients:
           type: array
           items: { type: string }

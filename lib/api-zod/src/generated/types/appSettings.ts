@@ -26,4 +26,11 @@ export interface AppSettings {
   budgetPositions: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
+  /** Minutes between automated notification batch sends */
+  notificationIntervalMinutes: number;
+  /**
+   * ISO timestamp of the last batch flush
+   * @nullable
+   */
+  notificationLastSentAt?: Date | null;
 }
