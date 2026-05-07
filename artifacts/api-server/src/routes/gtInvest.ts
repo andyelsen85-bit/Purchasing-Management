@@ -403,7 +403,7 @@ async function buildMeetingPdf(
     // ── "Pièces jointes ci-après" label ──
     const arrowY = cardY - 55;
     sep.drawLine({ start: { x: ML, y: arrowY + 20 }, end: { x: d.pw - MR, y: arrowY + 20 }, thickness: 1, color: ACCENT });
-    const arrow = hasAttachment ? "PIÈCE JOINTE CI-APRÈS  →" : "AUCUNE PIÈCE JOINTE PDF POUR CE DOSSIER";
+    const arrow = hasAttachment ? "PIECE JOINTE CI-APRES  >>" : "AUCUNE PIECE JOINTE PDF POUR CE DOSSIER";
     const arrowW = fontBold.widthOfTextAtSize(arrow, 12);
     sep.drawText(arrow, {
       x: (d.pw - arrowW) / 2, y: arrowY, size: 12, font: fontBold,
