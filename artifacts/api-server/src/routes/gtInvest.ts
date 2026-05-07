@@ -158,12 +158,13 @@ async function buildMeetingPdf(
   const HDR_SUB    = rgb(0.70, 0.86, 0.95);  // light blue for header subtitles
 
   // Column layout (total = UW = 515)
+  // Widths tuned so "Pos. budgétaire" gets enough room for real values
   const COLS = [
-    { label: "Département",     x: ML,          w: 112, align: "left"  },
-    { label: "Référence",       x: ML + 112,    w: 80,  align: "left"  },
-    { label: "Objet",           x: ML + 192,    w: 155, align: "left"  },
-    { label: "Prix TTC",        x: ML + 347,    w: 90,  align: "right" },
-    { label: "Pos. budgétaire", x: ML + 437,    w: 78,  align: "left"  },
+    { label: "Département",       x: ML,          w: 95,  align: "left"  },
+    { label: "Référence",         x: ML + 95,     w: 72,  align: "left"  },
+    { label: "Objet",             x: ML + 167,    w: 138, align: "left"  },
+    { label: "Prix TTC",          x: ML + 305,    w: 85,  align: "right" },
+    { label: "Position budgét.",  x: ML + 390,    w: 125, align: "left"  },
   ] as const;
 
   const meetingLabel = `${meeting.date}${meeting.label ? ` — ${meeting.label}` : ""}`;
@@ -292,11 +293,11 @@ async function buildMeetingPdf(
     const price  = fmtCurrency(getWinningPrice(w), w.currency);
     const inv    = ((w.investmentForm ?? {}) as InvForm);
     const cells: string[] = [
-      trunc(w.departmentName, 19),
-      trunc(w.reference, 13),
-      trunc(w.title, 26),
+      trunc(w.departmentName, 16),
+      trunc(w.reference, 12),
+      trunc(w.title, 23),
       price,
-      trunc(inv.budgetPosition, 13),
+      trunc(inv.budgetPosition, 21),
     ];
 
     for (let c = 0; c < COLS.length; c++) {
@@ -328,8 +329,91 @@ async function buildMeetingPdf(
     color: BORDER,
   });
 
-  // ── Attachment pages — one section per workflow ────────────────────────────
-  for (const w of sorted) {
+  // ── Helper: separator/cover page before each workflow's attachments ─────────
+  function drawWorkflowSeparator(
+    w: WfForPdf,
+    position: number,
+    hasAttachment: boolean,
+    attachmentFilename: string,
+  ) {
+    const sep = merged.addPage([PW, PH]);
+
+    // ── Header band ──
+    sep.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: HEADER_H, color: NAVY });
+    sep.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: 5, color: ACCENT });
+    sep.drawRectangle({ x: PW - 10, y: HEADER_BOT, width: 10, height: HEADER_H, color: NAVY_MID });
+    sep.drawText(trunc(w.reference, 38), {
+      x: ML, y: PH - 43, size: 20, font: fontBold, color: WHITE,
+    });
+    sep.drawText(trunc(`${w.departmentName}  ·  ${w.title}`, 72), {
+      x: ML, y: PH - 66, size: 10, font: fontReg, color: HDR_SUB,
+    });
+    // Position badge (top-right of header)
+    const badge = `Dossier ${position} / ${sorted.length}`;
+    const badgeW = fontBold.widthOfTextAtSize(badge, 9);
+    sep.drawText(badge, {
+      x: PW - MR - 14 - badgeW, y: PH - 26, size: 9, font: fontBold, color: WHITE,
+    });
+
+    // ── Info band ──
+    const infoY = HEADER_BOT - INFO_H;
+    sep.drawRectangle({ x: 0, y: infoY, width: PW, height: INFO_H, color: INFO_BG });
+    sep.drawLine({ start: { x: 0, y: infoY }, end: { x: PW, y: infoY }, thickness: 0.5, color: BORDER });
+    sep.drawText("Récapitulatif du dossier", {
+      x: ML, y: infoY + 8, size: 7.5, font: fontBold, color: NAVY_MID,
+    });
+    sep.drawText(`Réunion du ${meetingLabel}`, {
+      x: PW - MR - fontReg.widthOfTextAtSize(`Réunion du ${meetingLabel}`, 7.5),
+      y: infoY + 8, size: 7.5, font: fontReg, color: MUTED,
+    });
+
+    // ── Detail card ──
+    const cardX = ML;
+    const cardY = infoY - 200;
+    const cardW = UW;
+    const cardH = 190;
+    sep.drawRectangle({ x: cardX, y: cardY, width: cardW, height: cardH, color: INFO_BG });
+    sep.drawRectangle({ x: cardX, y: cardY + cardH - 4, width: cardW, height: 4, color: NAVY_MID });
+    sep.drawLine({ start: { x: cardX, y: cardY }, end: { x: cardX + cardW, y: cardY }, thickness: 0.5, color: BORDER });
+    sep.drawLine({ start: { x: cardX, y: cardY }, end: { x: cardX, y: cardY + cardH }, thickness: 0.5, color: BORDER });
+    sep.drawLine({ start: { x: cardX + cardW, y: cardY }, end: { x: cardX + cardW, y: cardY + cardH }, thickness: 0.5, color: BORDER });
+
+    const inv = ((w.investmentForm ?? {}) as InvForm);
+    const price = fmtCurrency(getWinningPrice(w), w.currency);
+    const rows: [string, string][] = [
+      ["Objet",               w.title ?? ""],
+      ["Département",         w.departmentName],
+      ["Prix TTC",            price],
+      ["Position budgétaire", inv.budgetPosition ?? "—"],
+      ["Réf. pièce jointe",   attachmentFilename || (hasAttachment ? "voir ci-après" : "aucune pièce jointe PDF")],
+    ];
+    let ry = cardY + cardH - 22;
+    for (const [label, val] of rows) {
+      sep.drawText(label, { x: cardX + 12, y: ry, size: 8.5, font: fontBold, color: NAVY_MID });
+      sep.drawText(trunc(val, 58), { x: cardX + 150, y: ry, size: 8.5, font: fontReg, color: TXT });
+      ry -= 24;
+      sep.drawLine({
+        start: { x: cardX + 8, y: ry + 14 },
+        end:   { x: cardX + cardW - 8, y: ry + 14 },
+        thickness: 0.3, color: BORDER,
+      });
+    }
+
+    // ── "Pièces jointes ci-après" label ──
+    const arrowY = cardY - 55;
+    sep.drawLine({ start: { x: ML, y: arrowY + 20 }, end: { x: PW - MR, y: arrowY + 20 }, thickness: 1, color: ACCENT });
+    const arrow = hasAttachment ? "PIÈCE JOINTE CI-APRÈS  →" : "AUCUNE PIÈCE JOINTE PDF POUR CE DOSSIER";
+    const arrowW = fontBold.widthOfTextAtSize(arrow, 12);
+    sep.drawText(arrow, {
+      x: (PW - arrowW) / 2, y: arrowY, size: 12, font: fontBold,
+      color: hasAttachment ? NAVY_MID : MUTED,
+    });
+    sep.drawLine({ start: { x: ML, y: arrowY - 8 }, end: { x: PW - MR, y: arrowY - 8 }, thickness: 1, color: ACCENT });
+  }
+
+  // ── Attachment pages — one separator + docs per workflow ──────────────────
+  for (let wi = 0; wi < sorted.length; wi++) {
+    const w = sorted[wi];
     const docs = await db
       .select()
       .from(documentsTable)
@@ -337,6 +421,10 @@ async function buildMeetingPdf(
     const winner =
       docs.find((d) => d.kind === "GT_INVEST_WINNER" && d.isCurrent) ??
       docs.find((d) => d.kind === "QUOTE" && d.isCurrent);
+
+    // Always insert a separator page before the attachment (or to note its absence)
+    drawWorkflowSeparator(w, wi + 1, !!winner, winner?.filename ?? "");
+
     if (!winner) continue;
 
     if (winner.mimeType === "application/pdf") {
@@ -349,23 +437,23 @@ async function buildMeetingPdf(
         logWarn?.({ err: String(err), workflowId: w.id, msg: "Failed to merge PDF" });
       }
     } else {
-      const sep = merged.addPage([PW, PH]);
-      sep.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: HEADER_H, color: NAVY });
-      sep.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: 5, color: ACCENT });
-      sep.drawRectangle({ x: PW - 10, y: HEADER_BOT, width: 10, height: HEADER_H, color: NAVY_MID });
-      sep.drawText(trunc(w.reference, 35), {
+      const info = merged.addPage([PW, PH]);
+      info.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: HEADER_H, color: NAVY });
+      info.drawRectangle({ x: 0, y: HEADER_BOT, width: PW, height: 5, color: ACCENT });
+      info.drawRectangle({ x: PW - 10, y: HEADER_BOT, width: 10, height: HEADER_H, color: NAVY_MID });
+      info.drawText(trunc(w.reference, 35), {
         x: ML, y: PH - 43, size: 18, font: fontBold, color: WHITE,
       });
-      sep.drawText(trunc(`${w.departmentName} — ${w.title}`, 70), {
+      info.drawText(trunc(`${w.departmentName} — ${w.title}`, 70), {
         x: ML, y: PH - 66, size: 10, font: fontReg, color: HDR_SUB,
       });
-      sep.drawText(`Pièce jointe : ${winner.filename}`, {
+      info.drawText(`Pièce jointe : ${winner.filename}`, {
         x: ML, y: PH - 180, size: 11, font: fontReg, color: TXT,
       });
-      sep.drawText(`Type : ${winner.mimeType}`, {
+      info.drawText(`Type : ${winner.mimeType}`, {
         x: ML, y: PH - 198, size: 9, font: fontReg, color: MUTED,
       });
-      sep.drawText("(Pièce non-PDF — impossible de l'incorporer dans le pack)", {
+      info.drawText("(Pièce non-PDF — impossible de l'incorporer dans le pack)", {
         x: ML, y: PH - 216, size: 9, font: fontReg, color: MUTED,
       });
     }
