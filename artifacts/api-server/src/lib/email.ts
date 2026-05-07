@@ -5,6 +5,7 @@ import {
   usersTable,
   userDepartmentsTable,
   notificationsTable,
+  workflowsTable,
   type DbNotification,
   type DbWorkflow,
 } from "@workspace/db";
@@ -90,7 +91,7 @@ export interface NotificationAttachment {
 
 // ─── Step labels in French ────────────────────────────────────────────────────
 
-const STEP_LABEL_FR: Record<string, string> = {
+export const STEP_LABEL_FR: Record<string, string> = {
   NEW: "Nouveau",
   QUOTATION: "Devis",
   VALIDATING_QUOTE_FINANCIAL: "Validation devis",
@@ -128,34 +129,53 @@ function formatDateFr(d: Date): string {
 
 // ─── HTML email template ──────────────────────────────────────────────────────
 
-function buildHtmlEmail(
-  notifications: DbNotification[],
-  appName: string,
-): string {
-  const dateStr = formatDateFr(new Date());
+interface NotifGroup {
+  workflowRef: string;
+  workflowTitle: string;
+  notifications: DbNotification[];
+}
 
-  const items = notifications
-    .map((n) => {
-      const stepLabel = STEP_LABEL_FR[n.step] ?? n.step;
-      const bodyHtml = escapeHtml(n.body).replace(/\n/g, "<br>");
-      const createdStr = n.createdAt
-        ? formatDateFr(new Date(n.createdAt))
+function buildHtmlEmail(groups: NotifGroup[], appName: string): string {
+  const dateStr = formatDateFr(new Date());
+  const totalCount = groups.reduce((s, g) => s + g.notifications.length, 0);
+
+  const groupsHtml = groups
+    .map((g) => {
+      const eventsHtml = g.notifications
+        .map((n) => {
+          const stepLabel = STEP_LABEL_FR[n.step] ?? n.step;
+          const bodyHtml = escapeHtml(n.body).replace(/\n/g, "<br>");
+          const createdStr = n.createdAt
+            ? formatDateFr(new Date(n.createdAt))
+            : "";
+          return `
+            <div style="display:flex;gap:0;margin-bottom:1px;">
+              <div style="background:#C4A882;width:4px;flex-shrink:0;border-radius:0;"></div>
+              <div style="background:#FFFFFF;flex:1;padding:14px 18px;">
+                <div style="margin-bottom:6px;">
+                  <span style="display:inline-block;background:#F3EDE3;border:1px solid #D4C4A8;color:#5C3A1E;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:3px;">${escapeHtml(stepLabel)}</span>
+                </div>
+                <div style="color:#5C4030;font-size:13px;line-height:1.7;">${bodyHtml}</div>
+                ${createdStr ? `<div style="color:#A08060;font-size:11px;margin-top:10px;">${escapeHtml(createdStr)}</div>` : ""}
+              </div>
+            </div>`;
+        })
+        .join("\n");
+
+      const titlePart = g.workflowTitle
+        ? `<span style="color:#C4A882;font-size:13px;margin-left:10px;font-weight:400;">${escapeHtml(g.workflowTitle)}</span>`
         : "";
+
       return `
-        <div style="background:#FFFFFF;border:1px solid #E0D5C8;border-radius:8px;margin-bottom:16px;overflow:hidden;">
-          <div style="background:#5C3A1E;padding:10px 20px;">
-            <span style="color:#E8C9A0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">${escapeHtml(stepLabel)}</span>
+        <div style="margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #D4C4A8;">
+          <div style="background:#7A4F2D;padding:12px 18px;display:flex;align-items:baseline;gap:8px;">
+            <span style="color:#FFFFFF;font-size:14px;font-weight:700;letter-spacing:0.3px;">${escapeHtml(g.workflowRef)}</span>
+            ${titlePart}
           </div>
-          <div style="padding:16px 20px;">
-            <div style="color:#1A1209;font-size:15px;font-weight:600;margin-bottom:10px;line-height:1.4;">${escapeHtml(n.subject)}</div>
-            <div style="color:#5C4030;font-size:13px;line-height:1.7;">${bodyHtml}</div>
-            ${createdStr ? `<div style="color:#A08060;font-size:11px;margin-top:14px;padding-top:10px;border-top:1px solid #F0E8E0;">Reçu le ${escapeHtml(createdStr)}</div>` : ""}
-          </div>
+          ${eventsHtml}
         </div>`;
     })
     .join("\n");
-
-  const count = notifications.length;
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -183,7 +203,7 @@ function buildHtmlEmail(
           <tr>
             <td style="background-color:#7A4F2D;padding:12px 32px;">
               <span style="color:#FAF7F2;font-size:13px;font-weight:600;">
-                ${count} notification${count > 1 ? "s" : ""} en attente
+                ${totalCount} notification${totalCount > 1 ? "s" : ""} sur ${groups.length} dossier${groups.length > 1 ? "s" : ""}
               </span>
               <span style="color:#C4A882;font-size:12px;margin-left:8px;">— ${escapeHtml(dateStr)}</span>
             </td>
@@ -193,9 +213,9 @@ function buildHtmlEmail(
           <tr>
             <td style="background-color:#FAF7F2;padding:28px 32px 8px;">
               <p style="color:#3C2A1A;font-size:14px;margin:0 0 20px;line-height:1.6;">
-                Vous avez des mises à jour sur vos demandes d'achat. Consultez l'application pour agir sur ces workflows.
+                Vous avez des mises à jour sur vos demandes d'achat ci-dessous.
               </p>
-              ${items}
+              ${groupsHtml}
             </td>
           </tr>
 
@@ -290,6 +310,14 @@ export async function flushNotificationQueue(): Promise<{
     return { sent: 0, failed: 0, skipped: 0 };
   }
 
+  // Pre-fetch workflow references and titles for grouping in emails
+  const uniqueWfIds = [...new Set(queued.map((n) => n.workflowId))];
+  const wfRows = await db
+    .select({ id: workflowsTable.id, reference: workflowsTable.reference, title: workflowsTable.title })
+    .from(workflowsTable)
+    .where(inArray(workflowsTable.id, uniqueWfIds));
+  const wfMap = new Map(wfRows.map((w) => [w.id, w]));
+
   // Group notifications by each recipient email
   const byRecipient = new Map<string, DbNotification[]>();
   for (const n of queued) {
@@ -319,14 +347,36 @@ export async function flushNotificationQueue(): Promise<{
   const failedIds = new Set<number>();
 
   for (const [recipient, notifs] of byRecipient) {
+    // Group this recipient's notifications by workflow, preserving arrival order
+    const groupMap = new Map<number, DbNotification[]>();
+    for (const n of notifs) {
+      if (!groupMap.has(n.workflowId)) groupMap.set(n.workflowId, []);
+      groupMap.get(n.workflowId)!.push(n);
+    }
+    const groups: NotifGroup[] = Array.from(groupMap.entries()).map(([wfId, wfNotifs]) => {
+      const wf = wfMap.get(wfId);
+      return {
+        workflowRef: wf?.reference ?? `#${wfId}`,
+        workflowTitle: wf?.title ?? "",
+        notifications: wfNotifs,
+      };
+    });
+
+    const totalNotifs = notifs.length;
     const subject =
-      notifs.length === 1
+      totalNotifs === 1
         ? notifs[0].subject
-        : `${notifs.length} nouvelles notifications — ${settings.appName}`;
-    const html = buildHtmlEmail(notifs, settings.appName);
-    const text = notifs
-      .map((n) => `[${STEP_LABEL_FR[n.step] ?? n.step}] ${n.subject}\n\n${n.body}`)
-      .join("\n\n---\n\n");
+        : `${totalNotifs} nouvelle${totalNotifs > 1 ? "s" : ""} notification${totalNotifs > 1 ? "s" : ""} — ${settings.appName}`;
+    const html = buildHtmlEmail(groups, settings.appName);
+    const text = groups
+      .map((g) => {
+        const header = `=== ${g.workflowRef}${g.workflowTitle ? ` — ${g.workflowTitle}` : ""} ===`;
+        const events = g.notifications
+          .map((n) => `[${STEP_LABEL_FR[n.step] ?? n.step}] ${n.body}`)
+          .join("\n\n");
+        return `${header}\n\n${events}`;
+      })
+      .join("\n\n" + "─".repeat(60) + "\n\n");
 
     try {
       await transport.sendMail({ from: fromAddr, to: recipient, subject, text, html });

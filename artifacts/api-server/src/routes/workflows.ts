@@ -41,7 +41,7 @@ import {
 } from "../lib/permissions";
 import { audit } from "../lib/audit";
 import { getSettings, derivePublicationTier } from "../lib/settings";
-import { queueNotification, recipientsForStep } from "../lib/email";
+import { queueNotification, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -544,8 +544,8 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
   if (recipients.length > 0) {
     void queueNotification(
       recipients,
-      `${wf.reference} : avancé à ${next}`,
-      `Le workflow ${wf.reference} (${wf.title}) est passé de l'étape ${wf.currentStep} à ${next}.\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
+      `${wf.reference} : ${STEP_LABEL_FR[next] ?? next}`,
+      `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
       { workflowId: wf.id, step: next },
     );
   }
@@ -642,7 +642,7 @@ router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void
     void queueNotification(
       recipients,
       `${wf.reference} : rejeté et clôturé`,
-      `Le workflow ${wf.reference} (${wf.title}) a été rejeté à l'étape ${wf.currentStep} par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}`,
+      `Ce dossier a été rejeté à l'étape « ${STEP_LABEL_FR[wf.currentStep] ?? wf.currentStep} » par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}`,
       { workflowId: wf.id, step: "REJECTED" },
     );
   }
@@ -828,11 +828,11 @@ router.post(
         const subjVerb =
           nextStepValue === "REJECTED"
             ? "rejeté et clôturé"
-            : `avancé à ${nextStepValue}`;
+            : `${STEP_LABEL_FR[nextStepValue] ?? nextStepValue}`;
         void queueNotification(
           recipients,
           `${wf.reference} : ${subjVerb}`,
-          `Le workflow ${wf.reference} (${wf.title}) — Décision GT Invest : ${decision}.`,
+          `Décision GT Invest : ${decision}. Ce dossier${nextStepValue === "REJECTED" ? " est désormais clôturé." : ` passe à l'étape « ${STEP_LABEL_FR[nextStepValue] ?? nextStepValue} ».`}`,
           { workflowId: wf.id, step: nextStepValue },
         );
       }
