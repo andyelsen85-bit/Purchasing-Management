@@ -1170,7 +1170,6 @@ function LdapSettingsPanel() {
   const [caCertSet, setCaCertSet] = useState(false);
   const [kerberos, setKerberos] = useState(false);
   const [spn, setSpn] = useState("");
-  const [proxyUserHeader, setProxyUserHeader] = useState("");
 
   useEffect(() => {
     if (!s) return;
@@ -1203,8 +1202,6 @@ function LdapSettingsPanel() {
     setCaCertSet(s.ldap.caCertSet);
     setKerberos(s.ldap.kerberosEnabled);
     setSpn(s.ldap.servicePrincipalName ?? "");
-    const ld2 = s.ldap as { proxyUserHeader?: string | null };
-    setProxyUserHeader(ld2.proxyUserHeader ?? "");
   }, [s]);
 
   return (
@@ -1497,20 +1494,7 @@ function LdapSettingsPanel() {
                 data-testid="input-spn"
               />
               <p className="text-xs text-muted-foreground">
-                Format : <code>HTTP/hostname.domaine@DOMAINE.LAN</code>. Laissez vide si vous utilisez uniquement l'en-tête proxy ci-dessous.
-              </p>
-            </div>
-            <div className="space-y-1 border-t pt-3">
-              <Label>En-tête proxy SSO (alternative sans keytab)</Label>
-              <Input
-                value={proxyUserHeader}
-                onChange={(e) => setProxyUserHeader(e.target.value)}
-                placeholder="X-Remote-User"
-                data-testid="input-proxy-user-header"
-              />
-              <p className="text-xs text-muted-foreground">
-                Si votre reverse proxy (nginx, IIS, Apache) gère l'authentification Windows et transmet le nom d'utilisateur dans un en-tête HTTP, indiquez ici le nom de cet en-tête (ex. <code>X-Remote-User</code>). Aucun keytab ni module Kerberos natif requis.
-                Laissez vide pour utiliser la validation SPNEGO intégrée.
+                Format : <code>HTTP/hostname.domaine@DOMAINE.LAN</code>
               </p>
             </div>
           </div>
@@ -1538,7 +1522,6 @@ function LdapSettingsPanel() {
                     groupMembershipAttribute: groupAttr.trim() || null,
                     kerberosEnabled: kerberos,
                     servicePrincipalName: spn.trim() || null,
-                    proxyUserHeader: proxyUserHeader.trim() || null,
                   },
                 },
               })

@@ -1700,7 +1700,6 @@ components:
         groupMembershipAttribute: { type: ["string", "null"] }
         kerberosEnabled: { type: boolean }
         servicePrincipalName: { type: ["string", "null"] }
-        proxyUserHeader: { type: ["string", "null"] }
         groupRoleMap:
           type: object
           additionalProperties: { type: string }
@@ -1843,7 +1842,6 @@ components:
             groupMembershipAttribute: { type: ["string", "null"] }
             kerberosEnabled: { type: ["boolean", "null"] }
             servicePrincipalName: { type: ["string", "null"] }
-            proxyUserHeader: { type: ["string", "null"] }
             groupRoleMap:
               type: object
               additionalProperties: { type: string }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Lock, Package, ShieldCheck } from "lucide-react";
@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLogin, getGetSessionQueryKey } from "@/lib/api";
 import { extractErrorMessage } from "@/lib/utils";
@@ -14,7 +13,6 @@ import { extractErrorMessage } from "@/lib/utils";
 interface PublicConfig {
   appName: string;
   logoDataUrl: string | null;
-  ldap: { enabled: boolean; kerberosEnabled: boolean };
 }
 
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -33,8 +31,6 @@ export function LoginPage() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [useLdap, setUseLdap] = useState(false);
-  const [ldapToggleTouched, setLdapToggleTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
@@ -52,55 +48,6 @@ export function LoginPage() {
   const [setupConfirm, setSetupConfirm] = useState("");
   const [setupBusy, setSetupBusy] = useState(false);
 
-  const ldapEnabled = Boolean(settings?.ldap?.enabled);
-
-  // SSO state: "loading" = waiting for data, "trying" = SPNEGO in flight, "done" = show form
-  const [ssoState, setSsoState] = useState<"loading" | "trying" | "done">("loading");
-  const ssoTried = useRef(false);
-
-  // Always attempt the silent SPNEGO probe once needsSetup is known.
-  // The server decides whether Kerberos is ready:
-  //   • Not configured → 401 (no WWW-Authenticate header) → we fall through to the form
-  //   • Configured     → 401 + WWW-Authenticate: Negotiate → browser retries with ticket
-  //                    → server validates → 200 → we redirect to the app
-  // We do NOT gate this on settings.ldap.kerberosEnabled so that an admin who
-  // has the browser trusted zone set up but forgot to flip the toggle in Settings
-  // still gets a useful fast-fail (the server returns 401 immediately without
-  // triggering a browser auth dialog).
-  useEffect(() => {
-    if (ssoTried.current) return;
-    if (needsSetup === null) return; // wait for setup-status
-
-    ssoTried.current = true;
-
-    if (needsSetup) {
-      // First-boot wizard — skip SSO entirely
-      setSsoState("done");
-      return;
-    }
-
-    setSsoState("trying");
-    const ctrl = new AbortController();
-    fetch(`${API_BASE}/api/auth/negotiate`, {
-      method: "GET",
-      credentials: "include",
-      signal: ctrl.signal,
-      headers: { Accept: "application/json" },
-    })
-      .then(async (r) => {
-        if (!r.ok) return; // any non-200 → fall through to form
-        const user = (await r.json()) as { id: number; roles: string[] };
-        qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user });
-        setLocation("/");
-      })
-      .catch(() => {
-        /* network error or abort — fall through to form */
-      })
-      .finally(() => setSsoState("done"));
-
-    return () => ctrl.abort();
-  }, [qc, setLocation, needsSetup]);
-
   const login = useLogin({
     mutation: {
       onSuccess: (res) => {
@@ -116,7 +63,7 @@ export function LoginPage() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    login.mutate({ data: { username, password, useLdap: ldapEnabled && useLdap } });
+    login.mutate({ data: { username, password } });
   }
 
   async function onSetupSubmit(e: React.FormEvent) {
@@ -158,7 +105,13 @@ export function LoginPage() {
     }
   }
 
-  const isLoading = ssoState === "loading" || ssoState === "trying";
+  if (needsSetup === null) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-950">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-950 p-4">
@@ -183,17 +136,7 @@ export function LoginPage() {
           </p>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div
-              className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
-              data-testid="sso-attempt"
-            >
-              <Loader2 className="h-5 w-5 animate-spin" />
-              {ssoState === "trying"
-                ? "Connexion SSO en cours…"
-                : "Chargement…"}
-            </div>
-          ) : needsSetup ? (
+          {needsSetup ? (
             <form className="space-y-4" onSubmit={onSetupSubmit}>
               <Alert>
                 <ShieldCheck className="h-4 w-4" />
@@ -312,27 +255,6 @@ export function LoginPage() {
                   data-testid="input-password"
                 />
               </div>
-              {ldapEnabled && (
-                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
-                  <div>
-                    <Label htmlFor="useLdap" className="text-sm">
-                      Utiliser LDAP / Active Directory
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Décochez pour les comptes locaux
-                    </p>
-                  </div>
-                  <Switch
-                    id="useLdap"
-                    checked={useLdap}
-                    onCheckedChange={(v) => {
-                      setLdapToggleTouched(true);
-                      setUseLdap(v);
-                    }}
-                    data-testid="switch-useldap"
-                  />
-                </div>
-              )}
               <Button
                 type="submit"
                 className="w-full"

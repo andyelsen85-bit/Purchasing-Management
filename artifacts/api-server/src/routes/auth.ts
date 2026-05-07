@@ -45,94 +45,86 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { username, password, useLdap } = parsed.data;
+  const { username, password } = parsed.data;
+
+  const settings = await getSettings();
+  const ldapConfigured = !!settings.ldap?.enabled && !!settings.ldap?.host;
 
   let user: SessionUser | null = null;
 
-  if (useLdap) {
-    const settings = await getSettings();
+  // Try LDAP first if configured. On any failure we silently fall through to
+  // local auth so the break-glass admin account always works and users aren't
+  // locked out when the directory is temporarily unreachable.
+  if (ldapConfigured) {
     const result = await ldapAuthenticate(settings.ldap ?? {}, username, password);
-    if (!result.ok) {
-      await audit(null, "LOGIN_FAILED", "user", undefined, `LDAP: ${username}`, req.ip);
-      res.status(401).json({ error: result.error ?? "Authentication failed" });
-      return;
+    if (result.ok) {
+      // Re-derive roles + departments from AD groups every sign-in so the
+      // directory remains authoritative.
+      const groups = result.groups ?? [];
+      const roleMap = settings.ldap?.groupRoleMap;
+      const deptMap = settings.ldap?.groupDepartmentMap;
+      const useRoleMap = hasMapping(roleMap);
+      const useDeptMap = hasMapping(deptMap);
+      const derivedRoles = useRoleMap ? mapGroupsToRoles(groups, roleMap) : null;
+      if (useRoleMap && derivedRoles !== null && derivedRoles.length === 0) {
+        await audit(null, "LOGIN_FAILED", "user", undefined, `LDAP: ${username}`, req.ip);
+        res.status(401).json({ error: "Aucun groupe AD ne correspond à un rôle autorisé" });
+        return;
+      }
+      const derivedDeptIds = useDeptMap
+        ? await mapGroupsToDepartmentIds(groups, deptMap)
+        : null;
+      const [existing] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.username, username));
+      if (existing) {
+        await db
+          .update(usersTable)
+          .set({
+            source: "LDAP",
+            displayName: result.displayName ?? existing.displayName,
+            email: result.email ?? existing.email,
+            ...(derivedRoles ? { roles: derivedRoles } : {}),
+          })
+          .where(eq(usersTable.id, existing.id));
+        if (derivedDeptIds !== null)
+          await syncUserDepartments(existing.id, derivedDeptIds);
+        user = await buildSessionUser(existing.id);
+      } else {
+        const [created] = await db
+          .insert(usersTable)
+          .values({
+            username,
+            displayName: result.displayName ?? username,
+            email: result.email ?? null,
+            source: "LDAP",
+            roles: derivedRoles ?? ["DEPT_USER"],
+          })
+          .returning();
+        if (created && derivedDeptIds !== null)
+          await syncUserDepartments(created.id, derivedDeptIds);
+        user = created ? await buildSessionUser(created.id) : null;
+      }
     }
-    // Re-derive roles + departments from AD groups every sign-in so the
-    // directory remains authoritative — removing a user from a mapped AD
-    // group must revoke the corresponding role/department. The mapping is
-    // only authoritative when the operator has actually configured it; if
-    // groupRoleMap/groupDepartmentMap are empty we fall back to existing
-    // values (or DEPT_USER for brand-new users) and leave department
-    // memberships alone so manual assignments survive.
-    const groups = result.groups ?? [];
-    const roleMap = settings.ldap?.groupRoleMap;
-    const deptMap = settings.ldap?.groupDepartmentMap;
-    const useRoleMap = hasMapping(roleMap);
-    const useDeptMap = hasMapping(deptMap);
-    const derivedRoles = useRoleMap ? mapGroupsToRoles(groups, roleMap) : null;
-    // When role mapping is configured, a user with no matching group has no
-    // authorised role and must not be allowed in.
-    if (useRoleMap && derivedRoles !== null && derivedRoles.length === 0) {
-      await audit(null, "LOGIN_FAILED", "user", undefined, `LDAP: ${username}`, req.ip);
-      res.status(401).json({ error: "Aucun groupe AD ne correspond à un rôle autorisé" });
-      return;
-    }
-    const derivedDeptIds = useDeptMap
-      ? await mapGroupsToDepartmentIds(groups, deptMap)
-      : null;
-    const [existing] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.username, username));
-    if (existing) {
-      await db
-        .update(usersTable)
-        .set({
-          source: "LDAP",
-          displayName: result.displayName ?? existing.displayName,
-          email: result.email ?? existing.email,
-          ...(derivedRoles ? { roles: derivedRoles } : {}),
-        })
-        .where(eq(usersTable.id, existing.id));
-      if (derivedDeptIds !== null)
-        await syncUserDepartments(existing.id, derivedDeptIds);
-      user = await buildSessionUser(existing.id);
-    } else {
-      const [created] = await db
-        .insert(usersTable)
-        .values({
-          username,
-          displayName: result.displayName ?? username,
-          email: result.email ?? null,
-          source: "LDAP",
-          roles: derivedRoles ?? ["DEPT_USER"],
-        })
-        .returning();
-      if (created && derivedDeptIds !== null)
-        await syncUserDepartments(created.id, derivedDeptIds);
-      user = created ? await buildSessionUser(created.id) : null;
-    }
-  } else {
+    // LDAP failed — fall through to local auth below
+  }
+
+  // Local auth (primary when LDAP is off; fallback when LDAP is on)
+  if (!user) {
     const [row] = await db
       .select()
       .from(usersTable)
       .where(eq(usersTable.username, username));
-    if (!row || !row.passwordHash) {
-      await audit(null, "LOGIN_FAILED", "user", undefined, username, req.ip);
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
+    if (row?.passwordHash) {
+      const ok = await verifyPassword(password, row.passwordHash);
+      if (ok) user = await buildSessionUser(row.id);
     }
-    const ok = await verifyPassword(password, row.passwordHash);
-    if (!ok) {
-      await audit(row.id, "LOGIN_FAILED", "user", row.id, username, req.ip);
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
-    user = await buildSessionUser(row.id);
   }
 
   if (!user) {
-    res.status(500).json({ error: "Failed to load user" });
+    await audit(null, "LOGIN_FAILED", "user", undefined, username, req.ip);
+    res.status(401).json({ error: "Identifiants invalides" });
     return;
   }
 
@@ -161,63 +153,18 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
   // dialog — we must short-circuit before that happens.
   const settings = await getSettings();
 
-  // ── Path A: trusted reverse-proxy header ──────────────────────────────────
-  // When a reverse proxy (nginx with auth_gssapi, IIS with Windows Auth,
-  // Apache mod_auth_kerb) handles the SPNEGO exchange and forwards the
-  // authenticated Windows username via a configurable HTTP header, we trust
-  // that header directly — no keytab or kerberos npm package needed.
-  const proxyHeader = settings.ldap?.proxyUserHeader?.trim();
-  if (proxyHeader) {
-    const proxyUsername = req.headers[proxyHeader.toLowerCase()];
-    if (proxyUsername && typeof proxyUsername === "string" && proxyUsername.trim()) {
-      const username = proxyUsername.trim().split("@")[0].split("\\").pop()!;
-      // Find or create the user from the proxy-supplied identity
-      const [existing] = await db
-        .select()
-        .from(usersTable)
-        .where(eq(usersTable.username, username));
-      let userRow = existing;
-      if (!userRow) {
-        const [created] = await db
-          .insert(usersTable)
-          .values({ username, displayName: username, source: "KERBEROS", roles: ["DEPT_USER"] })
-          .returning();
-        userRow = created;
-      } else if (existing.source !== "KERBEROS") {
-        await db.update(usersTable).set({ source: "KERBEROS" }).where(eq(usersTable.id, existing.id));
-      }
-      if (!userRow) { res.status(500).json({ error: "Failed to provision user" }); return; }
-      const sessionUser = await buildSessionUser(userRow.id);
-      if (!sessionUser) { res.status(500).json({ error: "Failed to load user" }); return; }
-      req.session.user = sessionUser;
-      await audit(sessionUser.id, "LOGIN", "user", sessionUser.id, "proxy-sso", req.ip);
-      res.json(sessionUser);
-      return;
-    }
-    // Header is configured but not present in this request — fall through to
-    // the form (the proxy didn't authenticate this client).
-    res.status(401).json({ error: "SSO proxy header not present" });
-    return;
-  }
-
-  // ── Path B: built-in SPNEGO / Kerberos ────────────────────────────────────
   const spn = process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
-  // kerberosReady no longer requires KRB5_KEYTAB env var — the kerberos
-  // module will find the keytab at the OS default location if the env var
-  // isn't set explicitly (e.g. /etc/krb5.keytab on Linux).
-  const kerberosReady = !!settings.ldap?.kerberosEnabled && !!spn;
+  const hasKeytab = Boolean(process.env.KRB5_KEYTAB);
+  const kerberosReady = !!settings.ldap?.kerberosEnabled && !!spn && hasKeytab;
 
   const authHeader = req.headers["authorization"];
   const hasToken = !!authHeader && /^Negotiate\s+/i.test(authHeader);
 
   if (!hasToken) {
     if (!kerberosReady) {
-      // Neither SSO path is configured — fast-fail so the client shows the
-      // form without triggering a browser SPNEGO dialog.
       res.status(401).json({ error: "Kerberos not configured on this server" });
       return;
     }
-    // Issue the SPNEGO challenge; browser will retry with its Kerberos ticket.
     res.setHeader("WWW-Authenticate", "Negotiate");
     res.status(401).json({ error: "Negotiate required" });
     return;
@@ -226,7 +173,7 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
   if (!kerberosReady) {
     res.status(501).json({
       error:
-        "Kerberos non configuré sur ce serveur. Activez Kerberos dans Paramètres → LDAP et renseignez le SPN, ou configurez un en-tête de proxy SSO.",
+        "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, or use the LDAP/local form login.",
     });
     return;
   }

@@ -2206,7 +2206,6 @@ export const GetSettingsResponse = zod.object({
     groupMembershipAttribute: zod.string().nullish(),
     kerberosEnabled: zod.boolean(),
     servicePrincipalName: zod.string().nullish(),
-    proxyUserHeader: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
     groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),
@@ -2263,7 +2262,6 @@ export const UpdateSettingsBody = zod.object({
       groupMembershipAttribute: zod.string().nullish(),
       kerberosEnabled: zod.boolean().nullish(),
       servicePrincipalName: zod.string().nullish(),
-      proxyUserHeader: zod.string().nullish(),
       groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
       groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
     })
@@ -2326,7 +2324,6 @@ export const UpdateSettingsResponse = zod.object({
     groupMembershipAttribute: zod.string().nullish(),
     kerberosEnabled: zod.boolean(),
     servicePrincipalName: zod.string().nullish(),
-    proxyUserHeader: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
     groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),

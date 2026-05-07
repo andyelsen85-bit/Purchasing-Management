@@ -67,14 +67,6 @@ export interface LdapConfigStored {
   kerberosEnabled?: boolean;
   servicePrincipalName?: string | null;
   /**
-   * Trusted reverse-proxy SSO header. When set, the negotiate endpoint reads
-   * the username from this HTTP header (e.g. `X-Remote-User`) instead of
-   * performing the full SPNEGO/Kerberos exchange. The reverse proxy (nginx,
-   * IIS, Apache with mod_auth_gssapi) must authenticate the Windows user and
-   * forward the header. Leave null to use the built-in Kerberos validation.
-   */
-  proxyUserHeader?: string | null;
-  /**
    * Optional AD group → app role mapping. Keys are case-insensitive
    * substrings matched against each `memberOf` DN (or the leftmost CN
    * component); values are app role names (`ADMIN`, `FINANCIAL_ALL`, ...).
@@ -177,7 +169,6 @@ const DEFAULT: AppSettings = {
     groupMembershipAttribute: AD_DEFAULTS.groupMembershipAttribute,
     kerberosEnabled: false,
     servicePrincipalName: null,
-    proxyUserHeader: null,
     groupRoleMap: {},
     groupDepartmentMap: {},
   },
@@ -262,7 +253,6 @@ export function toPublicSettings(s: AppSettings) {
       groupMembershipAttribute: s.ldap?.groupMembershipAttribute ?? null,
       kerberosEnabled: !!s.ldap?.kerberosEnabled,
       servicePrincipalName: s.ldap?.servicePrincipalName ?? null,
-      proxyUserHeader: s.ldap?.proxyUserHeader ?? null,
       groupRoleMap: s.ldap?.groupRoleMap ?? {},
       groupDepartmentMap: s.ldap?.groupDepartmentMap ?? {},
     },
