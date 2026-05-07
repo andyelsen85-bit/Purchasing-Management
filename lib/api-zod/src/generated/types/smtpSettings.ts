@@ -18,5 +18,10 @@ export interface SmtpSettings {
   secure: boolean;
   /** @nullable */
   fromAddress?: string | null;
+  /**
+   * Display name shown in the From header, e.g. «CHdN Purchasing»
+   * @nullable
+   */
+  senderName?: string | null;
   skipTlsVerify: boolean;
 }

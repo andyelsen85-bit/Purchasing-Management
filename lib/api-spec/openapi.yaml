@@ -1772,6 +1772,7 @@ components:
         passwordSet: { type: boolean }
         secure: { type: boolean }
         fromAddress: { type: ["string", "null"] }
+        senderName: { type: ["string", "null"], description: "Display name shown in the From header, e.g. «CHdN Purchasing»" }
         skipTlsVerify: { type: boolean }
       required: [enabled, passwordSet, secure, skipTlsVerify]
 
@@ -1934,6 +1935,7 @@ components:
             password: { type: ["string", "null"] }
             secure: { type: ["boolean", "null"] }
             fromAddress: { type: ["string", "null"] }
+            senderName: { type: ["string", "null"] }
             skipTlsVerify: { type: ["boolean", "null"], description: "When true, skip TLS certificate validation (useful for self-signed certs)" }
 
     GtInvestDate:
@@ -1956,6 +1958,7 @@ components:
         username: { type: ["string", "null"] }
         password: { type: ["string", "null"], description: "Optional. When omitted, the saved password is reused." }
         fromAddress: { type: ["string", "null"] }
+        senderName: { type: ["string", "null"] }
         skipTlsVerify: { type: ["boolean", "null"] }
       required: [to]
 

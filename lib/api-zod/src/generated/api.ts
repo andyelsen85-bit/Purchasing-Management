@@ -2247,6 +2247,12 @@ export const GetSettingsResponse = zod.object({
     passwordSet: zod.boolean(),
     secure: zod.boolean(),
     fromAddress: zod.string().nullish(),
+    senderName: zod
+      .string()
+      .nullish()
+      .describe(
+        "Display name shown in the From header, e.g. «CHdN Purchasing»",
+      ),
     skipTlsVerify: zod.boolean(),
   }),
   notificationIntervalMinutes: zod
@@ -2313,6 +2319,7 @@ export const UpdateSettingsBody = zod.object({
       password: zod.string().nullish(),
       secure: zod.boolean().nullish(),
       fromAddress: zod.string().nullish(),
+      senderName: zod.string().nullish(),
       skipTlsVerify: zod
         .boolean()
         .nullish()
@@ -2373,6 +2380,12 @@ export const UpdateSettingsResponse = zod.object({
     passwordSet: zod.boolean(),
     secure: zod.boolean(),
     fromAddress: zod.string().nullish(),
+    senderName: zod
+      .string()
+      .nullish()
+      .describe(
+        "Display name shown in the From header, e.g. «CHdN Purchasing»",
+      ),
     skipTlsVerify: zod.boolean(),
   }),
   notificationIntervalMinutes: zod
@@ -2586,6 +2599,7 @@ export const TestSmtpBody = zod.object({
     .nullish()
     .describe("Optional. When omitted, the saved password is reused."),
   fromAddress: zod.string().nullish(),
+  senderName: zod.string().nullish(),
   skipTlsVerify: zod.boolean().nullish(),
 });
 

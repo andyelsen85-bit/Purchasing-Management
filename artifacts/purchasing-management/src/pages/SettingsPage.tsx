@@ -1535,6 +1535,7 @@ function SmtpSettingsPanel() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fromAddress, setFromAddress] = useState("");
+  const [senderName, setSenderName] = useState("");
   const [skipTlsVerify, setSkipTlsVerify] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState(15);
   const [testTo, setTestTo] = useState("");
@@ -1567,6 +1568,7 @@ function SmtpSettingsPanel() {
     setUsername(s.smtp.username ?? "");
     setPassword("");
     setFromAddress(s.smtp.fromAddress ?? "");
+    setSenderName(s.smtp.senderName ?? "");
     setSkipTlsVerify(s.smtp.skipTlsVerify ?? false);
     setIntervalMinutes(s.notificationIntervalMinutes ?? 15);
   }, [s]);
@@ -1643,13 +1645,25 @@ function SmtpSettingsPanel() {
             />
           </div>
           <div className="space-y-1">
-            <Label>From address</Label>
+            <Label>Adresse expéditeur</Label>
             <Input
               type="email"
               value={fromAddress}
               onChange={(e) => setFromAddress(e.target.value)}
               data-testid="input-smtp-from"
             />
+          </div>
+          <div className="space-y-1">
+            <Label>Nom affiché (expéditeur)</Label>
+            <Input
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+              placeholder="ex. CHdN Purchasing Management"
+              data-testid="input-smtp-sender-name"
+            />
+            <p className="text-xs text-muted-foreground">
+              Nom visible dans la boîte mail du destinataire à la place de l'adresse e-mail brute.
+            </p>
           </div>
           <div className="space-y-1">
             <Label>Intervalle de notification (minutes)</Label>
@@ -1680,6 +1694,7 @@ function SmtpSettingsPanel() {
                     username: username || null,
                     ...(password ? { password } : {}),
                     fromAddress: fromAddress || null,
+                    senderName: senderName || null,
                   },
                   notificationIntervalMinutes: intervalMinutes,
                 },

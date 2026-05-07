@@ -801,6 +801,11 @@ export interface SmtpSettings {
   secure: boolean;
   /** @nullable */
   fromAddress?: string | null;
+  /**
+   * Display name shown in the From header, e.g. «CHdN Purchasing»
+   * @nullable
+   */
+  senderName?: string | null;
   skipTlsVerify: boolean;
 }
 
@@ -959,6 +964,8 @@ export type UpdateSettingsInputSmtp = {
   secure?: boolean | null;
   /** @nullable */
   fromAddress?: string | null;
+  /** @nullable */
+  senderName?: string | null;
   /**
    * When true, skip TLS certificate validation (useful for self-signed certs)
    * @nullable
@@ -1024,6 +1031,8 @@ export interface SmtpTestInput {
   password?: string | null;
   /** @nullable */
   fromAddress?: string | null;
+  /** @nullable */
+  senderName?: string | null;
   /** @nullable */
   skipTlsVerify?: boolean | null;
 }

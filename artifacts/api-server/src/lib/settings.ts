@@ -90,6 +90,7 @@ export interface SmtpConfigStored {
   password?: string | null;
   secure?: boolean;
   from?: string | null;
+  senderName?: string | null;
   skipTlsVerify?: boolean;
 }
 
@@ -191,6 +192,7 @@ const DEFAULT: AppSettings = {
     password: null,
     secure: false,
     from: null,
+    senderName: null,
     skipTlsVerify: false,
   },
   notificationIntervalMinutes: 15,
@@ -281,6 +283,7 @@ export function toPublicSettings(s: AppSettings) {
       // column name — translate it on the way out so the SMTP form
       // re-populates correctly after a save + reload.
       fromAddress: s.smtp?.from ?? null,
+      senderName: s.smtp?.senderName ?? null,
       skipTlsVerify: !!s.smtp?.skipTlsVerify,
     },
     notificationIntervalMinutes: s.notificationIntervalMinutes ?? 15,

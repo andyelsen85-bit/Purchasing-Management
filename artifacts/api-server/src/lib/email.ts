@@ -75,6 +75,7 @@ export interface SmtpConfig {
   password?: string | null;
   secure?: boolean | null;
   from?: string | null;
+  senderName?: string | null;
   skipTlsVerify?: boolean | null;
 }
 
@@ -340,7 +341,10 @@ export async function flushNotificationQueue(): Promise<{
     ...(smtp.skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
   });
 
-  const fromAddr = smtp.from ?? smtp.username ?? "noreply@example.com";
+  const baseAddr = smtp.from ?? smtp.username ?? "noreply@example.com";
+  const fromAddr = smtp.senderName
+    ? `"${smtp.senderName}" <${baseAddr}>`
+    : baseAddr;
   let sent = 0;
   let failed = 0;
   const successIds = new Set<number>();

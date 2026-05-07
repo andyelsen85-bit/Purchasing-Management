@@ -81,6 +81,7 @@ router.patch(
                 skipTlsVerify: smtp.skipTlsVerify,
               }),
               ...(smtp.fromAddress != null ? { from: smtp.fromAddress } : {}),
+              ...(smtp.senderName != null ? { senderName: smtp.senderName } : {}),
             },
           }
         : {}),
@@ -230,6 +231,7 @@ router.post(
     // stored secret. Only a *populated* override replaces it.
     const password = body.password ? body.password : stored.password ?? null;
     const fromAddress = body.fromAddress ?? stored.from ?? null;
+    const senderName = body.senderName ?? stored.senderName ?? null;
     const skipTlsVerify = body.skipTlsVerify ?? stored.skipTlsVerify ?? false;
 
     if (!host) {
@@ -249,8 +251,9 @@ router.post(
       // sending anything — gives a fast, specific failure when the host
       // or credentials are wrong before we attempt the real send.
       await transport.verify();
+      const baseFrom = fromAddress ?? username ?? "noreply@example.com";
       const info = await transport.sendMail({
-        from: fromAddress ?? username ?? "noreply@example.com",
+        from: senderName ? `"${senderName}" <${baseFrom}>` : baseFrom,
         to: body.to,
         subject: "Purchasing Management — SMTP test",
         text:
