@@ -471,8 +471,12 @@ export async function sendNotificationNow(
           : undefined,
       ...(cfg.skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
     });
+    const baseAddr = cfg.from ?? cfg.username ?? "noreply@example.com";
+    const fromAddr = cfg.senderName
+      ? `"${cfg.senderName}" <${baseAddr}>`
+      : baseAddr;
     await transport.sendMail({
-      from: cfg.from ?? cfg.username ?? "noreply@example.com",
+      from: fromAddr,
       to: recipients.join(","),
       subject,
       text,
