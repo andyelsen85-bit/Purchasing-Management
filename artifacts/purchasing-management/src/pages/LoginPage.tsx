@@ -53,37 +53,32 @@ export function LoginPage() {
   const [setupBusy, setSetupBusy] = useState(false);
 
   const ldapEnabled = Boolean(settings?.ldap?.enabled);
-  useEffect(() => {
-    if (ldapEnabled && !ldapToggleTouched) setUseLdap(true);
-  }, [ldapEnabled, ldapToggleTouched]);
 
-  // SSO state: null = undecided (still loading), true = attempting, false = done/skipped
+  // SSO state: "loading" = waiting for data, "trying" = SPNEGO in flight, "done" = show form
   const [ssoState, setSsoState] = useState<"loading" | "trying" | "done">("loading");
   const ssoTried = useRef(false);
 
-  // Wait for BOTH needsSetup AND settings before deciding on SSO.
-  // Previously, the effect fired as soon as needsSetup resolved while settings
-  // was still null, making !settings?.ldap?.kerberosEnabled evaluate to true
-  // and permanently skipping the probe before settings could load.
+  // Always attempt the silent SPNEGO probe once needsSetup is known.
+  // The server decides whether Kerberos is ready:
+  //   • Not configured → 401 (no WWW-Authenticate header) → we fall through to the form
+  //   • Configured     → 401 + WWW-Authenticate: Negotiate → browser retries with ticket
+  //                    → server validates → 200 → we redirect to the app
+  // We do NOT gate this on settings.ldap.kerberosEnabled so that an admin who
+  // has the browser trusted zone set up but forgot to flip the toggle in Settings
+  // still gets a useful fast-fail (the server returns 401 immediately without
+  // triggering a browser auth dialog).
   useEffect(() => {
     if (ssoTried.current) return;
-    // Both must be known before we can decide
-    if (needsSetup === null || settings === null) return;
+    if (needsSetup === null) return; // wait for setup-status
 
     ssoTried.current = true;
 
-    if (needsSetup || !settings.ldap.kerberosEnabled) {
-      // Not applicable: first boot OR Kerberos disabled in settings
+    if (needsSetup) {
+      // First-boot wizard — skip SSO entirely
       setSsoState("done");
       return;
     }
 
-    // Kerberos is enabled — attempt the SPNEGO silent probe.
-    // On a domain-joined Windows machine with the app URL in the browser's
-    // Intranet Zone / trusted sites list, Edge and Firefox will automatically
-    // attach an `Authorization: Negotiate <krb5-token>` header. The server
-    // first responds 401 + `WWW-Authenticate: Negotiate`; the browser retries
-    // transparently, so JS only ever sees the final 200 (success) or an error.
     setSsoState("trying");
     const ctrl = new AbortController();
     fetch(`${API_BASE}/api/auth/negotiate`, {
@@ -93,7 +88,7 @@ export function LoginPage() {
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        if (!r.ok) return; // fall through to form
+        if (!r.ok) return; // any non-200 → fall through to form
         const user = (await r.json()) as { id: number; roles: string[] };
         qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user });
         setLocation("/");
@@ -104,7 +99,7 @@ export function LoginPage() {
       .finally(() => setSsoState("done"));
 
     return () => ctrl.abort();
-  }, [qc, setLocation, needsSetup, settings]);
+  }, [qc, setLocation, needsSetup]);
 
   const login = useLogin({
     mutation: {

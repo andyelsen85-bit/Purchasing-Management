@@ -155,24 +155,37 @@ router.post("/auth/login", async (req, res): Promise<void> => {
  * its Kerberos ticket.
  */
 router.get("/auth/negotiate", async (req, res): Promise<void> => {
+  // Load settings first so we know whether to even issue the SPNEGO challenge.
+  // Sending WWW-Authenticate: Negotiate when Kerberos isn't configured causes
+  // the browser to attempt a full ticket exchange and potentially show an auth
+  // dialog — we must short-circuit before that happens.
+  const settings = await getSettings();
+  const spn =
+    process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
+  const hasKeytab = Boolean(process.env.KRB5_KEYTAB);
+  const kerberosReady =
+    !!settings.ldap?.kerberosEnabled && !!spn && hasKeytab;
+
   const header = req.headers["authorization"];
-  if (!header || !/^Negotiate\s+/i.test(header)) {
+  const hasToken = !!header && /^Negotiate\s+/i.test(header);
+
+  if (!hasToken) {
+    if (!kerberosReady) {
+      // Kerberos not configured — signal the client to fall through to the
+      // form without triggering a browser SPNEGO exchange.
+      res.status(401).json({ error: "Kerberos not configured on this server" });
+      return;
+    }
+    // Issue the SPNEGO challenge; browser will retry with a Kerberos ticket.
     res.setHeader("WWW-Authenticate", "Negotiate");
     res.status(401).json({ error: "Negotiate required" });
     return;
   }
 
-  const settings = await getSettings();
-  const spn =
-    process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
-  // Presence of a keytab on disk is required for the Kerberos library to
-  // accept service tickets. We don't read its contents here — MIT-Kerberos
-  // does that — but we refuse to start the SPNEGO exchange without it.
-  const hasKeytab = Boolean(process.env.KRB5_KEYTAB);
-  if (!settings.ldap?.kerberosEnabled || !spn || !hasKeytab) {
+  if (!kerberosReady) {
     res.status(501).json({
       error:
-        "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, or use the LDAP/local form login.",
+        "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, ou utilisez le formulaire de connexion LDAP/local.",
     });
     return;
   }
