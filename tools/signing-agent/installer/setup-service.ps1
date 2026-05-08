@@ -155,7 +155,9 @@ if ($useCertKey) {
   $cfg.tlsPfxPassphrase = $pfxPassphrase
 }
 $json = $cfg | ConvertTo-Json -Depth 5
-Set-Content -Path $ConfigPath -Value $json -Encoding UTF8
+# PowerShell 5.x's -Encoding UTF8 adds a BOM; Node.js JSON.parse rejects BOM.
+# Write via .NET directly with a BOM-free UTF-8 encoder.
+[System.IO.File]::WriteAllText($ConfigPath, $json, [System.Text.UTF8Encoding]::new($false))
 Write-Host ("Wrote {0}" -f $ConfigPath)
 
 # Register the service via NSSM. Stop+remove first so re-running the
