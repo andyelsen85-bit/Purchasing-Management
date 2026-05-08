@@ -104,7 +104,7 @@ if (-not $useCertKey) {
       } catch { }
     }
   } else {
-    Write-Host "No TLS cert/key supplied — generating a self-signed PFX."
+    Write-Host "No TLS cert/key supplied -- generating a self-signed PFX."
     $hostname = [System.Net.Dns]::GetHostName()
     $sans = New-Object System.Collections.Generic.List[string]
     $sans.Add($hostname) | Out-Null

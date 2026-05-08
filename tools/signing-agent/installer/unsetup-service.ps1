@@ -2,7 +2,7 @@
 #
 # Invoked by Uninstall.exe to stop and remove the service, drop the firewall
 # rule, and (optionally) wipe ProgramData. Failures are non-fatal so the
-# uninstaller always finishes — best-effort cleanup.
+# uninstaller always finishes -- best-effort cleanup.
 
 [CmdletBinding()]
 param(
