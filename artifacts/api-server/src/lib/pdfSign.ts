@@ -53,16 +53,17 @@ async function drawSignatureVisual(
     minute: "2-digit",
   });
 
-  // Header band
+  // Header band — 60 % opaque so underlying page content shows through
   firstPage.drawRectangle({
     x,
     y: y + BOX_H - 17,
     width: BOX_W,
     height: 17,
     color: rgb(0.13, 0.22, 0.55),
+    opacity: 0.6,
   });
 
-  // Body background
+  // Body background — same 60 % opacity
   firstPage.drawRectangle({
     x,
     y,
@@ -71,6 +72,8 @@ async function drawSignatureVisual(
     color: rgb(0.94, 0.95, 0.99),
     borderColor: rgb(0.13, 0.22, 0.55),
     borderWidth: 1,
+    opacity: 0.6,
+    borderOpacity: 0.6,
   });
 
   // Header text

@@ -2843,6 +2843,23 @@ function PaymentPanel({
       },
     },
   });
+
+  const { data: docs } = useListWorkflowDocuments(wf.id);
+
+  // Prefer the signed PDF produced by the signing agent. Fall back to the
+  // server-side merged export when signing is disabled or was skipped.
+  // isCurrent is not yet reflected in the generated OpenAPI type — cast
+  // the same way other panels in this file do.
+  const signedDoc = docs?.find(
+    (d) =>
+      (d as unknown as { isCurrent?: boolean }).isCurrent !== false &&
+      d.filename.endsWith("-signed.pdf"),
+  );
+  const exportHref = signedDoc
+    ? `/api/documents/${signedDoc.id}/download`
+    : `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
+  const exportLabel = signedDoc ? "Télécharger PDF signé" : "Exporter PDF groupé";
+
   return (
     <div className="space-y-4">
       <PriorStepsRecap wf={wf} throughStep="PAYMENT" />
@@ -2858,7 +2875,13 @@ function PaymentPanel({
           </strong>{" "}
           pour <span className="font-mono">{wf.reference}</span> effectué.
         </p>
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" data-testid="button-payment-export-pdf">
+            <a href={exportHref} target="_blank" rel="noreferrer">
+              <Download className="mr-2 h-4 w-4" />
+              {exportLabel}
+            </a>
+          </Button>
           <Button
             onClick={() => {
               if (!confirm("Marquer cette demande comme payée et la clôturer ?"))
