@@ -1,11 +1,11 @@
 # setup-service.ps1
 #
-# Invoked by installer.nsi during install. Writes config.json, ensures TLS
-# material exists in ProgramData (generating a self-signed PFX if the
-# operator did not supply one), registers the agent as a Windows service via
-# the bundled NSSM, opens the firewall, and verifies the service reaches the
-# Running state. Any failure surfaces as a non-zero exit code so the NSIS
-# installer can abort and roll back.
+# Invoked by installer.nsi during install. Writes config.json, registers the
+# agent as a Windows service via the bundled NSSM, opens the firewall, and
+# verifies the service reaches the Running state. Any failure surfaces as a
+# non-zero exit code so the NSIS installer can abort and roll back.
+#
+# The agent listens on 127.0.0.1 only (loopback), so no TLS is needed.
 
 [CmdletBinding()]
 param(
@@ -13,8 +13,6 @@ param(
   [Parameter(Mandatory = $true)] [string] $DataDir,
   [string] $Token        = "",
   [int]    $Port         = 9443,
-  [string] $CertSource   = "",
-  [string] $KeySource    = "",
   [string] $CertTemplate = "WebServer",
   [string] $CaConfig     = ""
 )
@@ -26,9 +24,6 @@ $NodeExe     = Join-Path $InstallDir "node\node.exe"
 $NssmExe     = Join-Path $InstallDir "bin\nssm.exe"
 $IndexJs     = Join-Path $InstallDir "index.js"
 $ConfigPath  = Join-Path $DataDir    "config.json"
-$CertDest    = Join-Path $DataDir    "agent.crt"
-$KeyDest     = Join-Path $DataDir    "agent.key"
-$PfxDest     = Join-Path $DataDir    "agent.pfx"
 
 function Assert-Native {
   param([string] $Description)
@@ -41,9 +36,8 @@ if (-not (Test-Path $DataDir)) {
   New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 }
 
-# Lock the data directory down to Administrators + SYSTEM. The token, TLS
-# key, and PFX passphrase live here, so disable inheritance and remove
-# everything else.
+# Lock the data directory down to Administrators + SYSTEM. The shared token
+# lives here, so disable inheritance and remove everything else.
 try {
   $acl = Get-Acl -Path $DataDir
   $acl.SetAccessRuleProtection($true, $false)
@@ -76,83 +70,13 @@ if ([string]::IsNullOrEmpty($Token)) {
   Write-Host ("Generated random shared token (length {0})." -f $Token.Length)
 }
 
-# Stage TLS material when paths were provided. We never overwrite an existing
-# cert/key so re-running the installer to rotate other settings is safe.
-if ($CertSource -and (Test-Path $CertSource) -and -not (Test-Path $CertDest)) {
-  Copy-Item -Force $CertSource $CertDest
-  Write-Host ("Installed TLS cert: {0}" -f $CertDest)
-}
-if ($KeySource -and (Test-Path $KeySource) -and -not (Test-Path $KeyDest)) {
-  Copy-Item -Force $KeySource $KeyDest
-  Write-Host ("Installed TLS key:  {0}" -f $KeyDest)
-}
-
-# Decide which TLS path the service will use. Cert+key PEM is preferred when
-# the operator supplied them. Otherwise we generate a self-signed PFX so the
-# service can come up immediately; the operator can replace agent.pfx (or
-# drop in agent.crt/agent.key) and restart later.
-$pfxPassphrase = ""
-$useCertKey    = (Test-Path $CertDest) -and (Test-Path $KeyDest)
-if (-not $useCertKey) {
-  if (Test-Path $PfxDest) {
-    Write-Host ("Re-using existing TLS PFX: {0}" -f $PfxDest)
-    # Read the previously-written passphrase out of config.json if present.
-    if (Test-Path $ConfigPath) {
-      try {
-        $existing = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-        if ($existing.tlsPfxPassphrase) { $pfxPassphrase = [string]$existing.tlsPfxPassphrase }
-      } catch { }
-    }
-  } else {
-    Write-Host "No TLS cert/key supplied -- generating a self-signed PFX."
-    $hostname = [System.Net.Dns]::GetHostName()
-    $sans = New-Object System.Collections.Generic.List[string]
-    $sans.Add($hostname) | Out-Null
-    $sans.Add("localhost") | Out-Null
-    try {
-      $domain = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).Domain
-      if ($domain -and $domain.ToUpper() -ne "WORKGROUP") {
-        $sans.Add(("{0}.{1}" -f $hostname, $domain)) | Out-Null
-      }
-    } catch { }
-
-    $cert = New-SelfSignedCertificate `
-      -DnsName $sans `
-      -CertStoreLocation Cert:\LocalMachine\My `
-      -KeyExportPolicy Exportable `
-      -KeyAlgorithm RSA -KeyLength 2048 `
-      -NotAfter (Get-Date).AddYears(5) `
-      -Subject ("CN={0} Purchasing Signing Agent" -f $hostname)
-    if (-not $cert) { throw "New-SelfSignedCertificate did not return a certificate." }
-
-    $passBytes = New-Object byte[] 24
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($passBytes)
-    $pfxPassphrase = -join ($passBytes | ForEach-Object { '{0:x2}' -f $_ })
-    $secure = ConvertTo-SecureString -String $pfxPassphrase -Force -AsPlainText
-    Export-PfxCertificate `
-      -Cert ("Cert:\LocalMachine\My\{0}" -f $cert.Thumbprint) `
-      -FilePath $PfxDest `
-      -Password $secure | Out-Null
-    Remove-Item -Force ("Cert:\LocalMachine\My\{0}" -f $cert.Thumbprint)
-    Write-Host ("Wrote self-signed PFX: {0} (SAN: {1})" -f $PfxDest, ($sans -join ', '))
-  }
-}
-
-# Write config.json. We always prefer cert/key PEM if both are present;
-# otherwise we record the PFX path/passphrase. The agent reads either form.
+# Write config.json.
 $cfg = [ordered]@{
   port           = $Port
   sharedToken    = $Token
   certTemplate   = $CertTemplate
   caConfig       = $CaConfig
   allowedOrigins = @()
-}
-if ($useCertKey) {
-  $cfg.tlsCertPath = $CertDest
-  $cfg.tlsKeyPath  = $KeyDest
-} else {
-  $cfg.tlsPfxPath       = $PfxDest
-  $cfg.tlsPfxPassphrase = $pfxPassphrase
 }
 $json = $cfg | ConvertTo-Json -Depth 5
 # PowerShell 5.x's -Encoding UTF8 adds a BOM; Node.js JSON.parse rejects BOM.
@@ -193,18 +117,8 @@ Write-Host "Set AppParameters -> `"$IndexJs`""
 & $NssmExe set     $ServiceName Description    "Purchasing Management Windows certificate signing agent." | Out-Host
 Assert-Native "nssm set Description"
 
-# AppEnvironmentExtra accepts multiple "KEY=VALUE" tokens. NSSM rewrites
-# them as a NUL-separated multi-string in the service registry key. We pass
-# the agent its config path plus whichever TLS path style we picked.
-$envArgs = @("CONFIG_PATH=$ConfigPath")
-if ($useCertKey) {
-  $envArgs += "TLS_CERT_PATH=$CertDest"
-  $envArgs += "TLS_KEY_PATH=$KeyDest"
-} else {
-  $envArgs += "TLS_PFX_PATH=$PfxDest"
-  $envArgs += "TLS_PFX_PASSPHRASE=$pfxPassphrase"
-}
-& $NssmExe set $ServiceName AppEnvironmentExtra @envArgs | Out-Host
+# Tell the agent where to find its config file.
+& $NssmExe set $ServiceName AppEnvironmentExtra "CONFIG_PATH=$ConfigPath" | Out-Host
 Assert-Native "nssm set AppEnvironmentExtra"
 
 # Firewall: replace any prior rule of the same name to make this idempotent.

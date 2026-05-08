@@ -31,7 +31,6 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const http = require("http");
-const https = require("https");
 const url = require("url");
 const { execFile } = require("child_process");
 const crypto = require("crypto");
@@ -60,13 +59,6 @@ const PORT = Number(process.env.PORT || cfg.port || 9443);
 const LOCAL_WS_PORT = Number(
   process.env.LOCAL_WS_PORT || cfg.localWsPort || 27443,
 );
-const TLS_CERT_PATH =
-  process.env.TLS_CERT_PATH || cfg.tlsCertPath || "./agent.crt";
-const TLS_KEY_PATH =
-  process.env.TLS_KEY_PATH || cfg.tlsKeyPath || "./agent.key";
-const TLS_PFX_PATH = process.env.TLS_PFX_PATH || cfg.tlsPfxPath || "";
-const TLS_PFX_PASSPHRASE =
-  process.env.TLS_PFX_PASSPHRASE || cfg.tlsPfxPassphrase || "";
 const SHARED_TOKEN = process.env.SHARED_TOKEN || cfg.sharedToken || "";
 const CERT_TEMPLATE =
   process.env.CERT_TEMPLATE || cfg.certTemplate || "WebServer";
@@ -82,33 +74,6 @@ const ALLOWED_ORIGINS = (
 if (!SHARED_TOKEN || SHARED_TOKEN === "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARS") {
   console.error(
     "FATAL: SHARED_TOKEN missing or still set to the placeholder value.",
-  );
-  process.exit(1);
-}
-
-// TLS material may be supplied as either a PFX (PKCS#12) bundle or as a
-// separate cert+key PEM pair. PFX is what the Windows installer generates
-// when no operator-supplied cert/key is available, because exporting RSA
-// private keys to PEM requires .NET Core 3+ APIs that PowerShell 5.1 on
-// Windows Server LTSC editions still lacks.
-let tlsOpts;
-if (TLS_PFX_PATH) {
-  if (!fs.existsSync(TLS_PFX_PATH)) {
-    console.error(`FATAL: TLS_PFX_PATH set but file not found: ${TLS_PFX_PATH}`);
-    process.exit(1);
-  }
-  tlsOpts = {
-    pfx: fs.readFileSync(TLS_PFX_PATH),
-    ...(TLS_PFX_PASSPHRASE ? { passphrase: TLS_PFX_PASSPHRASE } : {}),
-  };
-} else if (fs.existsSync(TLS_CERT_PATH) && fs.existsSync(TLS_KEY_PATH)) {
-  tlsOpts = {
-    cert: fs.readFileSync(TLS_CERT_PATH),
-    key: fs.readFileSync(TLS_KEY_PATH),
-  };
-} else {
-  console.error(
-    `FATAL: TLS material not found. Provide a PFX via TLS_PFX_PATH or both ${TLS_CERT_PATH} and ${TLS_KEY_PATH}.`,
   );
   process.exit(1);
 }
@@ -278,8 +243,12 @@ async function submitCsr(csrPem, template) {
   }
 }
 
-// -------- HTTPS server (REST + WS upgrade) -------------------------------
-const httpsServer = https.createServer(tlsOpts, async (req, res) => {
+// -------- HTTP server (REST + WS upgrade, loopback only) -----------------
+// The agent binds to 127.0.0.1 only, so TLS on this port is unnecessary and
+// would require browsers to trust a self-signed cert. Plain HTTP on loopback
+// is the standard approach (Chrome/Firefox both treat localhost as a secure
+// context, so ws:// and http:// are fully usable from https:// pages).
+const httpServer = http.createServer(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const u = url.parse(req.url, true);
 
@@ -364,7 +333,7 @@ function setupWs(ws, origin) {
   ws.send(JSON.stringify({ type: "hello", origin }));
 }
 
-httpsServer.on("upgrade", (req, socket, head) => {
+httpServer.on("upgrade", (req, socket, head) => {
   const origin = req.headers["origin"] || "";
   if (!originAllowed(origin)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -379,8 +348,8 @@ httpsServer.on("upgrade", (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => setupWs(ws, origin));
 });
 
-httpsServer.listen(PORT, () => {
-  console.log(`Signing agent (HTTPS + WSS) listening on port ${PORT}`);
+httpServer.listen(PORT, "127.0.0.1", () => {
+  console.log(`Signing agent (HTTP + WS, loopback) listening on 127.0.0.1:${PORT}`);
 });
 
 // -------- Local-only WebSocket on 127.0.0.1:27443 -----------------------
