@@ -871,7 +871,7 @@ router.post(
 async function buildWorkflowPackPdf(
   wf: typeof workflowsTable.$inferSelect,
   log?: { warn?: (...args: unknown[]) => void },
-): Promise<Buffer> {
+): Promise<PDFDocument> {
   const docs = (
     await db
       .select()
@@ -978,7 +978,7 @@ async function buildWorkflowPackPdf(
     }
   }
 
-  return Buffer.from(await merged.save());
+  return merged;
 }
 
 router.get(
@@ -1342,7 +1342,7 @@ router.post(
     }
 
     const merged = await buildWorkflowPackPdf(wf, req.log);
-    const prepared = prepareForSigning(merged, {
+    const prepared = await prepareForSigning(merged, {
       reason: "Validation facture",
       name: user.displayName ?? user.username ?? "Purchasing Management",
       location: wf.reference,

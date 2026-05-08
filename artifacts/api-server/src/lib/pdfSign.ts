@@ -1,5 +1,6 @@
-import { plainAddPlaceholder } from "@signpdf/placeholder-plain";
-import { findByteRange, removeTrailingNewLine } from "@signpdf/utils";
+import { pdflibAddPlaceholder } from "@signpdf/placeholder-pdf-lib";
+import { findByteRange } from "@signpdf/utils";
+import type { PDFDocument } from "pdf-lib";
 import crypto from "node:crypto";
 
 // 16 KB hex-padding window for the PKCS#7 SignedData blob. A typical
@@ -33,12 +34,12 @@ export interface PrepareOptions {
  * valid all the way through. `embedSignature` is the inverse: it writes
  * the PKCS#7 hex into the Contents <…> placeholder.
  */
-export function prepareForSigning(
-  pdfBuffer: Buffer,
+export async function prepareForSigning(
+  pdfDoc: PDFDocument,
   opts: PrepareOptions = {},
-): PreparedSign {
-  const withPlaceholder = plainAddPlaceholder({
-    pdfBuffer,
+): Promise<PreparedSign> {
+  pdflibAddPlaceholder({
+    pdfDoc,
     reason: opts.reason ?? "Validation facture",
     contactInfo: opts.contactInfo ?? "",
     name: opts.name ?? "Purchasing Management",
@@ -46,28 +47,33 @@ export function prepareForSigning(
     signatureLength: PLACEHOLDER_HEX_BYTES,
   });
 
-  const trimmed = removeTrailingNewLine(withPlaceholder);
+  // useObjectStreams: false writes a traditional xref table so that
+  // findByteRange can locate the ByteRange placeholder reliably.
+  const savedBytes = Buffer.from(
+    await pdfDoc.save({ useObjectStreams: false }),
+  );
+
   const { byteRangePlaceholder, byteRangePlaceholderPosition } =
-    findByteRange(trimmed);
+    findByteRange(savedBytes);
   if (!byteRangePlaceholder || byteRangePlaceholderPosition == null) {
     throw new Error("ByteRange placeholder not found in prepared PDF");
   }
 
-  // Locate the Contents <00…00> placeholder that follows the ByteRange.
   const byteRangeEnd =
     byteRangePlaceholderPosition + byteRangePlaceholder.length;
-  const placeholderStart = trimmed.indexOf("<", byteRangeEnd);
-  const placeholderEnd = trimmed.indexOf(">", placeholderStart);
+
+  // Search for the Contents <00…00> hex string that follows ByteRange.
+  const placeholderStart = savedBytes.indexOf(0x3c /* '<' */, byteRangeEnd);
+  const placeholderEnd = savedBytes.indexOf(0x3e /* '>' */, placeholderStart);
   if (placeholderStart === -1 || placeholderEnd === -1) {
     throw new Error("Contents placeholder not found in prepared PDF");
   }
 
-  // Real ByteRange = [0, contentsStart, contentsEnd+1, fileLen-(contentsEnd+1)]
   const byteRange = [
     0,
     placeholderStart,
     placeholderEnd + 1,
-    trimmed.length - (placeholderEnd + 1),
+    savedBytes.length - (placeholderEnd + 1),
   ];
   let actualByteRange = `/ByteRange [${byteRange.join(" ")}]`;
   if (actualByteRange.length > byteRangePlaceholder.length) {
@@ -79,13 +85,11 @@ export function prepareForSigning(
   );
 
   const patched = Buffer.concat([
-    trimmed.subarray(0, byteRangePlaceholderPosition),
+    savedBytes.subarray(0, byteRangePlaceholderPosition),
     Buffer.from(actualByteRange, "latin1"),
-    trimmed.subarray(byteRangeEnd),
+    savedBytes.subarray(byteRangeEnd),
   ]);
 
-  // signTarget = everything outside the <…> placeholder. This is what
-  // the PKCS#7 SignedData must cover (detached signing).
   const signTarget = Buffer.concat([
     patched.subarray(0, byteRange[1]),
     patched.subarray(byteRange[2]),
