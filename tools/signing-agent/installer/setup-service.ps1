@@ -67,7 +67,6 @@ if ([string]::IsNullOrEmpty($Token)) {
   $bytes = New-Object byte[] 32
   [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
   $Token = -join ($bytes | ForEach-Object { '{0:x2}' -f $_ })
-  Write-Host ("Generated random shared token (length {0})." -f $Token.Length)
 }
 
 # Write config.json.
@@ -83,6 +82,15 @@ $json = $cfg | ConvertTo-Json -Depth 5
 # Write via .NET directly with a BOM-free UTF-8 encoder.
 [System.IO.File]::WriteAllText($ConfigPath, $json, [System.Text.UTF8Encoding]::new($false))
 Write-Host ("Wrote {0}" -f $ConfigPath)
+Write-Host ""
+Write-Host "============================================================"
+Write-Host "  SHARED TOKEN (copy this into the web app Settings):"
+Write-Host ""
+Write-Host ("  {0}" -f $Token)
+Write-Host ""
+Write-Host "  Settings -> Application -> Jeton partage"
+Write-Host "============================================================"
+Write-Host ""
 
 # Register the service via NSSM. Stop+remove first so re-running the
 # installer is idempotent (unattended upgrades). These two are best-effort:
