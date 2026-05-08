@@ -370,6 +370,13 @@ public class PurchasingCPAU {
   [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
   [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr h,uint ms);
   [DllImport("kernel32.dll")] public static extern bool GetExitCodeProcess(IntPtr h,out uint c);
+  // CreateEnvironmentBlock builds the user's full env block (%APPDATA% etc.)
+  // so CAPI key containers (stored under %APPDATA%\Microsoft\Crypto\RSA\...)
+  // are reachable from the spawned process even when the agent runs as SYSTEM.
+  [DllImport("userenv.dll",SetLastError=true)]
+  public static extern bool CreateEnvironmentBlock(out IntPtr env,IntPtr tok,bool inherit);
+  [DllImport("userenv.dll",SetLastError=true)]
+  public static extern bool DestroyEnvironmentBlock(IntPtr env);
 }
 '@
 try {
@@ -402,6 +409,8 @@ foreach ($cpau_sid in $cpau_sids) {
 if ($wtok -eq [IntPtr]::Zero) {
   throw 'No active Windows session found (tried console + all RDP/VDI sessions). Is a user logged in?'
 }
+$cpau_env = [IntPtr]::Zero
+[PurchasingCPAU]::CreateEnvironmentBlock([ref]$cpau_env, $wtok, $false) | Out-Null
 try {
   $si = New-Object PurchasingCPAU+STARTUPINFO
   $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
@@ -417,12 +426,17 @@ try {
   # terminator into the command-line buffer to split program from args.
   $cmd = New-Object Text.StringBuilder $cmdStr, 32768
   # CREATE_NO_WINDOW (0x08000000) — child has no console (we are a service)
-  # CREATE_UNICODE_ENVIRONMENT (0x00000400) — required even with NULL env on some configs
+  # CREATE_UNICODE_ENVIRONMENT (0x00000400) — required when passing an env block
   # lpCurrentDirectory must be a valid, accessible directory; LocalSystem's
   # inherited cwd (config\systemprofile) is often unreachable for the target
   # user and triggers ERROR_INVALID_NAME 123.
   $cwdPath = Join-Path $env:windir "Temp"
-  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$psExe,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000400,[IntPtr]::Zero,$cwdPath,[ref]$si,[ref]$pi)
+  # Pass $cpau_env (the user's real environment block) so that %APPDATA%,
+  # %USERPROFILE%, etc. are set correctly for the spawned process.
+  # Without this, when the agent runs as SYSTEM, the child inherits
+  # LocalSystem's environment and CAPI cannot locate the user's private key
+  # containers (stored under %APPDATA%\Microsoft\Crypto\RSA\...).
+  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$psExe,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000400,$cpau_env,$cwdPath,[ref]$si,[ref]$pi)
   if (-not $ok) {
     $werr = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
     throw ('CreateProcessAsUser failed (err=' + $werr + ', exe=' + $psExe + ', cwd=' + $cwdPath + ', cmdLen=' + $cmdStr.Length + ')')
@@ -439,6 +453,7 @@ try {
   if (-not (Test-Path '${outEsc}')) { throw 'Signature file was not written by signing subprocess' }
 } finally {
   [PurchasingCPAU]::CloseHandle($wtok)
+  if ($cpau_env -ne [IntPtr]::Zero) { [PurchasingCPAU]::DestroyEnvironmentBlock($cpau_env) | Out-Null }
 }
 `.trim();
 
@@ -537,7 +552,7 @@ const httpServer = http.createServer(async (req, res) => {
     // revealing the full secret.
     res.end(JSON.stringify({
       ok: true,
-      version: "0.2.0",
+      version: "0.2.5",
       tokenLen: SHARED_TOKEN.length,
       tokenPrefix: SHARED_TOKEN.slice(0, 8),
     }));

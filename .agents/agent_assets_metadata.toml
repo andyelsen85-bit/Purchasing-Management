@@ -36,3 +36,9 @@ id = "3eDj8qtuG8KsWJC1REA7A"
 uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.4-cert-picker.zip"
 type = "unspecified"
 title = "SigningAgent-Setup-0.2.4-cert-picker.zip"
+
+[[outputs]]
+id = "rPd1xkCLkqoK4SKetNoAy"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.5-env-fix.zip"
+type = "unspecified"
+title = "SigningAgent-Setup-0.2.5 (env fix)"
