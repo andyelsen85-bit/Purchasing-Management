@@ -494,7 +494,7 @@ function setCorsHeaders(res, origin) {
   // Fall back to * for non-browser consumers (curl, Postman, etc.).
   res.setHeader("Access-Control-Allow-Origin", origin || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Certificate-Thumbprint");
   res.setHeader("Access-Control-Max-Age", "86400");
 }
 
@@ -558,28 +558,29 @@ const httpServer = http.createServer(async (req, res) => {
   }
   try {
     if (req.method === "POST" && u.pathname === "/sign") {
-      // Accept any binary body (PDF, etc.), pick the first available
-      // certificate from the operator's Windows personal store, sign the
-      // body bytes with RSA-SHA256, and return the detached signature.
+      // Accept any binary body (PDF, etc.) and sign with the certificate
+      // identified by the X-Certificate-Thumbprint header.  If the header is
+      // absent the first available cert is used as a fallback so existing
+      // integrations keep working.
       const bodyBuf = await readRawBody(req);
-      const certs = await listCerts();
-      if (certs.length === 0) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "No valid signing certificate found in Windows personal store." }));
-        return;
+      const headerThumb = String(req.headers["x-certificate-thumbprint"] || "").trim();
+      let thumbprint;
+      let subject = "";
+      if (headerThumb && /^[A-Fa-f0-9]+$/.test(headerThumb)) {
+        thumbprint = headerThumb;
+      } else {
+        const certs = await listCerts();
+        if (certs.length === 0) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "No valid signing certificate found in Windows personal store." }));
+          return;
+        }
+        thumbprint = certs[0].thumbprint;
+        subject = certs[0].subject;
       }
-      const cert = certs[0];
-      const out = await signData({
-        thumbprint: cert.thumbprint,
-        dataB64: bodyBuf.toString("base64"),
-      });
+      const out = await signData({ thumbprint, dataB64: bodyBuf.toString("base64") });
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        ok: true,
-        signatureB64: out.signatureB64,
-        thumbprint: cert.thumbprint,
-        subject: cert.subject,
-      }));
+      res.end(JSON.stringify({ ok: true, signatureB64: out.signatureB64, thumbprint, subject }));
       return;
     }
     if (req.method === "POST" && u.pathname === "/list-certs") {

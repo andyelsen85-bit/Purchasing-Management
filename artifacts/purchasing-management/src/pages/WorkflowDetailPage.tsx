@@ -44,6 +44,13 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   useGetWorkflow,
   useListWorkflowDocuments,
   useListWorkflowNotes,
@@ -2524,6 +2531,25 @@ function InvoiceValidationPanel({
   const save = useSaveWorkflow(wf, onChange);
   const { data: settings } = useGetSettings();
   const [signing, setSigning] = useState(false);
+
+  interface AgentCert {
+    thumbprint: string;
+    subject: string;
+    issuer: string;
+    notBefore: string;
+    notAfter: string;
+  }
+  const [certPickerState, setCertPickerState] = useState<{
+    certs: AgentCert[];
+    resolve: (thumbprint: string | null) => void;
+  } | null>(null);
+
+  function openCertPicker(certs: AgentCert[]): Promise<string | null> {
+    return new Promise((resolve) => {
+      setCertPickerState({ certs, resolve });
+    });
+  }
+
   // Build a merged PDF of every attached document (quote → order →
   // delivery → invoice). The endpoint returns application/pdf which
   // we hand off to the browser as a regular download.
@@ -2543,7 +2569,31 @@ function InvoiceValidationPanel({
     if (!token) return "Le jeton de l'agent de signature n'est pas configuré dans les Paramètres.";
     const base = import.meta.env.BASE_URL;
     try {
-      // 1. Server prepares the PDF + ByteRange placeholder
+      // 1. List available certificates from the local agent so the user
+      //    can pick the right one when multiple are present in the store.
+      const certsResp = await fetch(`http://localhost:${port}/list-certs`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (!certsResp.ok) {
+        const txt = await certsResp.text().catch(() => "");
+        return `Impossible de lister les certificats (${certsResp.status}). ${txt}`.trim();
+      }
+      const { certs } = (await certsResp.json()) as { certs: AgentCert[] };
+      if (!certs || certs.length === 0) {
+        return "Aucun certificat de signature valide trouvé dans le magasin Windows Personnel.";
+      }
+
+      let thumbprint: string;
+      if (certs.length === 1) {
+        thumbprint = certs[0].thumbprint;
+      } else {
+        const picked = await openCertPicker(certs);
+        if (!picked) return "Signature annulée.";
+        thumbprint = picked;
+      }
+
+      // 2. Server prepares the PDF + ByteRange placeholder
       const prep = await fetch(
         `${base}api/workflows/${wf.id}/sign-prepare`,
         { method: "POST", credentials: "include" },
@@ -2557,13 +2607,15 @@ function InvoiceValidationPanel({
         signTargetB64: string;
       };
 
-      // 2. Local agent produces a PKCS#7 SignedData over those bytes
+      // 3. Local agent produces a PKCS#7 SignedData over those bytes,
+      //    using the certificate chosen by the user.
       const bin = Uint8Array.from(atob(signTargetB64), (c) => c.charCodeAt(0));
       const r = await fetch(`http://localhost:${port}/sign`, {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
           "Authorization": `Bearer ${token}`,
+          "X-Certificate-Thumbprint": thumbprint,
         },
         body: bin,
       });
@@ -2574,7 +2626,7 @@ function InvoiceValidationPanel({
       const { signatureB64 } = (await r.json()) as { signatureB64: string };
       if (!signatureB64) return "L'agent de signature n'a renvoyé aucune signature.";
 
-      // 3. Server embeds and archives the signed PDF
+      // 4. Server embeds and archives the signed PDF
       const fin = await fetch(
         `${base}api/workflows/${wf.id}/sign-finalize`,
         {
@@ -2701,6 +2753,53 @@ function InvoiceValidationPanel({
         </div>
       </CardContent>
     </Card>
+
+    {/* Cert picker — shown when multiple signing certs are found in the Windows store */}
+    <Dialog
+      open={certPickerState !== null}
+      onOpenChange={(open) => {
+        if (!open && certPickerState) {
+          certPickerState.resolve(null);
+          setCertPickerState(null);
+        }
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Choisir un certificat de signature</DialogTitle>
+          <DialogDescription>
+            Plusieurs certificats sont disponibles dans le magasin Windows.
+            Sélectionnez celui à utiliser pour signer ce document.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          {certPickerState?.certs.map((c) => (
+            <button
+              key={c.thumbprint}
+              type="button"
+              className="w-full text-left px-3 py-3 rounded border border-border hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+              onClick={() => {
+                certPickerState.resolve(c.thumbprint);
+                setCertPickerState(null);
+              }}
+            >
+              <div className="font-medium text-sm truncate">
+                {c.subject.replace(/^.*?CN=/i, "").split(",")[0]}
+              </div>
+              <div className="text-xs text-muted-foreground truncate">
+                Émetteur : {c.issuer.replace(/^.*?CN=/i, "").split(",")[0]}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Expire le : {new Date(c.notAfter).toLocaleDateString("fr-FR")}
+              </div>
+              <div className="text-xs text-muted-foreground font-mono opacity-60 truncate">
+                {c.thumbprint.toUpperCase()}
+              </div>
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }

@@ -30,3 +30,9 @@ id = "FzQ5qo_KeWvlAY9iaL5dA"
 uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.3-rdp.zip"
 type = "unspecified"
 title = "SigningAgent-Setup 0.2.3"
+
+[[outputs]]
+id = "3eDj8qtuG8KsWJC1REA7A"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.4-cert-picker.zip"
+type = "unspecified"
+title = "SigningAgent-Setup-0.2.4-cert-picker.zip"
