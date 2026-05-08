@@ -292,12 +292,28 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && u.pathname === "/healthz") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, version: "0.2.0" }));
+    // Expose the first 8 chars and total length of the loaded token so the
+    // operator can verify the service picked up the right config.json without
+    // revealing the full secret.
+    res.end(JSON.stringify({
+      ok: true,
+      version: "0.2.0",
+      tokenLen: SHARED_TOKEN.length,
+      tokenPrefix: SHARED_TOKEN.slice(0, 8),
+    }));
     return;
   }
   if (!authorizeHeader(req.headers["authorization"])) {
+    // Include the lengths so the operator can spot token mismatches without
+    // the full secret appearing in logs or responses.
+    const authHeader = req.headers["authorization"] || "";
+    const m = /^Bearer\s+(.+)$/i.exec(authHeader);
+    const receivedLen = m ? m[1].length : 0;
     res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Unauthorized" }));
+    res.end(JSON.stringify({
+      error: "Unauthorized",
+      hint: `expected token length ${SHARED_TOKEN.length}, received ${receivedLen}`,
+    }));
     return;
   }
   try {
