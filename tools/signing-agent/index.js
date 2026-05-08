@@ -225,72 +225,131 @@ async function signData({ thumbprint, dataB64 }) {
   }
   if (!dataB64) throw new Error("dataB64 required");
   const data = Buffer.from(dataB64, "base64");
+
+  // inFile  — written by LocalSystem, granted world-read before spawning user proc
+  // outFile — path only (NOT pre-created); the user process creates it so it is
+  //           owned by the user and writeable by them inside C:\Windows\Temp
   const inFile = tempFile("sign-in", ".bin");
-  const outFile = tempFile("sign-out", ".sig");
+  const outFile = path.join(
+    os.tmpdir(),
+    `sign-out-${crypto.randomUUID().replace(/-/g, "")}.sig`,
+  );
   fs.writeFileSync(inFile, data);
+
   try {
-    // Impersonate the interactive console user so the service (LocalSystem)
-    // can access Cert:\CurrentUser\My and the user's CNG private key.
-    // Falls back to LocalMachine\My when WTS impersonation is unavailable.
+    const inEsc = inFile.replace(/\\/g, "\\\\");
+    const outEsc = outFile.replace(/\\/g, "\\\\");
+
+    // ── Inner script: runs as the INTERACTIVE USER via CreateProcessAsUser ──
+    // The child process holds the user's PRIMARY token, so CNG key isolation,
+    // CAPI, and every other crypto subsystem see them as the real user.
+    // No impersonation involved — no RPC issues.
+    const innerPs = [
+      `$cert=$null`,
+      `foreach($loc in @('CurrentUser','LocalMachine')){`,
+      `  $cert=Get-ChildItem -Path "Cert:\\$loc\\My\\${thumbprint}" -ErrorAction SilentlyContinue`,
+      `  if($cert){break}`,
+      `}`,
+      `if(-not $cert){[Environment]::Exit(2)}`,
+      `$bytes=[IO.File]::ReadAllBytes('${inEsc}')`,
+      `$sig=$null`,
+      `try{`,
+      `  $k=$cert.PrivateKey`,
+      `  if($k -is [Security.Cryptography.RSACryptoServiceProvider]){`,
+      `    $h=[Security.Cryptography.SHA256]::Create().ComputeHash($bytes)`,
+      `    $sig=$k.SignHash($h,[Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'))`,
+      `  }`,
+      `}catch{$sig=$null}`,
+      `if(-not $sig){`,
+      `  $rsa=[Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)`,
+      `  if(-not $rsa){[Environment]::Exit(3)}`,
+      `  $sig=$rsa.SignData($bytes,`,
+      `    [Security.Cryptography.HashAlgorithmName]::SHA256,`,
+      `    [Security.Cryptography.RSASignaturePadding]::Pkcs1)`,
+      `}`,
+      `if(-not $sig){[Environment]::Exit(4)}`,
+      `[IO.File]::WriteAllBytes('${outEsc}',$sig)`,
+    ].join("\r\n");
+
+    // PowerShell -EncodedCommand expects UTF-16LE then base64
+    const innerB64 = Buffer.from(innerPs, "utf16le").toString("base64");
+
+    // ── Outer script: LocalSystem, spawns inner script as the interactive user ──
+    //
+    // STARTUPINFO layout on x64 (matches native STARTUPINFOW):
+    //   int cb(4) + [4 pad] + IntPtr×3(24) + uint×8(32) + ushort×2(4) + [4 pad] + IntPtr×4(32) = 104 bytes
     const ps = `
-      Add-Type -TypeDefinition @'
+Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
-public class PurchasingWtsSign {
-    [DllImport("Wtsapi32.dll", SetLastError=true)]
-    public static extern bool WTSQueryUserToken(uint sessionId, ref IntPtr phToken);
-    [DllImport("kernel32.dll")]
-    public static extern uint WTSGetActiveConsoleSessionId();
+using System.Text;
+public class PurchasingCPAU {
+  [DllImport("Wtsapi32.dll",SetLastError=true)]
+  public static extern bool WTSQueryUserToken(uint sid,ref IntPtr tok);
+  [DllImport("kernel32.dll")]
+  public static extern uint WTSGetActiveConsoleSessionId();
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]
+  public struct STARTUPINFO {
+    public int    cb;
+    public IntPtr lpReserved;
+    [MarshalAs(UnmanagedType.LPWStr)] public string lpDesktop;
+    [MarshalAs(UnmanagedType.LPWStr)] public string lpTitle;
+    public uint dwX,dwY,dwXSize,dwYSize,dwXCountChars,dwYCountChars,dwFillAttribute,dwFlags;
+    public ushort wShowWindow,cbReserved2;
+    public IntPtr lpReserved2,hStdInput,hStdOutput,hStdError;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct PROCESS_INFORMATION {
+    public IntPtr hProcess,hThread; public uint dwProcessId,dwThreadId;
+  }
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+  public static extern bool CreateProcessAsUser(
+    IntPtr hToken, string lpApp, StringBuilder lpCmd,
+    IntPtr lpPA, IntPtr lpTA, bool bInherit, uint dwFlags,
+    IntPtr lpEnv, string lpDir,
+    ref STARTUPINFO lpSI, out PROCESS_INFORMATION lpPI);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr h,uint ms);
+  [DllImport("kernel32.dll")] public static extern bool GetExitCodeProcess(IntPtr h,out uint c);
 }
 '@
-      $wts_sid = [PurchasingWtsSign]::WTSGetActiveConsoleSessionId()
-      $wts_tok = [IntPtr]::Zero
-      $wts_ctx = $null
-      if ($wts_sid -ne 0xFFFFFFFF) {
-        try {
-          if ([PurchasingWtsSign]::WTSQueryUserToken($wts_sid, [ref]$wts_tok)) {
-            $wts_ctx = [System.Security.Principal.WindowsIdentity]::new($wts_tok).Impersonate()
-          }
-        } catch { }
-      }
-      try {
-        $cert = $null
-        foreach ($loc in @('CurrentUser', 'LocalMachine')) {
-          $p = "Cert:\\$loc\\My\\${thumbprint}"
-          $cert = Get-ChildItem -Path $p -ErrorAction SilentlyContinue
-          if ($cert) { break }
-        }
-        if (-not $cert) { throw "Certificate ${thumbprint} not found in CurrentUser or LocalMachine store" }
-        $bytes = [System.IO.File]::ReadAllBytes('${inFile.replace(/\\/g, "\\\\")}')
-        $sig = $null
-        # Try the legacy CAPI path first (RSACryptoServiceProvider).
-        # CAPI signing is in-process and does not use the CNG key isolation
-        # RPC, so it survives LocalSystem impersonation reliably.
-        try {
-          $capiKey = $cert.PrivateKey
-          if ($capiKey -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
-            $sha256 = [System.Security.Cryptography.SHA256]::Create()
-            $hash = $sha256.ComputeHash($bytes)
-            $oid = [System.Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256')
-            $sig = $capiKey.SignHash($hash, $oid)
-          }
-        } catch { $sig = $null }
-        # Fall back to the CNG path for keys enrolled via the CNG KSP.
-        if (-not $sig) {
-          $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-          if (-not $rsa) { throw "No RSA private key accessible for certificate ${thumbprint}" }
-          $sig = $rsa.SignData(
-            $bytes,
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-        }
-        if (-not $sig) { throw "Signing produced no output for certificate ${thumbprint}" }
-        [System.IO.File]::WriteAllBytes('${outFile.replace(/\\/g, "\\\\")}', $sig)
-      } finally {
-        if ($wts_ctx) { $wts_ctx.Undo() }
-      }
-    `;
+try {
+  $acl = Get-Acl -Path '${inEsc}' -ErrorAction SilentlyContinue
+  if ($acl) {
+    $au = New-Object Security.Principal.SecurityIdentifier 'S-1-5-11'
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($au,'Read','Allow')))
+    Set-Acl -Path '${inEsc}' -AclObject $acl -ErrorAction SilentlyContinue
+  }
+} catch {}
+$wsid = [PurchasingCPAU]::WTSGetActiveConsoleSessionId()
+if ($wsid -eq 0xFFFFFFFF) { throw 'No interactive Windows session found. Is a user logged in at the console?' }
+$wtok = [IntPtr]::Zero
+if (-not [PurchasingCPAU]::WTSQueryUserToken($wsid,[ref]$wtok)) {
+  throw ('WTSQueryUserToken failed with Win32 error: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error())
+}
+try {
+  $si = New-Object PurchasingCPAU+STARTUPINFO
+  $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
+  $si.lpDesktop = "winsta0\\default"
+  $pi = New-Object PurchasingCPAU+PROCESS_INFORMATION
+  $cmd = New-Object Text.StringBuilder("powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${innerB64}")
+  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$null,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0,[IntPtr]::Zero,$null,[ref]$si,[ref]$pi)
+  if (-not $ok) { throw ('CreateProcessAsUser failed with Win32 error: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
+  [PurchasingCPAU]::WaitForSingleObject($pi.hProcess,30000) | Out-Null
+  $ec = 0
+  [PurchasingCPAU]::GetExitCodeProcess($pi.hProcess,[ref]$ec) | Out-Null
+  [PurchasingCPAU]::CloseHandle($pi.hProcess) | Out-Null
+  [PurchasingCPAU]::CloseHandle($pi.hThread)  | Out-Null
+  if ($ec -eq 2) { throw 'Certificate ${thumbprint} not found in user certificate store' }
+  if ($ec -eq 3) { throw 'No RSA private key accessible for certificate ${thumbprint}' }
+  if ($ec -eq 4) { throw 'Signing produced no output for certificate ${thumbprint}' }
+  if ($ec -ne 0) { throw ('Signing subprocess exited with code ' + $ec) }
+  if (-not (Test-Path '${outEsc}')) { throw 'Signature file was not written by signing subprocess' }
+} finally {
+  [PurchasingCPAU]::CloseHandle($wtok)
+}
+`.trim();
+
     await execPowerShell(ps);
     const sig = fs.readFileSync(outFile);
     return { signatureB64: sig.toString("base64") };
