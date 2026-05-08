@@ -14,7 +14,12 @@ param(
   [string] $Token        = "",
   [int]    $Port         = 9443,
   [string] $CertTemplate = "WebServer",
-  [string] $CaConfig     = ""
+  [string] $CaConfig     = "",
+  # Optional: supply the Windows account and password that the service will
+  # run as. If omitted the installer prompts interactively. The account must
+  # have access to the personal certificate store (Cert:\CurrentUser\My).
+  [string] $ServiceUser  = "",
+  [string] $ServicePass  = ""
 )
 
 $ErrorActionPreference = "Stop"

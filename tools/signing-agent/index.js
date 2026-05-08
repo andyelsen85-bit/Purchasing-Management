@@ -145,18 +145,30 @@ function execPowerShell(script) {
 }
 
 async function listCerts() {
-  // Enumerate the user's personal cert store, keep only certs with a Digital
-  // Signature key usage and a private key, drop expired ones, return JSON.
+  // Search both CurrentUser\My (works when the service runs as the user) and
+  // LocalMachine\My (fallback when cert has been imported to the machine store).
+  // Deduplicates by thumbprint so the same cert does not appear twice.
   const ps = `
     $now = Get-Date
-    Get-ChildItem -Path Cert:\\CurrentUser\\My |
-      Where-Object {
-        $_.HasPrivateKey -and
-        $_.NotAfter -gt $now -and
-        ( -not $_.Extensions.KeyUsages -or
-          $_.Extensions.KeyUsages -match 'DigitalSignature' )
-      } |
-      Select-Object @{
+    $seen = @{}
+    $results = @()
+    foreach ($loc in @('CurrentUser', 'LocalMachine')) {
+      try {
+        $st = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+          'My',
+          [System.Security.Cryptography.X509Certificates.StoreLocation]$loc)
+        $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+        foreach ($c in $st.Certificates) {
+          if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
+            $seen[$c.Thumbprint] = $true
+            $results += $c
+          }
+        }
+        $st.Close()
+      } catch { }
+    }
+    if ($results.Count -eq 0) { '[]' } else {
+      $results | Select-Object @{
         Name='thumbprint'; Expression={$_.Thumbprint}
       }, @{
         Name='subject'; Expression={$_.Subject}
@@ -171,10 +183,11 @@ async function listCerts() {
           ($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join ','
         }
       } | ConvertTo-Json -Depth 4 -Compress
+    }
   `;
   const { stdout } = await execPowerShell(ps);
   const trimmed = stdout.trim();
-  if (!trimmed) return [];
+  if (!trimmed || trimmed === "[]") return [];
   const parsed = JSON.parse(trimmed);
   return Array.isArray(parsed) ? parsed : [parsed];
 }
