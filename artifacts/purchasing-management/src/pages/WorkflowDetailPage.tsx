@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
@@ -17,7 +17,9 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
+  Pencil,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -224,7 +226,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
           </Card>
         </TabsContent>
         <TabsContent value="form">
-          <InvestmentFormPanel wf={wf} />
+          <InvestmentFormPanel wf={wf} user={user} />
         </TabsContent>
         <TabsContent value="docs">
           <DocumentsPanel wf={wf} />
@@ -3035,18 +3037,12 @@ function HistoryPanel({ wf }: { wf: Workflow }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// InvestmentFormPanel — read-only view of the GT Invest questionnaire
+// InvestmentFormPanel — read-only view + edit mode for GT Invest questionnaire
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REQUEST_NATURE_LABEL: Record<string, string> = {
   NEW: "Nouvel achat",
   REPLACEMENT: "Remplacement",
-};
-
-const EXCEPTION_PROCEDURE_LABEL: Record<string, string> = {
-  NONE: "Non",
-  LIVRE_I: "Oui – Livre I (marchés au-dessous des seuils européens)",
-  LIVRE_II: "Oui – Livre II (marchés au-dessus des seuils européens)",
 };
 
 const BUDGET_POSITION_LABEL: Record<string, string> = {
@@ -3061,6 +3057,7 @@ const IMPACT_LABEL: Record<string, string> = {
   MINOR: "Mineur",
 };
 
+// ── Read-only display helpers ──────────────────────────────────────────────
 function IFRow({
   label,
   value,
@@ -3093,176 +3090,811 @@ function IFSection({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-function InvestmentFormPanel({ wf }: { wf: Workflow }) {
+// ── Edit-mode constants ────────────────────────────────────────────────────
+const IF_INVESTMENT_TYPES = [
+  "Équipement médical",
+  "Dispositif médical connecté",
+  "Dispositif médical distribué au patient",
+  "Équipement non médical",
+  "Logiciel / IT",
+  "Infrastructure / bâtiment",
+  "Service de consultation ou de maintenance",
+  "Stockage de données externe",
+  "Autre",
+];
+const IF_ACCESS_TYPES = [
+  "Accès direct",
+  "API / Intégrations",
+  "Accès à distance",
+  "Accès limité à une application spécifique",
+];
+const IF_DATA_TYPES = [
+  "Données de santé (PHI)",
+  "Données personnelles (PII)",
+  "Données critiques (financières, IT, etc.)",
+  "Autres données du CHdN",
+];
+const IF_REQUIRED_DOCS = [
+  "Offre de prix",
+  "Offre de prix des consommables",
+  "Offre de prix pour formation",
+  "Offre de prix pour la maintenance",
+  "Documentation contractuelle (SLA, CGV, maintenance, etc.)",
+  "Fiche technique",
+  "Manuel d'utilisation",
+  "Certificat CE (si équipement médical ou hardware)",
+  "Certificat de résistance au feu (si mobilier ou matériel inflammable)",
+  "Normes ISO 80601 et/ou IEC 60601 (pour matériel roulant)",
+];
+
+// ── Edit-mode field helpers ────────────────────────────────────────────────
+function IFEditYesNo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Sélectionner..." />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="true">Oui</SelectItem>
+        <SelectItem value="false">Non</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function IFEditChecks({
+  options,
+  values,
+  onChange,
+}: {
+  options: string[];
+  values: string[];
+  onChange: (v: string[]) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {options.map((opt) => (
+        <label key={opt} className="flex cursor-pointer items-center gap-2 text-sm">
+          <Checkbox
+            checked={values.includes(opt)}
+            onCheckedChange={(checked) =>
+              onChange(checked ? [...values, opt] : values.filter((v) => v !== opt))
+            }
+          />
+          {opt}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function boolToStr(v: boolean | null | undefined): string {
+  return v === true ? "true" : v === false ? "false" : "";
+}
+function strToBool(s: string): boolean | null {
+  return s === "true" ? true : s === "false" ? false : null;
+}
+
+// ── InvestmentFormPanel ────────────────────────────────────────────────────
+function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) {
   const f = wf.investmentForm as InvestmentForm | null | undefined;
   const { data: ifSettings } = useGetSettings();
+  const qc = useQueryClient();
+  const update = useUpdateWorkflow();
+
+  const canEdit = user.roles.some((r) =>
+    ["ADMIN", "FINANCIAL_ALL", "DEPT_MANAGER"].includes(r),
+  );
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<InvestmentForm>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  function startEdit() {
+    setDraft((f ?? {}) as InvestmentForm);
+    setSaveError(null);
+    setEditing(true);
+  }
+  function cancelEdit() {
+    setEditing(false);
+    setSaveError(null);
+  }
+  function patch<K extends keyof InvestmentForm>(k: K, v: InvestmentForm[K]) {
+    setDraft((d) => ({ ...d, [k]: v }));
+  }
+  function handleSave() {
+    setSaveError(null);
+    update.mutate(
+      { id: wf.id, data: { investmentForm: draft } },
+      {
+        onSuccess: () => {
+          void qc.invalidateQueries({ queryKey: getGetWorkflowQueryKey(wf.id) });
+          setEditing(false);
+        },
+        onError: (err) => {
+          const msg =
+            (err as { data?: { message?: string } }).data?.message ??
+            (err as Error).message ??
+            "Erreur inconnue";
+          setSaveError(msg);
+        },
+      },
+    );
+  }
+
+  // Tier calculation for the financial section (read-only display)
   const ifLimitX = ifSettings?.limitX ?? null;
   const ifLimitY =
     (ifSettings as { quoteThresholdLivreI?: number | null } | undefined)
       ?.quoteThresholdLivreI ?? null;
-  const ifAmount = f?.estimatedAmount5y ?? null;
-  const ifTier: "STANDARD" | "BAND_XY" | "ABOVE_Y" =
-    ifAmount == null
-      ? "STANDARD"
-      : ifLimitY != null && ifAmount > ifLimitY
-        ? "ABOVE_Y"
-        : ifLimitX != null && ifAmount > ifLimitX
-          ? "BAND_XY"
-          : "STANDARD";
 
-  if (!f) {
+  function computeTier(amount: number | null | undefined): "STANDARD" | "BAND_XY" | "ABOVE_Y" {
+    if (amount == null) return "STANDARD";
+    if (ifLimitY != null && amount > ifLimitY) return "ABOVE_Y";
+    if (ifLimitX != null && amount > ifLimitX) return "BAND_XY";
+    return "STANDARD";
+  }
+  const ifTier = computeTier(f?.estimatedAmount5y);
+
+  // Tier for edit mode (recomputed from draft while editing)
+  const editTier = useMemo(
+    () => computeTier(draft.estimatedAmount5y),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [draft.estimatedAmount5y, ifLimitX, ifLimitY],
+  );
+
+  const budgetPositionsList = (ifSettings?.budgetPositions ?? [])
+    .slice()
+    .sort((a, b) => a.localeCompare(b, "fr"));
+
+  // ── Shared card header with edit / save / cancel controls ────────────────
+  const cardHeader = (
+    <CardHeader>
+      <div className="flex items-center justify-between">
+        <CardTitle className="flex items-center gap-2">
+          <ClipboardList className="h-5 w-5" />
+          Formulaire de demande d'investissement
+        </CardTitle>
+        {canEdit && !editing && (
+          <Button variant="outline" size="sm" onClick={startEdit}>
+            <Pencil className="mr-1.5 h-3.5 w-3.5" />
+            Modifier
+          </Button>
+        )}
+        {editing && (
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={update.isPending}>
+              Annuler
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={update.isPending}>
+              {update.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              Enregistrer
+            </Button>
+          </div>
+        )}
+      </div>
+    </CardHeader>
+  );
+
+  // ── Empty state (no form yet, with optional edit entry point) ────────────
+  if (!f && !editing) {
     return (
       <Card>
+        {cardHeader}
         <CardContent className="p-8 text-center text-muted-foreground text-sm">
           <ClipboardList className="mx-auto mb-3 h-10 w-10 opacity-30" />
           <p>Aucun formulaire d'investissement rempli pour ce workflow.</p>
+          {canEdit && (
+            <Button variant="outline" size="sm" className="mt-4" onClick={startEdit}>
+              <Pencil className="mr-1.5 h-3.5 w-3.5" />
+              Remplir le formulaire
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
   }
 
+  // ── Edit form ─────────────────────────────────────────────────────────────
+  if (editing) {
+    const SL = ({ label }: { label: string }) => (
+      <div className="flex items-center gap-2 border-b pb-2 mb-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </h3>
+      </div>
+    );
+    return (
+      <Card>
+        {cardHeader}
+        <CardContent className="space-y-6 pt-0">
+          {saveError && (
+            <Alert variant="destructive">
+              <AlertDescription>{saveError}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* §1 */}
+          <SL label="1 · Identification générale" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>1.3 Responsable / Leader du projet</Label>
+              <Input
+                value={draft.projectLeader ?? ""}
+                onChange={(e) => patch("projectLeader", e.target.value || null)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>1.4 Type(s) d'investissement</Label>
+              <IFEditChecks
+                options={IF_INVESTMENT_TYPES}
+                values={draft.investmentTypes ?? []}
+                onChange={(v) => patch("investmentTypes", v.length ? v : undefined)}
+              />
+            </div>
+          </div>
+
+          {/* §2 */}
+          <SL label="2 · Description du besoin et justification" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>2.2 Argumentaire – justification de l'investissement</Label>
+              <Textarea
+                rows={4}
+                value={draft.justification ?? ""}
+                onChange={(e) => patch("justification", e.target.value || null)}
+                placeholder="Besoin, objectifs, bénéfices attendus..."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>2.3 L'équipement a-t-il déjà été testé en Demo au CHdN ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.demoTested)}
+                onChange={(v) => patch("demoTested", strToBool(v))}
+              />
+            </div>
+            {draft.demoTested === true && (
+              <div className="space-y-1.5">
+                <Label>Préciser le contexte du test</Label>
+                <Textarea
+                  rows={2}
+                  value={draft.demoContext ?? ""}
+                  onChange={(e) => patch("demoContext", e.target.value || null)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* §3 */}
+          <SL label="3 · Nature de la demande" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>3.1 Nature de la demande</Label>
+              <Select
+                value={draft.requestNature ?? ""}
+                onValueChange={(v) => patch("requestNature", v || null)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NEW">Nouvel achat</SelectItem>
+                  <SelectItem value="REPLACEMENT">Remplacement</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {draft.requestNature === "REPLACEMENT" && (
+              <div className="rounded-md border p-4 space-y-4 bg-muted/30">
+                <div className="space-y-1.5">
+                  <Label>3.1.1 Numéro d'équipement / numéro de série ou nom remplacé</Label>
+                  <Input
+                    value={draft.replacedEquipmentRef ?? ""}
+                    onChange={(e) => patch("replacedEquipmentRef", e.target.value || null)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>3.1.2 Localisation de l'équipement existant</Label>
+                  <Input
+                    value={draft.replacedEquipmentLocation ?? ""}
+                    onChange={(e) => patch("replacedEquipmentLocation", e.target.value || null)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>3.1.3 Motif du remplacement</Label>
+                  <Textarea
+                    rows={2}
+                    value={draft.replacementReason ?? ""}
+                    onChange={(e) => patch("replacementReason", e.target.value || null)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>3.1.4 L'ancien équipement sera-t-il mis hors service ?</Label>
+                  <IFEditYesNo
+                    value={boolToStr(draft.decommissioned)}
+                    onChange={(v) => patch("decommissioned", strToBool(v))}
+                  />
+                </div>
+                {draft.decommissioned === false && (
+                  <div className="space-y-1.5">
+                    <Label>Préciser ce qu'il deviendra</Label>
+                    <Textarea
+                      rows={2}
+                      value={draft.decommissionedNote ?? ""}
+                      onChange={(e) => patch("decommissionedNote", e.target.value || null)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* §4 */}
+          <SL label="4 · Aspects financiers" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>4.1 Coût total estimé sur 5 années (HTVA)</Label>
+              <p className="text-xs text-muted-foreground">
+                Inclure : achat, maintenance, consommables, formation, abonnements.
+              </p>
+              <Input
+                type="number"
+                step="0.01"
+                value={draft.estimatedAmount5y ?? ""}
+                onChange={(e) => {
+                  const n = parseFloat(e.target.value);
+                  patch("estimatedAmount5y", isNaN(n) ? null : n);
+                  patch("exceptionProcedure", null);
+                  patch("exceptionJustification", null);
+                }}
+                placeholder="Montant total HTVA"
+              />
+              {editTier === "BAND_XY" && (
+                <p className="text-xs text-amber-600">
+                  Besoin de 3 Offres ou Procédure d'exception Livre I.
+                </p>
+              )}
+              {editTier === "ABOVE_Y" && (
+                <p className="text-xs text-amber-600">
+                  Démarche marché international ou procédure d'exception Livre II.
+                </p>
+              )}
+            </div>
+
+            {editTier === "BAND_XY" && (
+              <div className="space-y-3 rounded-md border p-4 bg-muted/30">
+                <div className="space-y-1.5">
+                  <Label>4.1.1 La demande relève-t-elle d'une procédure d'exception Livre I ?</Label>
+                  <IFEditYesNo
+                    value={draft.exceptionProcedure === "LIVRE_I" ? "true" : draft.exceptionProcedure === "NONE" ? "false" : ""}
+                    onChange={(v) => {
+                      patch("exceptionProcedure", v === "true" ? "LIVRE_I" : v === "false" ? "NONE" : null);
+                      patch("exceptionJustification", null);
+                    }}
+                  />
+                </div>
+                {draft.exceptionProcedure === "LIVRE_I" && (
+                  <div className="space-y-1.5">
+                    <Label>4.1.2 Justification détaillée de la procédure d'exception Livre I</Label>
+                    <Textarea
+                      rows={3}
+                      value={draft.exceptionJustification ?? ""}
+                      onChange={(e) => patch("exceptionJustification", e.target.value || null)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {editTier === "ABOVE_Y" && (
+              <div className="space-y-3 rounded-md border p-4 bg-muted/30">
+                <div className="space-y-1.5">
+                  <Label>4.1.3 La demande relève-t-elle d'une procédure d'exception Livre II ?</Label>
+                  <IFEditYesNo
+                    value={draft.exceptionProcedure === "LIVRE_II" ? "true" : draft.exceptionProcedure === "NONE" ? "false" : ""}
+                    onChange={(v) => {
+                      patch("exceptionProcedure", v === "true" ? "LIVRE_II" : v === "false" ? "NONE" : null);
+                      patch("exceptionJustification", null);
+                    }}
+                  />
+                </div>
+                {draft.exceptionProcedure === "LIVRE_II" && (
+                  <div className="space-y-1.5">
+                    <Label>4.1.4 Justification détaillée de la procédure d'exception Livre II</Label>
+                    <Textarea
+                      rows={3}
+                      value={draft.exceptionJustification ?? ""}
+                      onChange={(e) => patch("exceptionJustification", e.target.value || null)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label>4.2 La position budgétaire est-elle connue ?</Label>
+              <Select
+                value={draft.budgetPositionKnown ?? ""}
+                onValueChange={(v) => patch("budgetPositionKnown", v || null)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="YES">Oui</SelectItem>
+                  <SelectItem value="NO">Non</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {draft.budgetPositionKnown === "YES" && (
+              <div className="space-y-1.5">
+                <Label>4.2.1 Position budgétaire (selon liste GT Invest)</Label>
+                {budgetPositionsList.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Aucune position configurée dans les paramètres.
+                  </p>
+                ) : (
+                  <Select
+                    value={draft.budgetPosition ?? ""}
+                    onValueChange={(v) => patch("budgetPosition", v || null)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {budgetPositionsList.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* §5 */}
+          <SL label="5 · Fournisseur" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>5.1 Nom du fournisseur</Label>
+              <Input
+                value={draft.supplierName ?? ""}
+                onChange={(e) => patch("supplierName", e.target.value || null)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>5.2 Personne de contact</Label>
+              <Input
+                value={draft.supplierContact ?? ""}
+                onChange={(e) => patch("supplierContact", e.target.value || null)}
+              />
+            </div>
+          </div>
+
+          {/* §6 */}
+          <SL label="6 · Aspects techniques et infrastructure" />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.architecturalWorks)}
+                  onChange={(v) => patch("architecturalWorks", strToBool(v))}
+                />
+                {draft.architecturalWorks === true && (
+                  <p className="text-xs text-amber-600">Contacter le service technique.</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>6.2 Connexion informatique requise ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.itConnection)}
+                  onChange={(v) => patch("itConnection", strToBool(v))}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>6.3 Accès ou interopérabilité avec des systèmes critiques (DPI, IT…) ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.systemInterop)}
+                onChange={(v) => patch("systemInterop", strToBool(v))}
+              />
+            </div>
+            {draft.systemInterop === true && (
+              <div className="space-y-2 rounded-md border p-4 bg-muted/30">
+                <Label>6.3.1 Type d'accès</Label>
+                <IFEditChecks
+                  options={IF_ACCESS_TYPES}
+                  values={draft.accessTypes ?? []}
+                  onChange={(v) => patch("accessTypes", v.length ? v : undefined)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* §7 */}
+          <SL label="7 · Données, sécurité et conformité" />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>7.1 L'équipement / la solution traite-t-il ou donne-t-il accès à :</Label>
+              <IFEditChecks
+                options={IF_DATA_TYPES}
+                values={draft.dataTypes ?? []}
+                onChange={(v) => patch("dataTypes", v.length ? v : undefined)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>7.2 Impact potentiel en cas d'indisponibilité du système</Label>
+              <Select
+                value={draft.availabilityImpact ?? ""}
+                onValueChange={(v) => patch("availabilityImpact", v || null)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CRITICAL">Critique (interruption des soins)</SelectItem>
+                  <SelectItem value="MODERATE">Modéré (perturbation des opérations)</SelectItem>
+                  <SelectItem value="MINOR">Mineur</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>7.3 L'offre inclut-elle de l'intelligence artificielle ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.hasAI)}
+                onChange={(v) => patch("hasAI", strToBool(v))}
+              />
+              {draft.hasAI === true && (
+                <p className="text-xs text-amber-600">Validation DPO requise.</p>
+              )}
+            </div>
+          </div>
+
+          {/* §8 */}
+          <SL label="8 · Consommables et sécurité" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>8.1 Des consommables sont-ils nécessaires (EPI inclus) ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.consumablesNeeded)}
+                onChange={(v) => patch("consumablesNeeded", strToBool(v))}
+              />
+            </div>
+            {draft.consumablesNeeded === true && (
+              <div className="space-y-1.5">
+                <Label>8.2 Offre des consommables jointe ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.consumablesOfferAttached)}
+                  onChange={(v) => patch("consumablesOfferAttached", strToBool(v))}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>8.3 Les consommables incluent-ils des gaz ou produits chimiques ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.hazardousConsumables)}
+                onChange={(v) => patch("hazardousConsumables", strToBool(v))}
+              />
+              {draft.hazardousConsumables === true && (
+                <p className="text-xs text-amber-600">Validation du service PP requise.</p>
+              )}
+            </div>
+          </div>
+
+          {/* §9 */}
+          <SL label="9 · Maintenance, hygiène et exploitation" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>9.1 Durée de la garantie</Label>
+              <Input
+                value={draft.warrantyDuration ?? ""}
+                onChange={(e) => patch("warrantyDuration", e.target.value || null)}
+                placeholder="ex. 2 ans"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>9.2 Contrat de maintenance nécessaire ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.maintenanceContract)}
+                  onChange={(v) => patch("maintenanceContract", strToBool(v))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>9.4 Nettoyage / désinfection requis ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.cleaningRequired)}
+                  onChange={(v) => patch("cleaningRequired", strToBool(v))}
+                />
+                {draft.cleaningRequired === true && (
+                  <p className="text-xs text-amber-600">Contacter le service hygiène.</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>9.5 Stérilisation requise ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.sterilizationRequired)}
+                  onChange={(v) => patch("sterilizationRequired", strToBool(v))}
+                />
+                {draft.sterilizationRequired === true && (
+                  <p className="text-xs text-amber-600">Contacter le service stérilisation.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* §10 */}
+          <SL label="10 · Formation et mise en service" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>10.1 Une formation pour les utilisateurs est-elle nécessaire ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.trainingRequired)}
+                onChange={(v) => patch("trainingRequired", strToBool(v))}
+              />
+            </div>
+            {draft.trainingRequired === true && (
+              <div className="space-y-1.5">
+                <Label>10.1.1 Offre de formation jointe ?</Label>
+                <IFEditYesNo
+                  value={boolToStr(draft.trainingOfferAttached)}
+                  onChange={(v) => patch("trainingOfferAttached", strToBool(v))}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>10.2 Date souhaitée de mise en production / service</Label>
+              <DatePicker
+                value={draft.commissioningDate ?? ""}
+                onChange={(v) => patch("commissioningDate", v || null)}
+              />
+            </div>
+          </div>
+
+          {/* §11 */}
+          <SL label="11 · Documentation obligatoire à fournir" />
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Cocher les documents qui seront ou ont été joints.
+            </p>
+            <IFEditChecks
+              options={IF_REQUIRED_DOCS}
+              values={draft.documentsProvided ?? []}
+              onChange={(v) => patch("documentsProvided", v.length ? v : undefined)}
+            />
+          </div>
+
+          {/* Bottom save bar */}
+          <div className="flex justify-end gap-2 border-t pt-4">
+            <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={update.isPending}>
+              Annuler
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={update.isPending}>
+              {update.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              Enregistrer
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── Read-only view ─────────────────────────────────────────────────────────
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ClipboardList className="h-5 w-5" />
-          Formulaire de demande d'investissement
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="divide-y-0 space-y-0">
+      {cardHeader}
+      <CardContent className="divide-y-0 space-y-0 pt-0">
 
         <IFSection title="1 · Identification générale">
-          <IFRow label="Responsable / Leader du projet" value={f.projectLeader} />
+          <IFRow label="Responsable / Leader du projet" value={f!.projectLeader} />
           <IFRow
             label="Type(s) d'investissement"
-            value={
-              f.investmentTypes?.length
-                ? f.investmentTypes.join(", ")
-                : null
-            }
+            value={f!.investmentTypes?.length ? f!.investmentTypes.join(", ") : null}
           />
         </IFSection>
 
         <IFSection title="2 · Description du besoin">
-          <IFRow label="Justification" value={f.justification} />
-          <IFRow label="Testé en demo au CHdN ?" value={<IFBool v={f.demoTested} />} />
-          <IFRow label="Contexte du test" value={f.demoContext} />
+          <IFRow label="Justification" value={f!.justification} />
+          <IFRow label="Testé en demo au CHdN ?" value={<IFBool v={f!.demoTested} />} />
+          <IFRow label="Contexte du test" value={f!.demoContext} />
         </IFSection>
 
         <IFSection title="3 · Nature de la demande">
           <IFRow
             label="Nature"
-            value={f.requestNature ? (REQUEST_NATURE_LABEL[f.requestNature] ?? f.requestNature) : null}
+            value={f!.requestNature ? (REQUEST_NATURE_LABEL[f!.requestNature] ?? f!.requestNature) : null}
           />
-          <IFRow label="Équipement remplacé (réf.)" value={f.replacedEquipmentRef} />
-          <IFRow label="Localisation équipement existant" value={f.replacedEquipmentLocation} />
-          <IFRow label="Motif du remplacement" value={f.replacementReason} />
-          <IFRow label="Mis hors service ?" value={<IFBool v={f.decommissioned} />} />
-          <IFRow label="Devenir de l'ancien équipement" value={f.decommissionedNote} />
+          <IFRow label="Équipement remplacé (réf.)" value={f!.replacedEquipmentRef} />
+          <IFRow label="Localisation équipement existant" value={f!.replacedEquipmentLocation} />
+          <IFRow label="Motif du remplacement" value={f!.replacementReason} />
+          <IFRow label="Mis hors service ?" value={<IFBool v={f!.decommissioned} />} />
+          <IFRow label="Devenir de l'ancien équipement" value={f!.decommissionedNote} />
         </IFSection>
 
         <IFSection title="4 · Aspects financiers">
           <IFRow
             label="4.1 Coût estimé 5 ans (HTVA)"
-            value={
-              f.estimatedAmount5y != null
-                ? `${f.estimatedAmount5y.toLocaleString("fr-BE")} €`
-                : null
-            }
+            value={f!.estimatedAmount5y != null ? `${f!.estimatedAmount5y.toLocaleString("fr-BE")} €` : null}
           />
-          {/* Q4.1.1 — only when amount is in the X–Y band */}
           {ifTier === "BAND_XY" && (
             <IFRow
               label="4.1.1 Procédure d'exception Livre I ?"
-              value={f.exceptionProcedure === "LIVRE_I" ? "Oui" : "Non"}
+              value={f!.exceptionProcedure === "LIVRE_I" ? "Oui" : "Non"}
             />
           )}
-          {/* Q4.1.2 — justification when Livre I exception was granted */}
-          {ifTier === "BAND_XY" && f.exceptionProcedure === "LIVRE_I" && (
+          {ifTier === "BAND_XY" && f!.exceptionProcedure === "LIVRE_I" && (
             <IFRow
-              label="4.1.2 Justification procédure d'exception Livre I"
-              value={f.exceptionJustification}
+              label="4.1.2 Justification exception Livre I"
+              value={f!.exceptionJustification}
             />
           )}
-          {/* Q4.1.3 — only when amount is above Y */}
           {ifTier === "ABOVE_Y" && (
             <IFRow
               label="4.1.3 Procédure d'exception Livre II ?"
-              value={f.exceptionProcedure === "LIVRE_II" ? "Oui" : "Non"}
+              value={f!.exceptionProcedure === "LIVRE_II" ? "Oui" : "Non"}
             />
           )}
-          {/* Q4.1.4 — justification when Livre II exception was granted */}
-          {ifTier === "ABOVE_Y" && f.exceptionProcedure === "LIVRE_II" && (
+          {ifTier === "ABOVE_Y" && f!.exceptionProcedure === "LIVRE_II" && (
             <IFRow
-              label="4.1.4 Justification procédure d'exception Livre II"
-              value={f.exceptionJustification}
+              label="4.1.4 Justification exception Livre II"
+              value={f!.exceptionJustification}
             />
           )}
           <IFRow
             label="4.2 Position budgétaire connue ?"
-            value={
-              f.budgetPositionKnown
-                ? (BUDGET_POSITION_LABEL[f.budgetPositionKnown] ?? f.budgetPositionKnown)
-                : null
-            }
+            value={f!.budgetPositionKnown ? (BUDGET_POSITION_LABEL[f!.budgetPositionKnown] ?? f!.budgetPositionKnown) : null}
           />
-          <IFRow label="4.2.1 Position budgétaire" value={f.budgetPosition} />
+          <IFRow label="4.2.1 Position budgétaire" value={f!.budgetPosition} />
         </IFSection>
 
         <IFSection title="5 · Fournisseur">
-          <IFRow label="Nom du fournisseur" value={f.supplierName} />
-          <IFRow label="Contact" value={f.supplierContact} />
+          <IFRow label="Nom du fournisseur" value={f!.supplierName} />
+          <IFRow label="Contact" value={f!.supplierContact} />
         </IFSection>
 
         <IFSection title="6 · Aspects techniques">
-          <IFRow label="Aménagements architecturaux ?" value={<IFBool v={f.architecturalWorks} />} />
-          <IFRow label="Connexion informatique ?" value={<IFBool v={f.itConnection} />} />
-          <IFRow label="Interopérabilité systèmes critiques ?" value={<IFBool v={f.systemInterop} />} />
-          <IFRow
-            label="Types d'accès"
-            value={f.accessTypes?.length ? f.accessTypes.join(", ") : null}
-          />
+          <IFRow label="Aménagements architecturaux ?" value={<IFBool v={f!.architecturalWorks} />} />
+          <IFRow label="Connexion informatique ?" value={<IFBool v={f!.itConnection} />} />
+          <IFRow label="Interopérabilité systèmes critiques ?" value={<IFBool v={f!.systemInterop} />} />
+          <IFRow label="Types d'accès" value={f!.accessTypes?.length ? f!.accessTypes.join(", ") : null} />
         </IFSection>
 
         <IFSection title="7 · Données, sécurité et conformité">
-          <IFRow
-            label="Types de données traitées"
-            value={f.dataTypes?.length ? f.dataTypes.join(", ") : null}
-          />
+          <IFRow label="Types de données traitées" value={f!.dataTypes?.length ? f!.dataTypes.join(", ") : null} />
           <IFRow
             label="Impact indisponibilité"
-            value={
-              f.availabilityImpact
-                ? (IMPACT_LABEL[f.availabilityImpact] ?? f.availabilityImpact)
-                : null
-            }
+            value={f!.availabilityImpact ? (IMPACT_LABEL[f!.availabilityImpact] ?? f!.availabilityImpact) : null}
           />
-          <IFRow label="Intelligence artificielle ?" value={<IFBool v={f.hasAI} />} />
+          <IFRow label="Intelligence artificielle ?" value={<IFBool v={f!.hasAI} />} />
         </IFSection>
 
         <IFSection title="8 · Consommables et sécurité">
-          <IFRow label="Consommables nécessaires ?" value={<IFBool v={f.consumablesNeeded} />} />
-          <IFRow label="Offre consommables jointe ?" value={<IFBool v={f.consumablesOfferAttached} />} />
-          <IFRow label="Gaz ou produits chimiques ?" value={<IFBool v={f.hazardousConsumables} />} />
+          <IFRow label="Consommables nécessaires ?" value={<IFBool v={f!.consumablesNeeded} />} />
+          <IFRow label="Offre consommables jointe ?" value={<IFBool v={f!.consumablesOfferAttached} />} />
+          <IFRow label="Gaz ou produits chimiques ?" value={<IFBool v={f!.hazardousConsumables} />} />
         </IFSection>
 
         <IFSection title="9 · Maintenance, hygiène et exploitation">
-          <IFRow label="Durée de la garantie" value={f.warrantyDuration} />
-          <IFRow label="Contrat de maintenance ?" value={<IFBool v={f.maintenanceContract} />} />
-          <IFRow label="Nettoyage / désinfection requis ?" value={<IFBool v={f.cleaningRequired} />} />
-          <IFRow label="Stérilisation requise ?" value={<IFBool v={f.sterilizationRequired} />} />
+          <IFRow label="Durée de la garantie" value={f!.warrantyDuration} />
+          <IFRow label="Contrat de maintenance ?" value={<IFBool v={f!.maintenanceContract} />} />
+          <IFRow label="Nettoyage / désinfection requis ?" value={<IFBool v={f!.cleaningRequired} />} />
+          <IFRow label="Stérilisation requise ?" value={<IFBool v={f!.sterilizationRequired} />} />
         </IFSection>
 
         <IFSection title="10 · Formation et mise en service">
-          <IFRow label="Formation nécessaire ?" value={<IFBool v={f.trainingRequired} />} />
-          <IFRow label="Offre de formation jointe ?" value={<IFBool v={f.trainingOfferAttached} />} />
-          <IFRow label="Date souhaitée de mise en service" value={f.commissioningDate} />
+          <IFRow label="Formation nécessaire ?" value={<IFBool v={f!.trainingRequired} />} />
+          <IFRow label="Offre de formation jointe ?" value={<IFBool v={f!.trainingOfferAttached} />} />
+          <IFRow label="Date souhaitée de mise en service" value={f!.commissioningDate} />
         </IFSection>
 
-        {f.documentsProvided?.length ? (
+        {f!.documentsProvided?.length ? (
           <IFSection title="11 · Documentation fournie">
             <div className="space-y-1">
-              {f.documentsProvided.map((d) => (
+              {f!.documentsProvided.map((d) => (
                 <div key={d} className="flex items-center gap-2 text-sm py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-green-500 flex-shrink-0" />
                   {d}

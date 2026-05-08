@@ -85,7 +85,44 @@ type WfForPdf = {
 };
 
 type QuoteEntry = { amount?: number | null; winning?: boolean };
-type InvForm = { budgetPosition?: string | null };
+type InvForm = {
+  projectLeader?: string | null;
+  investmentTypes?: string[];
+  justification?: string | null;
+  demoTested?: boolean | null;
+  demoContext?: string | null;
+  requestNature?: string | null;
+  replacedEquipmentRef?: string | null;
+  replacedEquipmentLocation?: string | null;
+  replacementReason?: string | null;
+  decommissioned?: boolean | null;
+  decommissionedNote?: string | null;
+  estimatedAmount5y?: number | null;
+  exceptionProcedure?: string | null;
+  exceptionJustification?: string | null;
+  budgetPositionKnown?: string | null;
+  budgetPosition?: string | null;
+  supplierName?: string | null;
+  supplierContact?: string | null;
+  architecturalWorks?: boolean | null;
+  itConnection?: boolean | null;
+  systemInterop?: boolean | null;
+  accessTypes?: string[];
+  dataTypes?: string[];
+  availabilityImpact?: string | null;
+  hasAI?: boolean | null;
+  consumablesNeeded?: boolean | null;
+  consumablesOfferAttached?: boolean | null;
+  hazardousConsumables?: boolean | null;
+  warrantyDuration?: string | null;
+  maintenanceContract?: boolean | null;
+  cleaningRequired?: boolean | null;
+  sterilizationRequired?: boolean | null;
+  trainingRequired?: boolean | null;
+  trainingOfferAttached?: boolean | null;
+  commissioningDate?: string | null;
+  documentsProvided?: string[];
+};
 
 function getWinningPrice(w: WfForPdf): number | null {
   const qs = (Array.isArray(w.quotes) ? w.quotes : []) as QuoteEntry[];
@@ -371,7 +408,7 @@ async function buildMeetingPdf(
     rowAlt = !rowAlt;
   }
 
-  // ── Helper: separator/cover page before each workflow's attachments ─────────
+  // ── Helper: per-dossier cover + formulaire pages ────────────────────────────
   function drawWorkflowSeparator(
     w: WfForPdf,
     position: number,
@@ -379,79 +416,162 @@ async function buildMeetingPdf(
     attachmentFilename: string,
   ) {
     const d = PORT;
-    const sep = merged.addPage([d.pw, d.ph]);
+    const inv = (w.investmentForm ?? {}) as InvForm;
 
-    // ── Header band ──
-    sep.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: d.headerH, color: NAVY });
-    sep.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: 5, color: ACCENT });
-    sep.drawRectangle({ x: d.pw - 10, y: d.headerBot, width: 10, height: d.headerH, color: NAVY_MID });
-    sep.drawText(trunc(w.reference, 38), {
-      x: ML, y: d.ph - 43, size: 20, font: fontBold, color: WHITE,
-    });
-    sep.drawText(trunc(`${w.departmentName}  ·  ${w.title}`, 72), {
-      x: ML, y: d.ph - 66, size: 10, font: fontReg, color: HDR_SUB,
-    });
-    // Position badge (top-right of header)
-    const badge = `Dossier ${position} / ${sorted.length}`;
-    const badgeW = fontBold.widthOfTextAtSize(badge, 9);
-    sep.drawText(badge, {
-      x: d.pw - MR - 14 - badgeW, y: d.ph - 26, size: 9, font: fontBold, color: WHITE,
-    });
+    // ── Build ordered list of form rows ──────────────────────────────────────
+    type FRow = { kind: "sec"; title: string } | { kind: "row"; label: string; value: string };
+    const b = (v: boolean | null | undefined) => (v === true ? "Oui" : v === false ? "Non" : "-");
+    const t = (v: string | null | undefined) => pdfSafe(v || "");
+    const arr = (v: string[] | undefined) => (v?.length ? pdfSafe(v.join(", ")) : "-");
 
-    // ── Info band ──
-    const infoY = d.headerBot - INFO_H;
-    sep.drawRectangle({ x: 0, y: infoY, width: d.pw, height: INFO_H, color: INFO_BG });
-    sep.drawLine({ start: { x: 0, y: infoY }, end: { x: d.pw, y: infoY }, thickness: 0.5, color: BORDER });
-    sep.drawText("Récapitulatif du dossier", {
-      x: ML, y: infoY + 8, size: 7.5, font: fontBold, color: NAVY_MID,
-    });
-    sep.drawText(`Réunion du ${meetingLabel}`, {
-      x: d.pw - MR - fontReg.widthOfTextAtSize(`Réunion du ${meetingLabel}`, 7.5),
-      y: infoY + 8, size: 7.5, font: fontReg, color: MUTED,
-    });
-
-    // ── Detail card ──
-    const cardX = ML;
-    const cardY = infoY - 200;
-    const cardW = d.uw;
-    const cardH = 190;
-    sep.drawRectangle({ x: cardX, y: cardY, width: cardW, height: cardH, color: INFO_BG });
-    sep.drawRectangle({ x: cardX, y: cardY + cardH - 4, width: cardW, height: 4, color: NAVY_MID });
-    sep.drawLine({ start: { x: cardX, y: cardY }, end: { x: cardX + cardW, y: cardY }, thickness: 0.5, color: BORDER });
-    sep.drawLine({ start: { x: cardX, y: cardY }, end: { x: cardX, y: cardY + cardH }, thickness: 0.5, color: BORDER });
-    sep.drawLine({ start: { x: cardX + cardW, y: cardY }, end: { x: cardX + cardW, y: cardY + cardH }, thickness: 0.5, color: BORDER });
-
-    const inv = ((w.investmentForm ?? {}) as InvForm);
-    const price = fmtCurrency(getWinningPrice(w), w.currency);
-    const rows: [string, string][] = [
-      ["Objet",               w.title ?? ""],
-      ["Département",         w.departmentName],
-      ["Prix TTC",            price],
-      ["Position budgétaire", inv.budgetPosition ?? "—"],
-      ["Réf. pièce jointe",   attachmentFilename || (hasAttachment ? "voir ci-après" : "aucune pièce jointe PDF")],
+    const frows: FRow[] = [
+      // ── Key facts ─────────────────────────────────────────────────────────
+      { kind: "row", label: "D\xE9partement",         value: pdfSafe(w.departmentName) },
+      { kind: "row", label: "Objet",                   value: t(w.title) },
+      { kind: "row", label: "Prix HTVA (retenu)",      value: fmtCurrency(getWinningPrice(w), w.currency) },
+      { kind: "row", label: "Pi\xE8ce jointe",         value: pdfSafe(attachmentFilename || (hasAttachment ? "voir ci-apr\xE8s" : "aucune")) },
+      // ── §1 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "1 \xB7 Identification" },
+      ...(inv.projectLeader   ? [{ kind: "row" as const, label: "Leader du projet",          value: t(inv.projectLeader) }]   : []),
+      ...(inv.investmentTypes?.length ? [{ kind: "row" as const, label: "Types d'investissement", value: arr(inv.investmentTypes) }] : []),
+      // ── §2 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "2 \xB7 Description du besoin" },
+      ...(inv.justification   ? [{ kind: "row" as const, label: "Justification",              value: t(trunc(inv.justification, 120)) }] : []),
+      { kind: "row", label: "Test\xE9 en d\xE9mo CHdN",  value: b(inv.demoTested) },
+      ...(inv.demoContext      ? [{ kind: "row" as const, label: "Contexte du test",           value: t(trunc(inv.demoContext, 80)) }]   : []),
+      // ── §3 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "3 \xB7 Nature de la demande" },
+      ...(inv.requestNature   ? [{ kind: "row" as const, label: "Nature",                     value: pdfSafe(inv.requestNature === "NEW" ? "Nouvel achat" : "Remplacement") }] : []),
+      ...(inv.replacedEquipmentRef      ? [{ kind: "row" as const, label: "\xC9quipement remplac\xE9",    value: t(inv.replacedEquipmentRef) }]      : []),
+      ...(inv.replacedEquipmentLocation ? [{ kind: "row" as const, label: "Localisation existant",        value: t(inv.replacedEquipmentLocation) }] : []),
+      ...(inv.replacementReason         ? [{ kind: "row" as const, label: "Motif de remplacement",        value: t(trunc(inv.replacementReason, 80)) }] : []),
+      ...(inv.decommissioned != null    ? [{ kind: "row" as const, label: "Mis hors service",             value: b(inv.decommissioned) }]            : []),
+      ...(inv.decommissionedNote        ? [{ kind: "row" as const, label: "Devenir ancien \xE9quip.",     value: t(trunc(inv.decommissionedNote, 80)) }] : []),
+      // ── §4 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "4 \xB7 Aspects financiers" },
+      ...(inv.estimatedAmount5y != null ? [{ kind: "row" as const, label: "Co\xFBt estim\xE9 5 ans (HTVA)", value: fmtCurrency(inv.estimatedAmount5y, "EUR") }] : []),
+      ...(inv.exceptionProcedure && inv.exceptionProcedure !== "NONE"
+        ? [{ kind: "row" as const, label: "Proc\xE9dure exception", value: pdfSafe(inv.exceptionProcedure === "LIVRE_I" ? "Livre I" : "Livre II") }] : []),
+      ...(inv.exceptionJustification    ? [{ kind: "row" as const, label: "Justification exception",      value: t(trunc(inv.exceptionJustification, 80)) }] : []),
+      ...(inv.budgetPositionKnown       ? [{ kind: "row" as const, label: "Position budg. connue",        value: pdfSafe(inv.budgetPositionKnown === "YES" ? "Oui" : inv.budgetPositionKnown === "NO" ? "Non" : "A confirmer") }] : []),
+      ...(inv.budgetPosition            ? [{ kind: "row" as const, label: "Position budg\xE9taire",       value: t(inv.budgetPosition) }]            : []),
+      // ── §5 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "5 \xB7 Fournisseur" },
+      ...(inv.supplierName    ? [{ kind: "row" as const, label: "Fournisseur",                value: t(inv.supplierName) }]    : []),
+      ...(inv.supplierContact ? [{ kind: "row" as const, label: "Contact",                    value: t(trunc(inv.supplierContact, 80)) }] : []),
+      // ── §6 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "6 \xB7 Aspects techniques" },
+      { kind: "row", label: "Am\xE9n. architecturaux",     value: b(inv.architecturalWorks) },
+      { kind: "row", label: "Connexion informatique",       value: b(inv.itConnection) },
+      { kind: "row", label: "Interop\xE9rabilit\xE9 syst.", value: b(inv.systemInterop) },
+      ...(inv.accessTypes?.length ? [{ kind: "row" as const, label: "Types d'acc\xE8s",      value: arr(inv.accessTypes) }]   : []),
+      // ── §7 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "7 \xB7 Donn\xE9es & S\xE9curit\xE9" },
+      ...(inv.dataTypes?.length         ? [{ kind: "row" as const, label: "Types de donn\xE9es",          value: arr(inv.dataTypes) }]               : []),
+      ...(inv.availabilityImpact        ? [{ kind: "row" as const, label: "Impact indisponibilit\xE9",    value: pdfSafe(inv.availabilityImpact === "CRITICAL" ? "Critique" : inv.availabilityImpact === "MODERATE" ? "Mod\xE9r\xE9" : "Mineur") }] : []),
+      { kind: "row", label: "Intelligence artificielle",    value: b(inv.hasAI) },
+      // ── §8 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "8 \xB7 Consommables" },
+      { kind: "row", label: "Consommables n\xE9cessaires",  value: b(inv.consumablesNeeded) },
+      ...(inv.consumablesNeeded         ? [{ kind: "row" as const, label: "Offre consommables jointe",    value: b(inv.consumablesOfferAttached) }]  : []),
+      { kind: "row", label: "Gaz / produits chimiques",     value: b(inv.hazardousConsumables) },
+      // ── §9 ────────────────────────────────────────────────────────────────
+      { kind: "sec", title: "9 \xB7 Maintenance & Hygi\xE8ne" },
+      ...(inv.warrantyDuration          ? [{ kind: "row" as const, label: "Dur\xE9e garantie",            value: t(inv.warrantyDuration) }]          : []),
+      { kind: "row", label: "Contrat de maintenance",       value: b(inv.maintenanceContract) },
+      { kind: "row", label: "Nettoyage / d\xE9sinfection",  value: b(inv.cleaningRequired) },
+      { kind: "row", label: "St\xE9rilisation",             value: b(inv.sterilizationRequired) },
+      // ── §10 ───────────────────────────────────────────────────────────────
+      { kind: "sec", title: "10 \xB7 Formation & Mise en service" },
+      { kind: "row", label: "Formation n\xE9cessaire",      value: b(inv.trainingRequired) },
+      ...(inv.trainingRequired          ? [{ kind: "row" as const, label: "Offre formation jointe",       value: b(inv.trainingOfferAttached) }]     : []),
+      ...(inv.commissioningDate         ? [{ kind: "row" as const, label: "Date mise en service",         value: t(inv.commissioningDate) }]         : []),
+      // ── §11 ───────────────────────────────────────────────────────────────
+      ...(inv.documentsProvided?.length ? [
+        { kind: "sec" as const, title: "11 \xB7 Documents fournis" },
+        { kind: "row" as const, label: "Documents", value: arr(inv.documentsProvided) },
+      ] : []),
     ];
-    let ry = cardY + cardH - 22;
-    for (const [label, val] of rows) {
-      sep.drawText(label, { x: cardX + 12, y: ry, size: 8.5, font: fontBold, color: NAVY_MID });
-      sep.drawText(trunc(val, 58), { x: cardX + 150, y: ry, size: 8.5, font: fontReg, color: TXT });
-      ry -= 24;
-      sep.drawLine({
-        start: { x: cardX + 8, y: ry + 14 },
-        end:   { x: cardX + cardW - 8, y: ry + 14 },
-        thickness: 0.3, color: BORDER,
+
+    // ── Page rendering helpers ────────────────────────────────────────────────
+    const SEC_H      = 18; // section header bar height
+    const FORM_ROW_H = 16; // data row height
+    const LABEL_W    = 175; // label column; value fills PORT.uw - LABEL_W = 340
+
+    let sepPage = merged.addPage([d.pw, d.ph]);
+    let sepPg   = 1;
+
+    function drawSepHeaderBand(isFirst: boolean) {
+      // Header band
+      sepPage.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: d.headerH, color: NAVY });
+      sepPage.drawRectangle({ x: 0, y: d.headerBot, width: d.pw, height: 5, color: ACCENT });
+      sepPage.drawRectangle({ x: d.pw - 10, y: d.headerBot, width: 10, height: d.headerH, color: NAVY_MID });
+      sepPage.drawText(trunc(pdfSafe(w.reference), 38), { x: ML, y: d.ph - 43, size: 20, font: fontBold, color: WHITE });
+      sepPage.drawText(trunc(pdfSafe(`${w.departmentName}  \xB7  ${w.title ?? ""}`), 72), {
+        x: ML, y: d.ph - 66, size: 10, font: fontReg, color: HDR_SUB,
+      });
+      const badge = isFirst
+        ? `Dossier ${position} / ${sorted.length}`
+        : `Dossier ${position} / ${sorted.length} (suite ${sepPg})`;
+      const badgeW = fontBold.widthOfTextAtSize(badge, 9);
+      sepPage.drawText(badge, { x: d.pw - MR - 14 - badgeW, y: d.ph - 26, size: 9, font: fontBold, color: WHITE });
+      // Info band
+      const infoY = d.headerBot - INFO_H;
+      sepPage.drawRectangle({ x: 0, y: infoY, width: d.pw, height: INFO_H, color: INFO_BG });
+      sepPage.drawLine({ start: { x: 0, y: infoY }, end: { x: d.pw, y: infoY }, thickness: 0.5, color: BORDER });
+      sepPage.drawText("Formulaire de demande d'investissement", { x: ML, y: infoY + 8, size: 7.5, font: fontBold, color: NAVY_MID });
+      const rlbl = `R\xE9union du ${pdfSafe(meetingLabel)}`;
+      sepPage.drawText(rlbl, {
+        x: d.pw - MR - fontReg.widthOfTextAtSize(rlbl, 7.5),
+        y: infoY + 8, size: 7.5, font: fontReg, color: MUTED,
       });
     }
 
-    // ── "Pièces jointes ci-après" label ──
-    const arrowY = cardY - 55;
-    sep.drawLine({ start: { x: ML, y: arrowY + 20 }, end: { x: d.pw - MR, y: arrowY + 20 }, thickness: 1, color: ACCENT });
+    function newSepPage() {
+      sepPg++;
+      sepPage = merged.addPage([d.pw, d.ph]);
+      drawSepHeaderBand(false);
+      sepY = d.headerBot - INFO_H - 6;
+      rowAlt = false;
+    }
+
+    drawSepHeaderBand(true);
+    let sepY  = d.headerBot - INFO_H - 6;
+    let rowAlt = false;
+    const BANNER_RESERVE = 60; // height to keep free for the PIECE JOINTE banner
+
+    // ── Render rows ──────────────────────────────────────────────────────────
+    for (const row of frows) {
+      const rh = row.kind === "sec" ? SEC_H : FORM_ROW_H;
+      if (sepY - rh < TABLE_MIN_Y + BANNER_RESERVE) newSepPage();
+
+      if (row.kind === "sec") {
+        sepPage.drawRectangle({ x: ML, y: sepY - SEC_H, width: d.uw, height: SEC_H, color: NAVY_MID });
+        sepPage.drawText(pdfSafe(row.title), { x: ML + 6, y: sepY - SEC_H + 5, size: 8, font: fontBold, color: WHITE });
+        sepY  -= SEC_H;
+        rowAlt = false;
+      } else {
+        if (rowAlt) sepPage.drawRectangle({ x: ML, y: sepY - FORM_ROW_H, width: d.uw, height: FORM_ROW_H, color: ROW_ALT });
+        sepPage.drawLine({ start: { x: ML,           y: sepY - FORM_ROW_H }, end: { x: ML + d.uw,     y: sepY - FORM_ROW_H }, thickness: 0.3, color: BORDER });
+        sepPage.drawLine({ start: { x: ML + LABEL_W, y: sepY - FORM_ROW_H }, end: { x: ML + LABEL_W,  y: sepY              }, thickness: 0.3, color: BORDER });
+        sepPage.drawText(pdfSafe(row.label), { x: ML + 4,           y: sepY - FORM_ROW_H + 4, size: 7.5, font: fontBold, color: NAVY_MID });
+        sepPage.drawText(trunc(row.value, 85), { x: ML + LABEL_W + 4, y: sepY - FORM_ROW_H + 4, size: 7.5, font: fontReg,  color: TXT });
+        sepY  -= FORM_ROW_H;
+        rowAlt = !rowAlt;
+      }
+    }
+
+    // ── PIÈCE JOINTE banner ──────────────────────────────────────────────────
+    if (sepY - BANNER_RESERVE < TABLE_MIN_Y) newSepPage();
+    const arrowY = sepY - 40;
+    sepPage.drawLine({ start: { x: ML, y: arrowY + 20 }, end: { x: d.pw - MR, y: arrowY + 20 }, thickness: 1, color: ACCENT });
     const arrow = hasAttachment ? "PIECE JOINTE CI-APRES  >>" : "AUCUNE PIECE JOINTE PDF POUR CE DOSSIER";
     const arrowW = fontBold.widthOfTextAtSize(arrow, 12);
-    sep.drawText(arrow, {
+    sepPage.drawText(arrow, {
       x: (d.pw - arrowW) / 2, y: arrowY, size: 12, font: fontBold,
       color: hasAttachment ? NAVY_MID : MUTED,
     });
-    sep.drawLine({ start: { x: ML, y: arrowY - 8 }, end: { x: d.pw - MR, y: arrowY - 8 }, thickness: 1, color: ACCENT });
+    sepPage.drawLine({ start: { x: ML, y: arrowY - 8 }, end: { x: d.pw - MR, y: arrowY - 8 }, thickness: 1, color: ACCENT });
   }
 
   // ── Attachment pages — one separator + docs per workflow ──────────────────
