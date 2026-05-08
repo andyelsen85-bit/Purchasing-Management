@@ -170,7 +170,18 @@ $ErrorActionPreference = "SilentlyContinue"
 $ErrorActionPreference = $savedPref
 $LASTEXITCODE = 0
 
-& $NssmExe install $ServiceName $NodeExe "`"$IndexJs`""       | Out-Host ; Assert-Native "nssm install"
+# Install with only the application executable. AppParameters is set via the
+# registry below so we avoid PowerShell-to-native-exe quote-escaping issues
+# that cause Node to receive a truncated path when InstallDir contains spaces.
+& $NssmExe install $ServiceName $NodeExe                      | Out-Host ; Assert-Native "nssm install"
+
+# Write AppParameters directly to the registry with the path double-quoted.
+# This is the only reliable way to store a quoted path when the install dir
+# contains spaces (e.g. "C:\Program Files\...").
+$nssmRegKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName\Parameters"
+Set-ItemProperty -Path $nssmRegKey -Name "AppParameters" -Value ('"' + $IndexJs + '"')
+Write-Host "Set AppParameters -> `"$IndexJs`""
+
 & $NssmExe set     $ServiceName AppDirectory   $InstallDir   | Out-Host ; Assert-Native "nssm set AppDirectory"
 & $NssmExe set     $ServiceName Start          SERVICE_AUTO_START | Out-Host ; Assert-Native "nssm set Start"
 & $NssmExe set     $ServiceName AppStdout      (Join-Path $DataDir "agent.out.log") | Out-Host ; Assert-Native "nssm set AppStdout"
