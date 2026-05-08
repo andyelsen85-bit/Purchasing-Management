@@ -161,8 +161,13 @@ Write-Host ("Wrote {0}" -f $ConfigPath)
 # Register the service via NSSM. Stop+remove first so re-running the
 # installer is idempotent (unattended upgrades). These two are best-effort:
 # NSSM exits non-zero when the service does not exist yet, which is fine.
-& $NssmExe stop   $ServiceName confirm 2>&1 | Out-Null
+# Temporarily relax $ErrorActionPreference so NSSM stderr on "not found"
+# does not become a terminating error.
+$savedPref = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+& $NssmExe stop   $ServiceName 2>&1 | Out-Null
 & $NssmExe remove $ServiceName confirm 2>&1 | Out-Null
+$ErrorActionPreference = $savedPref
 $LASTEXITCODE = 0
 
 & $NssmExe install $ServiceName $NodeExe $IndexJs            | Out-Host ; Assert-Native "nssm install"
@@ -190,7 +195,9 @@ if ($useCertKey) {
 Assert-Native "nssm set AppEnvironmentExtra"
 
 # Firewall: replace any prior rule of the same name to make this idempotent.
+$ErrorActionPreference = "SilentlyContinue"
 & netsh advfirewall firewall delete rule name="$ServiceName" 2>&1 | Out-Null
+$ErrorActionPreference = $savedPref
 $LASTEXITCODE = 0
 & netsh advfirewall firewall add rule `
     name="$ServiceName" `
