@@ -248,8 +248,46 @@ async function submitCsr(csrPem, template) {
 // would require browsers to trust a self-signed cert. Plain HTTP on loopback
 // is the standard approach (Chrome/Firefox both treat localhost as a secure
 // context, so ws:// and http:// are fully usable from https:// pages).
+
+function setCorsHeaders(res, origin) {
+  // Echo the requesting origin back so credentialed requests work.
+  // Fall back to * for non-browser consumers (curl, Postman, etc.).
+  res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Max-Age", "86400");
+}
+
+function readRawBody(req, max = 32 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > max) {
+        reject(new Error("Body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
 const httpServer = http.createServer(async (req, res) => {
+  const origin = req.headers["origin"] || "";
+  setCorsHeaders(res, origin);
   res.setHeader("Cache-Control", "no-store");
+
+  // Handle CORS pre-flight — browsers send this before any non-simple request.
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const u = url.parse(req.url, true);
 
   if (req.method === "GET" && u.pathname === "/healthz") {
@@ -264,13 +302,28 @@ const httpServer = http.createServer(async (req, res) => {
   }
   try {
     if (req.method === "POST" && u.pathname === "/sign") {
-      const body = await readJsonBody(req);
-      const out = await submitCsr(
-        String(body.csrPem || ""),
-        String(body.template || CERT_TEMPLATE),
-      );
+      // Accept any binary body (PDF, etc.), pick the first available
+      // certificate from the operator's Windows personal store, sign the
+      // body bytes with RSA-SHA256, and return the detached signature.
+      const bodyBuf = await readRawBody(req);
+      const certs = await listCerts();
+      if (certs.length === 0) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "No valid signing certificate found in Windows personal store." }));
+        return;
+      }
+      const cert = certs[0];
+      const out = await signData({
+        thumbprint: cert.thumbprint,
+        dataB64: bodyBuf.toString("base64"),
+      });
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(out));
+      res.end(JSON.stringify({
+        ok: true,
+        signatureB64: out.signatureB64,
+        thumbprint: cert.thumbprint,
+        subject: cert.subject,
+      }));
       return;
     }
     if (req.method === "POST" && u.pathname === "/list-certs") {
@@ -282,6 +335,17 @@ const httpServer = http.createServer(async (req, res) => {
     if (req.method === "POST" && u.pathname === "/sign-data") {
       const body = await readJsonBody(req);
       const out = await signData(body);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(out));
+      return;
+    }
+    if (req.method === "POST" && u.pathname === "/sign-csr") {
+      // Legacy endpoint — submit a CSR to a corporate CA via certreq.exe.
+      const body = await readJsonBody(req);
+      const out = await submitCsr(
+        String(body.csrPem || ""),
+        String(body.template || CERT_TEMPLATE),
+      );
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(out));
       return;

@@ -2538,23 +2538,28 @@ function InvoiceValidationPanel({
   // interface and the port is defined at agent install time.
   async function signWithLocalAgent(): Promise<true | string> {
     const port = settings?.signingAgentPort;
-    if (!port) return "Signing agent port is not configured in Settings.";
+    if (!port) return "Le port de l'agent de signature n'est pas configuré dans les Paramètres.";
+    const token = (settings as { signingAgentToken?: string | null } | undefined)?.signingAgentToken;
+    if (!token) return "Le jeton de l'agent de signature n'est pas configuré dans les Paramètres.";
     try {
       const pdf = await fetch(exportHref, { credentials: "include" });
-      if (!pdf.ok) return `Could not fetch the merged PDF (${pdf.status}).`;
+      if (!pdf.ok) return `Impossible de récupérer le PDF fusionné (${pdf.status}).`;
       const blob = await pdf.blob();
       const r = await fetch(`http://localhost:${port}/sign`, {
         method: "POST",
-        headers: { "Content-Type": "application/pdf" },
+        headers: {
+          "Content-Type": "application/pdf",
+          "Authorization": `Bearer ${token}`,
+        },
         body: blob,
       });
       if (!r.ok) {
         const txt = await r.text().catch(() => "");
-        return `Signing agent rejected the request (${r.status}). ${txt}`.trim();
+        return `L'agent de signature a rejeté la requête (${r.status}). ${txt}`.trim();
       }
       return true;
     } catch (e) {
-      return `Could not reach the signing agent on localhost:${port}. Make sure the Windows agent service is running. (${(e as Error).message})`;
+      return `Impossible de joindre l'agent de signature sur localhost:${port}. Vérifiez que le service Windows est démarré. (${(e as Error).message})`;
     }
   }
 

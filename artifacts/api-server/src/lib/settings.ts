@@ -124,6 +124,10 @@ export interface AppSettings {
   // http://localhost:<port>/sign, so the URL is implicit and only
   // the port (defined at agent install time) needs to be configured.
   signingAgentPort?: number | null;
+  // Shared bearer token generated during agent installation.
+  // Returned to authenticated browser clients so they can include it
+  // in the Authorization header when calling http://localhost:<port>/sign.
+  signingAgentToken?: string | null;
   // Default retention (in days) used to pre-populate the Settings →
   // Archive panel. The archive endpoint always reads the cutoff from
   // the request body, so this is purely a UX default.
@@ -160,6 +164,7 @@ const DEFAULT: AppSettings = {
   currency: "EUR",
   certSigningEnabled: false,
   signingAgentPort: 9443,
+  signingAgentToken: null,
   archiveRetentionDays: 365,
   gtInvestRecipients: [],
   budgetPositions: [],
@@ -247,6 +252,7 @@ export function toPublicSettings(s: AppSettings) {
     currency: s.currency,
     certSigningEnabled: s.certSigningEnabled,
     signingAgentPort: s.signingAgentPort ?? null,
+    signingAgentToken: s.signingAgentToken ?? null,
     archiveRetentionDays: s.archiveRetentionDays ?? null,
     gtInvestRecipients: s.gtInvestRecipients ?? [],
     budgetPositions: s.budgetPositions ?? [],

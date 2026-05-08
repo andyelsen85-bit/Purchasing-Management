@@ -60,10 +60,13 @@ router.patch(
       // preserve the existing logo, so the Remove button silently
       // did nothing across page reloads. Forward null through.
       ...("logoDataUrl" in top ? { logoDataUrl: top.logoDataUrl ?? null } : {}),
-      // Same explicit-forward treatment for signingAgentPort —
-      // null means "not set" and must reach the merge.
+      // Same explicit-forward treatment for signingAgentPort and
+      // signingAgentToken — null means "not set" and must reach the merge.
       ...("signingAgentPort" in top
         ? { signingAgentPort: top.signingAgentPort ?? null }
+        : {}),
+      ...("signingAgentToken" in top
+        ? { signingAgentToken: top.signingAgentToken ?? null }
         : {}),
       ...(gtInvestRecipients ? { gtInvestRecipients } : {}),
       ...(budgetPositions ? { budgetPositions } : {}),

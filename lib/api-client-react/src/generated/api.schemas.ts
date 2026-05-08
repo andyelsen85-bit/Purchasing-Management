@@ -848,6 +848,8 @@ export interface AppSettings {
   /** @nullable */
   signingAgentPort?: number | null;
   /** @nullable */
+  signingAgentToken?: string | null;
+  /** @nullable */
   archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
   budgetPositions: string[];
@@ -992,6 +994,8 @@ export interface UpdateSettingsInput {
   certSigningEnabled?: boolean | null;
   /** @nullable */
   signingAgentPort?: number | null;
+  /** @nullable */
+  signingAgentToken?: string | null;
   /** @nullable */
   archiveRetentionDays?: number | null;
   /** @nullable */

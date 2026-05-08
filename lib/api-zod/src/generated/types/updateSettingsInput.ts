@@ -28,6 +28,8 @@ export interface UpdateSettingsInput {
   /** @nullable */
   signingAgentPort?: number | null;
   /** @nullable */
+  signingAgentToken?: string | null;
+  /** @nullable */
   archiveRetentionDays?: number | null;
   /** @nullable */
   notificationIntervalMinutes?: number | null;

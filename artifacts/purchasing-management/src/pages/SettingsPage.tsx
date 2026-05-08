@@ -953,6 +953,7 @@ function AppSettingsPanel() {
   const [currency, setCurrency] = useState("EUR");
   const [signingEnabled, setSigningEnabled] = useState(false);
   const [signingPort, setSigningPort] = useState<number>(9443);
+  const [signingToken, setSigningToken] = useState("");
 
   useEffect(() => {
     if (!s) return;
@@ -971,6 +972,7 @@ function AppSettingsPanel() {
     setCurrency(s.currency);
     setSigningEnabled(s.certSigningEnabled);
     setSigningPort(s.signingAgentPort ?? 9443);
+    setSigningToken((s as { signingAgentToken?: string | null }).signingAgentToken ?? "");
   }, [s]);
 
   return (
@@ -1060,16 +1062,31 @@ function AppSettingsPanel() {
             />
           </div>
           {signingEnabled && (
-            <div className="space-y-1">
-              <Label>Agent port</Label>
-              <Input
-                type="number"
-                min={1}
-                max={65535}
-                value={signingPort}
-                onChange={(e) => setSigningPort(Number(e.target.value))}
-                data-testid="input-signing-port"
-              />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Port de l'agent</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={signingPort}
+                  onChange={(e) => setSigningPort(Number(e.target.value))}
+                  data-testid="input-signing-port"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Jeton partagé</Label>
+                <Input
+                  type="password"
+                  placeholder="Jeton généré à l'installation"
+                  value={signingToken}
+                  onChange={(e) => setSigningToken(e.target.value)}
+                  data-testid="input-signing-token"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Visible dans <code className="font-mono">config.json</code> sur le poste Windows (champ <code className="font-mono">sharedToken</code>).
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -1089,6 +1106,10 @@ function AppSettingsPanel() {
                   signingAgentPort:
                     signingEnabled && Number.isFinite(signingPort) && signingPort > 0
                       ? signingPort
+                      : null,
+                  signingAgentToken:
+                    signingEnabled && signingToken.trim()
+                      ? signingToken.trim()
                       : null,
                 },
               })

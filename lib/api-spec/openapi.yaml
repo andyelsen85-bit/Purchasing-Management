@@ -1829,6 +1829,7 @@ components:
         currency: { type: string }
         certSigningEnabled: { type: boolean }
         signingAgentPort: { type: ["integer", "null"] }
+        signingAgentToken: { type: ["string", "null"] }
         # Default retention period (in days) used to pre-populate the
         # Settings → Archive form. The actual archive run takes its
         # cutoff from the request body, so this is a UX-only default.
@@ -1887,6 +1888,7 @@ components:
         currency: { type: ["string", "null"] }
         certSigningEnabled: { type: ["boolean", "null"] }
         signingAgentPort: { type: ["integer", "null"] }
+        signingAgentToken: { type: ["string", "null"] }
         archiveRetentionDays: { type: ["integer", "null"] }
         notificationIntervalMinutes: { type: ["integer", "null"] }
         gtInvestRecipients:
