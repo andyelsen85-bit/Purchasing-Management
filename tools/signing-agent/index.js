@@ -341,8 +341,17 @@ try {
   # StringBuilder needs extra capacity — CreateProcessW may write a null
   # terminator into the command-line buffer to split program from args.
   $cmd = New-Object Text.StringBuilder $cmdStr, 32768
-  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$psExe,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0,[IntPtr]::Zero,$null,[ref]$si,[ref]$pi)
-  if (-not $ok) { throw ('CreateProcessAsUser failed with Win32 error: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
+  # CREATE_NO_WINDOW (0x08000000) — child has no console (we are a service)
+  # CREATE_UNICODE_ENVIRONMENT (0x00000400) — required even with NULL env on some configs
+  # lpCurrentDirectory must be a valid, accessible directory; LocalSystem's
+  # inherited cwd (config\systemprofile) is often unreachable for the target
+  # user and triggers ERROR_INVALID_NAME 123.
+  $cwdPath = Join-Path $env:windir "Temp"
+  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$psExe,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000400,[IntPtr]::Zero,$cwdPath,[ref]$si,[ref]$pi)
+  if (-not $ok) {
+    $werr = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    throw ('CreateProcessAsUser failed (err=' + $werr + ', exe=' + $psExe + ', cwd=' + $cwdPath + ', cmdLen=' + $cmdStr.Length + ')')
+  }
   [PurchasingCPAU]::WaitForSingleObject($pi.hProcess,30000) | Out-Null
   $ec = 0
   [PurchasingCPAU]::GetExitCodeProcess($pi.hProcess,[ref]$ec) | Out-Null
