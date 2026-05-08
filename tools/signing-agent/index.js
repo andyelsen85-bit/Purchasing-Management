@@ -167,15 +167,40 @@ public class PurchasingWtsList {
     public static extern bool WTSQueryUserToken(uint sessionId, ref IntPtr phToken);
     [DllImport("kernel32.dll")]
     public static extern uint WTSGetActiveConsoleSessionId();
+    [DllImport("Wtsapi32.dll", SetLastError=true)]
+    public static extern bool WTSEnumerateSessions(IntPtr hServer, int Reserved, int Version, ref IntPtr ppSessionInfo, ref int pCount);
+    [DllImport("Wtsapi32.dll")]
+    public static extern void WTSFreeMemory(IntPtr pMemory);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)]
+    public struct WTS_SESSION_INFO {
+        public uint SessionID;
+        [MarshalAs(UnmanagedType.LPTStr)] public string pWinStationName;
+        public int State;
+    }
 }
 '@
-    $wts_sid = [PurchasingWtsList]::WTSGetActiveConsoleSessionId()
     $wts_tok = [IntPtr]::Zero
     $wts_ctx = $null
-    if ($wts_sid -ne 0xFFFFFFFF) {
+    $wts_psi = [IntPtr]::Zero
+    $wts_cnt = 0
+    $wts_sids = [uint[]]@()
+    if ([PurchasingWtsList]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$wts_psi, [ref]$wts_cnt)) {
+      $wts_sz = [Runtime.InteropServices.Marshal]::SizeOf([PurchasingWtsList+WTS_SESSION_INFO])
+      for ($wts_i = 0; $wts_i -lt $wts_cnt; $wts_i++) {
+        $wts_inf = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]::Add($wts_psi, $wts_i * $wts_sz), [type][PurchasingWtsList+WTS_SESSION_INFO])
+        if ($wts_inf.State -eq 0 -or $wts_inf.State -eq 4) { $wts_sids += $wts_inf.SessionID }
+      }
+      [PurchasingWtsList]::WTSFreeMemory($wts_psi) | Out-Null
+    }
+    $wts_csid = [PurchasingWtsList]::WTSGetActiveConsoleSessionId()
+    if ($wts_csid -ne 0xFFFFFFFF -and $wts_sids -notcontains $wts_csid) {
+      $wts_sids = @($wts_csid) + $wts_sids
+    }
+    foreach ($wts_sid in $wts_sids) {
       try {
         if ([PurchasingWtsList]::WTSQueryUserToken($wts_sid, [ref]$wts_tok)) {
           $wts_ctx = [System.Security.Principal.WindowsIdentity]::new($wts_tok).Impersonate()
+          break
         }
       } catch { }
     }
@@ -312,6 +337,16 @@ public class PurchasingCPAU {
   public static extern bool WTSQueryUserToken(uint sid,ref IntPtr tok);
   [DllImport("kernel32.dll")]
   public static extern uint WTSGetActiveConsoleSessionId();
+  [DllImport("Wtsapi32.dll",SetLastError=true)]
+  public static extern bool WTSEnumerateSessions(IntPtr hServer,int Reserved,int Version,ref IntPtr ppSI,ref int pCnt);
+  [DllImport("Wtsapi32.dll")]
+  public static extern void WTSFreeMemory(IntPtr p);
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Auto)]
+  public struct WTS_SESSION_INFO {
+    public uint SessionID;
+    [MarshalAs(UnmanagedType.LPTStr)] public string pWinStationName;
+    public int State;
+  }
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]
   public struct STARTUPINFO {
     public int    cb;
@@ -345,11 +380,27 @@ try {
     Set-Acl -Path '${inEsc}' -AclObject $acl -ErrorAction SilentlyContinue
   }
 } catch {}
-$wsid = [PurchasingCPAU]::WTSGetActiveConsoleSessionId()
-if ($wsid -eq 0xFFFFFFFF) { throw 'No interactive Windows session found. Is a user logged in at the console?' }
 $wtok = [IntPtr]::Zero
-if (-not [PurchasingCPAU]::WTSQueryUserToken($wsid,[ref]$wtok)) {
-  throw ('WTSQueryUserToken failed with Win32 error: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error())
+$cpau_psi = [IntPtr]::Zero
+$cpau_cnt = 0
+$cpau_sids = [uint[]]@()
+if ([PurchasingCPAU]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$cpau_psi, [ref]$cpau_cnt)) {
+  $cpau_sz = [Runtime.InteropServices.Marshal]::SizeOf([PurchasingCPAU+WTS_SESSION_INFO])
+  for ($cpau_i = 0; $cpau_i -lt $cpau_cnt; $cpau_i++) {
+    $cpau_inf = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]::Add($cpau_psi, $cpau_i * $cpau_sz), [type][PurchasingCPAU+WTS_SESSION_INFO])
+    if ($cpau_inf.State -eq 0 -or $cpau_inf.State -eq 4) { $cpau_sids += $cpau_inf.SessionID }
+  }
+  [PurchasingCPAU]::WTSFreeMemory($cpau_psi) | Out-Null
+}
+$cpau_csid = [PurchasingCPAU]::WTSGetActiveConsoleSessionId()
+if ($cpau_csid -ne 0xFFFFFFFF -and $cpau_sids -notcontains $cpau_csid) {
+  $cpau_sids = @($cpau_csid) + $cpau_sids
+}
+foreach ($cpau_sid in $cpau_sids) {
+  if ([PurchasingCPAU]::WTSQueryUserToken($cpau_sid, [ref]$wtok)) { break }
+}
+if ($wtok -eq [IntPtr]::Zero) {
+  throw 'No active Windows session found (tried console + all RDP/VDI sessions). Is a user logged in?'
 }
 try {
   $si = New-Object PurchasingCPAU+STARTUPINFO
