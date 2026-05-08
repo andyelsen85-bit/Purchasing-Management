@@ -2584,17 +2584,10 @@ function InvoiceValidationPanel({
         return "Aucun certificat de signature valide trouvé dans le magasin Windows Personnel.";
       }
 
-      let thumbprint: string;
-      let selectedCert: AgentCert;
-      if (certs.length === 1) {
-        selectedCert = certs[0];
-        thumbprint = certs[0].thumbprint;
-      } else {
-        const picked = await openCertPicker(certs);
-        if (!picked) return "Signature annulée.";
-        thumbprint = picked;
-        selectedCert = certs.find((c) => c.thumbprint === picked) ?? certs[0];
-      }
+      const picked = await openCertPicker(certs);
+      if (!picked) return "Signature annulée.";
+      const thumbprint = picked;
+      const selectedCert = certs.find((c) => c.thumbprint === picked) ?? certs[0];
 
       // Extract the CN from the certificate subject for the visual block.
       // Subject format: "CN=John Doe, OU=IT, O=Company, C=FR"
