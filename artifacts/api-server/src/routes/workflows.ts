@@ -1341,10 +1341,20 @@ router.post(
       return;
     }
 
+    // The frontend passes the CN of the chosen Windows certificate so the
+    // visual signature block shows the certificate holder's name rather than
+    // the web-app login name.
+    const rawCertSubject = String(req.body?.certSubject ?? "").trim();
+    const signerName =
+      rawCertSubject ||
+      user.displayName ||
+      user.username ||
+      "Purchasing Management";
+
     const merged = await buildWorkflowPackPdf(wf, req.log);
     const prepared = await prepareForSigning(merged, {
       reason: "Validation facture",
-      name: user.displayName ?? user.username ?? "Purchasing Management",
+      name: signerName,
       location: wf.reference,
     });
 

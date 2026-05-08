@@ -2585,18 +2585,35 @@ function InvoiceValidationPanel({
       }
 
       let thumbprint: string;
+      let selectedCert: AgentCert;
       if (certs.length === 1) {
+        selectedCert = certs[0];
         thumbprint = certs[0].thumbprint;
       } else {
         const picked = await openCertPicker(certs);
         if (!picked) return "Signature annulée.";
         thumbprint = picked;
+        selectedCert = certs.find((c) => c.thumbprint === picked) ?? certs[0];
       }
 
-      // 2. Server prepares the PDF + ByteRange placeholder
+      // Extract the CN from the certificate subject for the visual block.
+      // Subject format: "CN=John Doe, OU=IT, O=Company, C=FR"
+      const certCn = selectedCert.subject
+        .replace(/^.*?CN=/i, "")
+        .split(",")[0]
+        .trim();
+
+      // 2. Server prepares the PDF + ByteRange placeholder.
+      //    We pass the cert CN so the visible signature block shows the
+      //    certificate holder's name, not the web-app login name.
       const prep = await fetch(
         `${base}api/workflows/${wf.id}/sign-prepare`,
-        { method: "POST", credentials: "include" },
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ certSubject: certCn }),
+        },
       );
       if (!prep.ok) {
         const txt = await prep.text().catch(() => "");

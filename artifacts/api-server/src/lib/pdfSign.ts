@@ -32,14 +32,14 @@ async function drawSignatureVisual(
   pdfDoc: PDFDocument,
   opts: PrepareOptions,
 ): Promise<void> {
-  const lastPage = pdfDoc.getPage(pdfDoc.getPageCount() - 1);
-  const { width } = lastPage.getSize();
+  const firstPage = pdfDoc.getPage(0);
+  const { width, height } = firstPage.getSize();
 
   const BOX_W = 210;
   const BOX_H = 78;
   const MARGIN = 14;
   const x = width - BOX_W - MARGIN;
-  const y = MARGIN;
+  const y = height - BOX_H - MARGIN;
 
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -54,7 +54,7 @@ async function drawSignatureVisual(
   });
 
   // Header band
-  lastPage.drawRectangle({
+  firstPage.drawRectangle({
     x,
     y: y + BOX_H - 17,
     width: BOX_W,
@@ -63,7 +63,7 @@ async function drawSignatureVisual(
   });
 
   // Body background
-  lastPage.drawRectangle({
+  firstPage.drawRectangle({
     x,
     y,
     width: BOX_W,
@@ -74,7 +74,7 @@ async function drawSignatureVisual(
   });
 
   // Header text
-  lastPage.drawText("SIGNATURE ELECTRONIQUE", {
+  firstPage.drawText("SIGNATURE ELECTRONIQUE", {
     x: x + 6,
     y: y + BOX_H - 12,
     size: 7,
@@ -92,14 +92,14 @@ async function drawSignatureVisual(
 
   let lineY = y + BOX_H - 29;
   for (const [label, value] of lines) {
-    lastPage.drawText(`${label} :`, {
+    firstPage.drawText(`${label} :`, {
       x: x + 6,
       y: lineY,
       size: 7,
       font: fontBold,
       color: rgb(0.13, 0.22, 0.55),
     });
-    lastPage.drawText(value, {
+    firstPage.drawText(value, {
       x: x + 36,
       y: lineY,
       size: 7,
