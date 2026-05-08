@@ -283,21 +283,30 @@ async function signData({ thumbprint, dataB64 }) {
     os.tmpdir(),
     `sign-out-${crypto.randomUUID().replace(/-/g, "")}.sig`,
   );
+  // errFile receives the actual Windows exception text from the inner PS
+  // so the 500 error surfaced to the browser contains actionable detail.
+  const errFile = outFile + ".err";
   fs.writeFileSync(inFile, data);
 
   try {
-    const inEsc = inFile.replace(/\\/g, "\\\\");
+    const inEsc  = inFile.replace(/\\/g, "\\\\");
     const outEsc = outFile.replace(/\\/g, "\\\\");
+    const errEsc = errFile.replace(/\\/g, "\\\\");
 
     // ── Inner script: runs as the INTERACTIVE USER via CreateProcessAsUser ──
     // The child process holds the user's PRIMARY token, so CNG key isolation,
     // CAPI, and every other crypto subsystem see them as the real user.
     // No impersonation involved — no RPC issues.
-    // Inner script: produce a detached PKCS#7 SignedData (CMS) blob over
-    // the input bytes using the operator's CurrentUser\My certificate.
-    // The CMS includes the SHA-256 hash of the content as a signed
-    // attribute and the whole certificate chain, which is exactly what
-    // PAdES requires for Adobe Reader to validate the signature.
+    //
+    // Strategy:
+    //   Attempt 1 – EndCertOnly + SHA-256, silent   (fastest, no chain needed)
+    //   Attempt 2 – EndCertOnly + SHA-256, with UI  (PIN / confirmation dialog)
+    //   Attempt 3 – EndCertOnly + SHA-1,   silent   (old CAPI CSPs, no SHA-256)
+    //   Attempt 4 – EndCertOnly + SHA-1,   with UI
+    // Using EndCertOnly avoids chain-building / CRL / OCSP network calls that
+    // fail silently on isolated servers and cause the whole ComputeSignature
+    // call to throw, even when the private key itself is perfectly accessible.
+    // On failure the actual exception text is written to errFile for diagnosis.
     const innerPs = [
       `$cert=$null`,
       `foreach($loc in @('CurrentUser','LocalMachine')){`,
@@ -307,17 +316,27 @@ async function signData({ thumbprint, dataB64 }) {
       `if(-not $cert){[Environment]::Exit(2)}`,
       `Add-Type -AssemblyName System.Security`,
       `$bytes=[IO.File]::ReadAllBytes('${inEsc}')`,
-      `$ci=New-Object System.Security.Cryptography.Pkcs.ContentInfo (,$bytes)`,
-      `$cms=New-Object System.Security.Cryptography.Pkcs.SignedCms ($ci,$true)`,
-      `$signer=New-Object System.Security.Cryptography.Pkcs.CmsSigner ($cert)`,
-      `$signer.IncludeOption=[System.Security.Cryptography.X509Certificates.X509IncludeOption]::WholeChain`,
-      `$signer.DigestAlgorithm=New-Object System.Security.Cryptography.Oid '2.16.840.1.101.3.4.2.1'`,
-      `try{$cms.ComputeSignature($signer,$true)}catch{`,
-      `  try{$cms.ComputeSignature($signer,$false)}catch{[Environment]::Exit(3)}`,
+      `function TrySign($sha,$silent){`,
+      `  $ci=New-Object System.Security.Cryptography.Pkcs.ContentInfo (,$bytes)`,
+      `  $cms=New-Object System.Security.Cryptography.Pkcs.SignedCms ($ci,$true)`,
+      `  $sgn=New-Object System.Security.Cryptography.Pkcs.CmsSigner ($cert)`,
+      `  $sgn.IncludeOption=[System.Security.Cryptography.X509Certificates.X509IncludeOption]::EndCertOnly`,
+      `  $sgn.DigestAlgorithm=New-Object System.Security.Cryptography.Oid $sha`,
+      `  try{$cms.ComputeSignature($sgn,$silent);return $cms}catch{return $_.Exception.Message}`,
       `}`,
-      `$enc=$cms.Encode()`,
-      `if(-not $enc -or $enc.Length -eq 0){[Environment]::Exit(4)}`,
-      `[IO.File]::WriteAllBytes('${outEsc}',$enc)`,
+      `$errs=@()`,
+      `foreach($sha in @('2.16.840.1.101.3.4.2.1','1.3.14.3.2.26')){`,  // SHA-256 then SHA-1
+      `  foreach($silent in @($true,$false)){`,
+      `    $r=TrySign $sha $silent`,
+      `    if($r -is [System.Security.Cryptography.Pkcs.SignedCms]){`,
+      `      $enc=$r.Encode()`,
+      `      if($enc -and $enc.Length -gt 0){[IO.File]::WriteAllBytes('${outEsc}',$enc);exit 0}`,
+      `      $errs+='encode-empty'`,
+      `    } else { $errs+=($sha+'/'+($silent?'silent':'ui')+': '+$r) }`,
+      `  }`,
+      `}`,
+      `try{[IO.File]::WriteAllText('${errEsc}',$errs -join ' | ',[Text.Encoding]::UTF8)}catch{}`,
+      `[Environment]::Exit(3)`,
     ].join("\r\n");
 
     // PowerShell -EncodedCommand expects UTF-16LE then base64
