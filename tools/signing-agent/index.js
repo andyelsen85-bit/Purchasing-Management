@@ -332,8 +332,16 @@ try {
   $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
   $si.lpDesktop = "winsta0\\default"
   $pi = New-Object PurchasingCPAU+PROCESS_INFORMATION
-  $cmd = New-Object Text.StringBuilder("powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${innerB64}")
-  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$null,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0,[IntPtr]::Zero,$null,[ref]$si,[ref]$pi)
+  # Use full path to powershell.exe — CreateProcessAsUser does not use the
+  # caller's PATH the same way CreateProcess does, so resolving by basename
+  # alone fails with ERROR_INVALID_NAME (123).
+  $psExe = Join-Path $env:windir "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  if (-not (Test-Path $psExe)) { throw "powershell.exe not found at $psExe" }
+  $cmdStr = "\`"$psExe\`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${innerB64}"
+  # StringBuilder needs extra capacity — CreateProcessW may write a null
+  # terminator into the command-line buffer to split program from args.
+  $cmd = New-Object Text.StringBuilder $cmdStr, 32768
+  $ok = [PurchasingCPAU]::CreateProcessAsUser($wtok,$psExe,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0,[IntPtr]::Zero,$null,[ref]$si,[ref]$pi)
   if (-not $ok) { throw ('CreateProcessAsUser failed with Win32 error: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
   [PurchasingCPAU]::WaitForSingleObject($pi.hProcess,30000) | Out-Null
   $ec = 0
