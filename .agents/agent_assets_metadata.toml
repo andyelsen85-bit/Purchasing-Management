@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "N0ygR-KPkeJMpUAT0YfIY"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.0.zip"
+type = "unspecified"
+title = "SigningAgent-Setup-0.2.0.zip"
