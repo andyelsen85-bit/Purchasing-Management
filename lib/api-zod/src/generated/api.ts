@@ -1850,6 +1850,41 @@ export const SetGtInvestDecisionResponse = zod.object({
   updatedAt: zod.coerce.date(),
 });
 
+/**
+ * Builds the same merged "workflow pack" returned by `/export-pdf`,
+adds a PKCS#7-detached signature placeholder, computes the real
+/ByteRange, and returns the bytes the local Windows agent must
+sign with `SignedCms.ComputeSignature` (detached). The signing
+session is stored in server memory for 5 minutes and finalized
+via `/sign-finalize`.
+
+ * @summary Build the merged workflow PDF and prepare a PAdES placeholder
+ */
+export const PrepareWorkflowSignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PrepareWorkflowSignResponse = zod.object({
+  nonce: zod.string(),
+  signTargetB64: zod.string(),
+});
+
+/**
+ * @summary Embed the PKCS#7 SignedData and store the signed PDF
+ */
+export const FinalizeWorkflowSignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const FinalizeWorkflowSignBody = zod.object({
+  nonce: zod.string(),
+  pkcs7B64: zod.string(),
+});
+
+export const FinalizeWorkflowSignResponse = zod.object({
+  documentId: zod.number(),
+});
+
 export const ListWorkflowDocumentsParams = zod.object({
   id: zod.coerce.number(),
 });

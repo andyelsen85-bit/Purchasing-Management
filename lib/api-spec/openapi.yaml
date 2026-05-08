@@ -506,6 +506,59 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Workflow" }
 
+  /workflows/{id}/sign-prepare:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: prepareWorkflowSign
+      tags: [workflows]
+      summary: Build the merged workflow PDF and prepare a PAdES placeholder
+      description: |
+        Builds the same merged "workflow pack" returned by `/export-pdf`,
+        adds a PKCS#7-detached signature placeholder, computes the real
+        /ByteRange, and returns the bytes the local Windows agent must
+        sign with `SignedCms.ComputeSignature` (detached). The signing
+        session is stored in server memory for 5 minutes and finalized
+        via `/sign-finalize`.
+      responses:
+        "200":
+          description: Prepared
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce, signTargetB64]
+                properties:
+                  nonce: { type: string }
+                  signTargetB64: { type: string }
+  /workflows/{id}/sign-finalize:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: finalizeWorkflowSign
+      tags: [workflows]
+      summary: Embed the PKCS#7 SignedData and store the signed PDF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nonce, pkcs7B64]
+              properties:
+                nonce: { type: string }
+                pkcs7B64: { type: string }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documentId]
+                properties:
+                  documentId: { type: integer }
+
   # ---------------- DOCUMENTS ----------------
   /workflows/{id}/documents:
     parameters:

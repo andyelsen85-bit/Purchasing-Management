@@ -244,31 +244,31 @@ async function signData({ thumbprint, dataB64 }) {
     // The child process holds the user's PRIMARY token, so CNG key isolation,
     // CAPI, and every other crypto subsystem see them as the real user.
     // No impersonation involved — no RPC issues.
+    // Inner script: produce a detached PKCS#7 SignedData (CMS) blob over
+    // the input bytes using the operator's CurrentUser\My certificate.
+    // The CMS includes the SHA-256 hash of the content as a signed
+    // attribute and the whole certificate chain, which is exactly what
+    // PAdES requires for Adobe Reader to validate the signature.
     const innerPs = [
       `$cert=$null`,
       `foreach($loc in @('CurrentUser','LocalMachine')){`,
-      `  $cert=Get-ChildItem -Path "Cert:\\$loc\\My\\${thumbprint}" -ErrorAction SilentlyContinue`,
-      `  if($cert){break}`,
+      `  $c=Get-ChildItem -Path "Cert:\\$loc\\My\\${thumbprint}" -ErrorAction SilentlyContinue`,
+      `  if($c){$cert=$c;break}`,
       `}`,
       `if(-not $cert){[Environment]::Exit(2)}`,
+      `Add-Type -AssemblyName System.Security`,
       `$bytes=[IO.File]::ReadAllBytes('${inEsc}')`,
-      `$sig=$null`,
-      `try{`,
-      `  $k=$cert.PrivateKey`,
-      `  if($k -is [Security.Cryptography.RSACryptoServiceProvider]){`,
-      `    $h=[Security.Cryptography.SHA256]::Create().ComputeHash($bytes)`,
-      `    $sig=$k.SignHash($h,[Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'))`,
-      `  }`,
-      `}catch{$sig=$null}`,
-      `if(-not $sig){`,
-      `  $rsa=[Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)`,
-      `  if(-not $rsa){[Environment]::Exit(3)}`,
-      `  $sig=$rsa.SignData($bytes,`,
-      `    [Security.Cryptography.HashAlgorithmName]::SHA256,`,
-      `    [Security.Cryptography.RSASignaturePadding]::Pkcs1)`,
+      `$ci=New-Object System.Security.Cryptography.Pkcs.ContentInfo (,$bytes)`,
+      `$cms=New-Object System.Security.Cryptography.Pkcs.SignedCms ($ci,$true)`,
+      `$signer=New-Object System.Security.Cryptography.Pkcs.CmsSigner ($cert)`,
+      `$signer.IncludeOption=[System.Security.Cryptography.X509Certificates.X509IncludeOption]::WholeChain`,
+      `$signer.DigestAlgorithm=New-Object System.Security.Cryptography.Oid '2.16.840.1.101.3.4.2.1'`,
+      `try{$cms.ComputeSignature($signer,$true)}catch{`,
+      `  try{$cms.ComputeSignature($signer,$false)}catch{[Environment]::Exit(3)}`,
       `}`,
-      `if(-not $sig){[Environment]::Exit(4)}`,
-      `[IO.File]::WriteAllBytes('${outEsc}',$sig)`,
+      `$enc=$cms.Encode()`,
+      `if(-not $enc -or $enc.Length -eq 0){[Environment]::Exit(4)}`,
+      `[IO.File]::WriteAllBytes('${outEsc}',$enc)`,
     ].join("\r\n");
 
     // PowerShell -EncodedCommand expects UTF-16LE then base64

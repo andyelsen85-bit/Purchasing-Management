@@ -42,6 +42,13 @@ import {
 import { audit } from "../lib/audit";
 import { getSettings, derivePublicationTier } from "../lib/settings";
 import { queueNotification, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
+import {
+  prepareForSigning,
+  embedSignature,
+  createSignSession,
+  consumeSignSession,
+} from "../lib/pdfSign";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
@@ -854,6 +861,126 @@ router.post(
  * Available on any non-NEW step so the Validate Invoice screen can
  * print a single signing pack, but also useful earlier in the flow.
  */
+/**
+ * Build the same merged "workflow pack" PDF that `/export-pdf` returns
+ * (cover sheet + every current attachment), but as raw bytes for reuse
+ * by the PAdES signing flow. Kept as a private helper so signing and
+ * the user-facing download stay in lockstep — operators sign exactly
+ * what they download.
+ */
+async function buildWorkflowPackPdf(
+  wf: typeof workflowsTable.$inferSelect,
+  log?: { warn?: (...args: unknown[]) => void },
+): Promise<Buffer> {
+  const docs = (
+    await db
+      .select()
+      .from(documentsTable)
+      .where(eq(documentsTable.workflowId, wf.id))
+  ).filter((d) => d.isCurrent);
+
+  const KIND_ORDER: Record<string, number> = {
+    QUOTE: 0,
+    GT_INVEST_WINNER: 1,
+    ORDER: 2,
+    DELIVERY: 3,
+    INVOICE: 4,
+    OTHER: 5,
+  };
+  docs.sort((a, b) => {
+    const ka = KIND_ORDER[a.kind] ?? 99;
+    const kb = KIND_ORDER[b.kind] ?? 99;
+    if (ka !== kb) return ka - kb;
+    return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
+  });
+
+  const merged = await PDFDocument.create();
+  const font = await merged.embedFont(StandardFonts.Helvetica);
+  const fontBold = await merged.embedFont(StandardFonts.HelveticaBold);
+
+  const cover = merged.addPage([595.28, 841.89]);
+  cover.drawText(`${wf.reference} — workflow pack`, {
+    x: 50,
+    y: 790,
+    size: 20,
+    font: fontBold,
+  });
+  cover.drawText(wf.title.slice(0, 90), { x: 50, y: 762, size: 12, font });
+  const meta: [string, string][] = [
+    ["Step", String(wf.currentStep)],
+    ["Priority", String(wf.priority)],
+    ["Estimated", `${wf.estimatedAmount ?? "?"} ${wf.currency ?? ""}`],
+    ["Created", new Date(wf.createdAt).toISOString().slice(0, 10)],
+    ["Documents", String(docs.length)],
+  ];
+  let y = 730;
+  for (const [k, v] of meta) {
+    cover.drawText(`${k}:`, { x: 50, y, size: 10, font: fontBold });
+    cover.drawText(v, { x: 130, y, size: 10, font });
+    y -= 16;
+  }
+  y -= 8;
+  cover.drawText("Contents", { x: 50, y, size: 12, font: fontBold });
+  y -= 18;
+  for (const d of docs) {
+    if (y < 60) break;
+    const line = `• [${d.kind}] ${d.filename} (v${d.version}, ${d.mimeType})`;
+    cover.drawText(line.slice(0, 95), { x: 50, y, size: 9, font });
+    y -= 14;
+  }
+
+  for (const d of docs) {
+    if (d.mimeType === "application/pdf") {
+      try {
+        const buf = Buffer.from(d.contentBase64, "base64");
+        const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+        const pages = await merged.copyPages(src, src.getPageIndices());
+        for (const p of pages) merged.addPage(p);
+      } catch (err) {
+        log?.warn?.(
+          { err: String(err), workflowId: wf.id, documentId: d.id },
+          "Failed to merge PDF",
+        );
+        const sep = merged.addPage([595.28, 841.89]);
+        sep.drawText(`${d.kind} — ${d.filename}`, {
+          x: 50,
+          y: 780,
+          size: 14,
+          font: fontBold,
+        });
+        sep.drawText("This PDF could not be opened and was skipped.", {
+          x: 50,
+          y: 750,
+          size: 10,
+          font,
+        });
+      }
+    } else {
+      const sep = merged.addPage([595.28, 841.89]);
+      sep.drawText(`${d.kind} — ${d.filename}`, {
+        x: 50,
+        y: 780,
+        size: 14,
+        font: fontBold,
+      });
+      sep.drawText(`MIME type: ${d.mimeType}`, {
+        x: 50,
+        y: 754,
+        size: 10,
+        font,
+      });
+      sep.drawText("(Non-PDF attachment cannot be inlined.)", {
+        x: 50,
+        y: 736,
+        size: 10,
+        font,
+      });
+    }
+  }
+
+  return Buffer.from(await merged.save());
+}
+
 router.get(
   "/workflows/:id/export-pdf",
   requireAuth,
@@ -1171,6 +1298,158 @@ router.post(
       .where(eq(workflowsTable.id, params.data.id));
     await audit(user.id, "WORKFLOW_RESTORE", "workflow", params.data.id);
     res.json(await loadWorkflowFull(params.data.id));
+  },
+);
+
+// ---------------------------------------------------------------------------
+// PAdES signing — two-step flow.
+//
+//  1. POST /workflows/:id/sign-prepare
+//       Server builds the merged workflow pack, adds a /Sig placeholder,
+//       computes the real /ByteRange, and returns the bytes the local
+//       agent must hash and sign with PKCS#7 SignedData (detached).
+//
+//  2. POST /workflows/:id/sign-finalize  { nonce, pkcs7B64 }
+//       Server splices the PKCS#7 blob into the Contents <…> placeholder
+//       and stores the resulting Adobe-verifiable PDF as a new workflow
+//       document (kind=OTHER, filename "<reference>-signed.pdf").
+//
+// The pending session lives in process memory for 5 minutes. We never
+// hold the prepared PDF in the DB — if the agent never returns, the
+// session simply expires and the operator can retry.
+// ---------------------------------------------------------------------------
+router.post(
+  "/workflows/:id/sign-prepare",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetWorkflowParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const user = getUser(req);
+    const [wf] = await db
+      .select()
+      .from(workflowsTable)
+      .where(eq(workflowsTable.id, params.data.id));
+    if (!wf) {
+      res.status(404).json({ error: "Workflow not found" });
+      return;
+    }
+    if (!canSeeWorkflow(user, wf.departmentId)) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const merged = await buildWorkflowPackPdf(wf, req.log);
+    const prepared = prepareForSigning(merged, {
+      reason: "Validation facture",
+      name: user.displayName ?? user.username ?? "Purchasing Management",
+      location: wf.reference,
+    });
+
+    const nonce = createSignSession({
+      workflowId: wf.id,
+      userId: user.id,
+      filename: `${wf.reference}-signed.pdf`,
+      prepared,
+    });
+
+    res.json({
+      nonce,
+      signTargetB64: prepared.signTarget.toString("base64"),
+    });
+  },
+);
+
+const FinalizeSignBody = z.object({
+  nonce: z.string().min(16),
+  pkcs7B64: z.string().min(1),
+});
+
+router.post(
+  "/workflows/:id/sign-finalize",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const params = GetWorkflowParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = FinalizeSignBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const user = getUser(req);
+    const session = consumeSignSession(body.data.nonce);
+    if (!session) {
+      res.status(410).json({
+        error:
+          "Session de signature inconnue ou expirée. Relancez la signature.",
+      });
+      return;
+    }
+    if (session.workflowId !== params.data.id || session.userId !== user.id) {
+      res.status(403).json({ error: "Session de signature non autorisée." });
+      return;
+    }
+
+    let pkcs7: Buffer;
+    try {
+      pkcs7 = Buffer.from(body.data.pkcs7B64, "base64");
+    } catch {
+      res.status(400).json({ error: "pkcs7B64 invalide." });
+      return;
+    }
+
+    let signed: Buffer;
+    try {
+      signed = embedSignature(session.prepared, pkcs7);
+    } catch (err) {
+      req.log?.warn?.(
+        { err: String(err), workflowId: session.workflowId },
+        "PAdES embed failed",
+      );
+      res.status(500).json({ error: `Embed PKCS#7 échoué: ${String(err)}` });
+      return;
+    }
+
+    const contentBase64 = signed.toString("base64");
+    const [inserted] = await db
+      .insert(documentsTable)
+      .values({
+        workflowId: session.workflowId,
+        step: "VALIDATING_INVOICE",
+        kind: "OTHER",
+        filename: session.filename,
+        mimeType: "application/pdf",
+        sizeBytes: signed.length,
+        contentBase64,
+        uploadedById: user.id,
+      })
+      .returning({ id: documentsTable.id });
+
+    await db.insert(documentVersionsTable).values({
+      documentId: inserted.id,
+      workflowId: session.workflowId,
+      version: 1,
+      filename: session.filename,
+      mimeType: "application/pdf",
+      sizeBytes: signed.length,
+      contentBase64,
+      uploadedById: user.id,
+    });
+
+    await audit(
+      user.id,
+      "WORKFLOW_PADES_SIGN",
+      "workflow",
+      session.workflowId,
+      `signed PDF stored as document ${inserted.id} (${signed.length} bytes)`,
+    );
+
+    res.json({ documentId: inserted.id });
   },
 );
 

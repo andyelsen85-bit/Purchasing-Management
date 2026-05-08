@@ -1243,6 +1243,20 @@ export type ListWorkflowsByStepParams = {
   departmentId?: number;
 };
 
+export type PrepareWorkflowSign200 = {
+  nonce: string;
+  signTargetB64: string;
+};
+
+export type FinalizeWorkflowSignBody = {
+  nonce: string;
+  pkcs7B64: string;
+};
+
+export type FinalizeWorkflowSign200 = {
+  documentId: number;
+};
+
 export type UploadWorkflowDocumentBodyTwo = {
   file: Blob;
   step: string;

@@ -45,6 +45,8 @@ import type {
   EmptyTrash200,
   ExportGtInvestPackageParams,
   ExportWorkflowsParams,
+  FinalizeWorkflowSign200,
+  FinalizeWorkflowSignBody,
   GtInvestDate,
   GtInvestDecisionInput,
   GtInvestResult,
@@ -67,6 +69,7 @@ import type {
   NotificationEntry,
   NotificationFlushResult,
   NotifyGtInvestMeetingResult,
+  PrepareWorkflowSign200,
   RejectWorkflowInput,
   SessionResponse,
   SessionUser,
@@ -2734,6 +2737,185 @@ export const useSetGtInvestDecision = <
   TContext
 > => {
   return useMutation(getSetGtInvestDecisionMutationOptions(options));
+};
+
+/**
+ * Builds the same merged "workflow pack" returned by `/export-pdf`,
+adds a PKCS#7-detached signature placeholder, computes the real
+/ByteRange, and returns the bytes the local Windows agent must
+sign with `SignedCms.ComputeSignature` (detached). The signing
+session is stored in server memory for 5 minutes and finalized
+via `/sign-finalize`.
+
+ * @summary Build the merged workflow PDF and prepare a PAdES placeholder
+ */
+export const getPrepareWorkflowSignUrl = (id: number) => {
+  return `/api/workflows/${id}/sign-prepare`;
+};
+
+export const prepareWorkflowSign = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PrepareWorkflowSign200> => {
+  return customFetch<PrepareWorkflowSign200>(getPrepareWorkflowSignUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getPrepareWorkflowSignMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof prepareWorkflowSign>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof prepareWorkflowSign>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["prepareWorkflowSign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof prepareWorkflowSign>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return prepareWorkflowSign(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PrepareWorkflowSignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof prepareWorkflowSign>>
+>;
+
+export type PrepareWorkflowSignMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Build the merged workflow PDF and prepare a PAdES placeholder
+ */
+export const usePrepareWorkflowSign = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof prepareWorkflowSign>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof prepareWorkflowSign>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getPrepareWorkflowSignMutationOptions(options));
+};
+
+/**
+ * @summary Embed the PKCS#7 SignedData and store the signed PDF
+ */
+export const getFinalizeWorkflowSignUrl = (id: number) => {
+  return `/api/workflows/${id}/sign-finalize`;
+};
+
+export const finalizeWorkflowSign = async (
+  id: number,
+  finalizeWorkflowSignBody: FinalizeWorkflowSignBody,
+  options?: RequestInit,
+): Promise<FinalizeWorkflowSign200> => {
+  return customFetch<FinalizeWorkflowSign200>(getFinalizeWorkflowSignUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(finalizeWorkflowSignBody),
+  });
+};
+
+export const getFinalizeWorkflowSignMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof finalizeWorkflowSign>>,
+    TError,
+    { id: number; data: BodyType<FinalizeWorkflowSignBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof finalizeWorkflowSign>>,
+  TError,
+  { id: number; data: BodyType<FinalizeWorkflowSignBody> },
+  TContext
+> => {
+  const mutationKey = ["finalizeWorkflowSign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof finalizeWorkflowSign>>,
+    { id: number; data: BodyType<FinalizeWorkflowSignBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return finalizeWorkflowSign(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FinalizeWorkflowSignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof finalizeWorkflowSign>>
+>;
+export type FinalizeWorkflowSignMutationBody =
+  BodyType<FinalizeWorkflowSignBody>;
+export type FinalizeWorkflowSignMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Embed the PKCS#7 SignedData and store the signed PDF
+ */
+export const useFinalizeWorkflowSign = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof finalizeWorkflowSign>>,
+    TError,
+    { id: number; data: BodyType<FinalizeWorkflowSignBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof finalizeWorkflowSign>>,
+  TError,
+  { id: number; data: BodyType<FinalizeWorkflowSignBody> },
+  TContext
+> => {
+  return useMutation(getFinalizeWorkflowSignMutationOptions(options));
 };
 
 export const getListWorkflowDocumentsUrl = (id: number) => {

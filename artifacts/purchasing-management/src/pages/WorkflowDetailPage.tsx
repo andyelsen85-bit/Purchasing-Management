@@ -2541,21 +2541,52 @@ function InvoiceValidationPanel({
     if (!port) return "Le port de l'agent de signature n'est pas configuré dans les Paramètres.";
     const token = (settings as { signingAgentToken?: string | null } | undefined)?.signingAgentToken;
     if (!token) return "Le jeton de l'agent de signature n'est pas configuré dans les Paramètres.";
+    const base = import.meta.env.BASE_URL;
     try {
-      const pdf = await fetch(exportHref, { credentials: "include" });
-      if (!pdf.ok) return `Impossible de récupérer le PDF fusionné (${pdf.status}).`;
-      const blob = await pdf.blob();
+      // 1. Server prepares the PDF + ByteRange placeholder
+      const prep = await fetch(
+        `${base}api/workflows/${wf.id}/sign-prepare`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!prep.ok) {
+        const txt = await prep.text().catch(() => "");
+        return `Préparation de la signature échouée (${prep.status}). ${txt}`.trim();
+      }
+      const { nonce, signTargetB64 } = (await prep.json()) as {
+        nonce: string;
+        signTargetB64: string;
+      };
+
+      // 2. Local agent produces a PKCS#7 SignedData over those bytes
+      const bin = Uint8Array.from(atob(signTargetB64), (c) => c.charCodeAt(0));
       const r = await fetch(`http://localhost:${port}/sign`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/pdf",
+          "Content-Type": "application/octet-stream",
           "Authorization": `Bearer ${token}`,
         },
-        body: blob,
+        body: bin,
       });
       if (!r.ok) {
         const txt = await r.text().catch(() => "");
         return `L'agent de signature a rejeté la requête (${r.status}). ${txt}`.trim();
+      }
+      const { signatureB64 } = (await r.json()) as { signatureB64: string };
+      if (!signatureB64) return "L'agent de signature n'a renvoyé aucune signature.";
+
+      // 3. Server embeds and archives the signed PDF
+      const fin = await fetch(
+        `${base}api/workflows/${wf.id}/sign-finalize`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nonce, pkcs7B64: signatureB64 }),
+        },
+      );
+      if (!fin.ok) {
+        const txt = await fin.text().catch(() => "");
+        return `Archivage du PDF signé échoué (${fin.status}). ${txt}`.trim();
       }
       return true;
     } catch (e) {
