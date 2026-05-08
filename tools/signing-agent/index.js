@@ -152,139 +152,171 @@ function execPowerShell(script) {
 }
 
 async function listCerts() {
-  // The service runs as LocalSystem which has an empty CurrentUser cert store.
-  // We use WTSQueryUserToken to impersonate the interactive console user inside
-  // this PowerShell process (thread impersonation applies to cert store and CNG
-  // private-key access within the same process — no child-process boundary).
-  // Falls back gracefully to LocalMachine\My if no WTS session exists.
-  const ps = `
-    Add-Type -TypeDefinition @'
+  // Thread-level impersonation (WindowsIdentity.Impersonate) does NOT load the
+  // user's registry hive (HKCU), so X509Store("My","CurrentUser") silently
+  // opens the SYSTEM user's empty store when the agent runs as LocalSystem.
+  // The only reliable fix is to enumerate certs inside a CreateProcessAsUser
+  // child process — exactly the same mechanism used for signing — so the inner
+  // script runs with the user's primary token, loaded profile, and full env.
+  const outFile = path.join(
+    os.tmpdir(),
+    `cert-list-${crypto.randomUUID().replace(/-/g, "")}.json`,
+  );
+  try {
+    const outEsc = outFile.replace(/\\/g, "\\\\");
+
+    // ── Inner script: runs AS the interactive user via CreateProcessAsUser ──
+    // Enumerates CurrentUser\My and LocalMachine\My, applies key-accessibility
+    // checks (safe to call .KeySize here — this is a real user process token,
+    // not thread impersonation, so keyiso RPC honours it correctly), then
+    // writes the JSON array to outFile and exits 0.
+    const innerPs = [
+      `Add-Type -AssemblyName System.Security`,
+      `$now = Get-Date`,
+      `$seen = @{}`,
+      `$results = @()`,
+      `foreach ($loc in @('CurrentUser','LocalMachine')) {`,
+      `  try {`,
+      `    $st = [System.Security.Cryptography.X509Certificates.X509Store]::new('My',[System.Security.Cryptography.X509Certificates.StoreLocation]$loc)`,
+      `    $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)`,
+      `    foreach ($c in $st.Certificates) {`,
+      `      if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {`,
+      `        $keyOk = $false`,
+      `        try { $rsa=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c); if($rsa -ne $null){$null=$rsa.KeySize;$keyOk=$true} } catch {}`,
+      `        if (-not $keyOk) { try { $pk=$c.PrivateKey; if($pk -ne $null){$null=$pk.KeySize;$keyOk=$true} } catch {} }`,
+      `        if (-not $keyOk) { continue }`,
+      ...(SOFTWARE_CERTS_ONLY ? [
+      `        $hwBacked = $false`,
+      `        try { $pk2=$c.PrivateKey; if($pk2 -ne $null -and $pk2.GetType().Name -eq 'RSACryptoServiceProvider'){$hwBacked=$pk2.CspKeyContainerInfo.HardwareDevice} } catch {}`,
+      `        if (-not $hwBacked) { try { $rsa2=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c); if($rsa2 -ne $null){$prov=try{$rsa2.Key.Provider.Provider}catch{''}; if($prov -like '*Smart Card*' -or $prov -like '*SC KSP*' -or $prov -like '*SmartCard*'){$hwBacked=$true}} } catch {} }`,
+      `        if ($hwBacked) { continue }`,
+      ] : []),
+      `        $seen[$c.Thumbprint] = $true`,
+      `        $results += $c`,
+      `      }`,
+      `    }`,
+      `    $st.Close()`,
+      `  } catch {}`,
+      `}`,
+      `$json = if ($results.Count -eq 0) { '[]' } else {`,
+      `  $results | Select-Object @{Name='thumbprint';Expression={$_.Thumbprint}},@{Name='subject';Expression={$_.Subject}},@{Name='issuer';Expression={$_.Issuer}},@{Name='notBefore';Expression={$_.NotBefore.ToString('o')}},@{Name='notAfter';Expression={$_.NotAfter.ToString('o')}},@{Name='ekus';Expression={($_.EnhancedKeyUsageList|ForEach-Object{$_.FriendlyName})-join','}} | ConvertTo-Json -Depth 4 -Compress`,
+      `}`,
+      `try { [IO.File]::WriteAllText('${outEsc}',$json,[Text.Encoding]::UTF8); exit 0 } catch { [Environment]::Exit(5) }`,
+    ].join("\r\n");
+
+    const innerB64 = Buffer.from(innerPs, "utf16le").toString("base64");
+
+    // ── Outer script: same CreateProcessAsUser pattern as signData ──
+    // Shares the same P/Invoke type definitions and WTS session enumeration.
+    const ps = `
+Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
-public class PurchasingWtsList {
-    [DllImport("Wtsapi32.dll", SetLastError=true)]
-    public static extern bool WTSQueryUserToken(uint sessionId, ref IntPtr phToken);
-    [DllImport("kernel32.dll")]
-    public static extern uint WTSGetActiveConsoleSessionId();
-    [DllImport("Wtsapi32.dll", SetLastError=true)]
-    public static extern bool WTSEnumerateSessions(IntPtr hServer, int Reserved, int Version, ref IntPtr ppSessionInfo, ref int pCount);
-    [DllImport("Wtsapi32.dll")]
-    public static extern void WTSFreeMemory(IntPtr pMemory);
-    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)]
-    public struct WTS_SESSION_INFO {
-        public uint SessionID;
-        [MarshalAs(UnmanagedType.LPTStr)] public string pWinStationName;
-        public int State;
-    }
+using System.Text;
+public class PurchasingCPAUL {
+  [DllImport("Wtsapi32.dll",SetLastError=true)]
+  public static extern bool WTSQueryUserToken(uint sid,ref IntPtr tok);
+  [DllImport("kernel32.dll")]
+  public static extern uint WTSGetActiveConsoleSessionId();
+  [DllImport("Wtsapi32.dll",SetLastError=true)]
+  public static extern bool WTSEnumerateSessions(IntPtr hServer,int Reserved,int Version,ref IntPtr ppSI,ref int pCnt);
+  [DllImport("Wtsapi32.dll")]
+  public static extern void WTSFreeMemory(IntPtr p);
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Auto)]
+  public struct WTS_SESSION_INFO {
+    public uint SessionID;
+    [MarshalAs(UnmanagedType.LPTStr)] public string pWinStationName;
+    public int State;
+  }
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]
+  public struct STARTUPINFO {
+    public int    cb;
+    public IntPtr lpReserved;
+    [MarshalAs(UnmanagedType.LPWStr)] public string lpDesktop;
+    [MarshalAs(UnmanagedType.LPWStr)] public string lpTitle;
+    public uint dwX,dwY,dwXSize,dwYSize,dwXCountChars,dwYCountChars,dwFillAttribute,dwFlags;
+    public ushort wShowWindow,cbReserved2;
+    public IntPtr lpReserved2,hStdInput,hStdOutput,hStdError;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct PROCESS_INFORMATION {
+    public IntPtr hProcess,hThread; public uint dwProcessId,dwThreadId;
+  }
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+  public static extern bool CreateProcessAsUser(
+    IntPtr hToken, string lpApp, StringBuilder lpCmd,
+    IntPtr lpPA, IntPtr lpTA, bool bInherit, uint dwFlags,
+    IntPtr lpEnv, string lpDir,
+    ref STARTUPINFO lpSI, out PROCESS_INFORMATION lpPI);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr h,uint ms);
+  [DllImport("kernel32.dll")] public static extern bool GetExitCodeProcess(IntPtr h,out uint c);
+  [DllImport("userenv.dll",SetLastError=true)]
+  public static extern bool CreateEnvironmentBlock(out IntPtr env,IntPtr tok,bool inherit);
+  [DllImport("userenv.dll",SetLastError=true)]
+  public static extern bool DestroyEnvironmentBlock(IntPtr env);
 }
 '@
-    $wts_tok = [IntPtr]::Zero
-    $wts_ctx = $null
-    $wts_psi = [IntPtr]::Zero
-    $wts_cnt = 0
-    $wts_sids = [uint32[]]@()
-    if ([PurchasingWtsList]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$wts_psi, [ref]$wts_cnt)) {
-      $wts_sz = [Runtime.InteropServices.Marshal]::SizeOf((New-Object PurchasingWtsList+WTS_SESSION_INFO))
-      for ($wts_i = 0; $wts_i -lt $wts_cnt; $wts_i++) {
-        $wts_inf = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]::Add($wts_psi, $wts_i * $wts_sz), [type][PurchasingWtsList+WTS_SESSION_INFO])
-        if ($wts_inf.State -eq 0 -or $wts_inf.State -eq 4) { $wts_sids += $wts_inf.SessionID }
-      }
-      [PurchasingWtsList]::WTSFreeMemory($wts_psi) | Out-Null
-    }
-    $wts_csid = [PurchasingWtsList]::WTSGetActiveConsoleSessionId()
-    if ($wts_csid -ne 0xFFFFFFFF -and $wts_sids -notcontains $wts_csid) {
-      $wts_sids = @($wts_csid) + $wts_sids
-    }
-    foreach ($wts_sid in $wts_sids) {
-      try {
-        if ([PurchasingWtsList]::WTSQueryUserToken($wts_sid, [ref]$wts_tok)) {
-          $wts_ctx = [System.Security.Principal.WindowsIdentity]::new($wts_tok).Impersonate()
-          break
-        }
-      } catch { }
-    }
-    try {
-      $now = Get-Date
-      $seen = @{}
-      $results = @()
-      foreach ($loc in @('CurrentUser', 'LocalMachine')) {
-        try {
-          $st = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-            'My',
-            [System.Security.Cryptography.X509Certificates.StoreLocation]$loc)
-          $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-          foreach ($c in $st.Certificates) {
-            if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
-              # HasPrivateKey only checks the key provider association, NOT whether
-              # the key material is present and accessible. We verify it is at least
-              # an RSA cert with a resolvable key object — certs that have no RSA key
-              # at all (EC, orphaned reference, public-only import) are excluded.
-              # We deliberately do NOT call .KeySize here because that goes through
-              # the CNG keyiso RPC service which ignores thread-level impersonation;
-              # it would drop valid CNG certs from the list.
-              $keyOk = $false
-              try {
-                $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
-                if ($rsa -ne $null) { $keyOk = $true }
-              } catch {}
-              if (-not $keyOk) {
-                try {
-                  $pk = $c.PrivateKey
-                  if ($pk -ne $null) { $keyOk = $true }
-                } catch {}
-              }
-              if (-not $keyOk) { continue }
-              ${SOFTWARE_CERTS_ONLY ? `$hwBacked = $false
-              try {
-                $pk2 = $c.PrivateKey
-                if ($pk2 -ne $null -and $pk2.GetType().Name -eq 'RSACryptoServiceProvider') {
-                  $hwBacked = $pk2.CspKeyContainerInfo.HardwareDevice
-                }
-              } catch {}
-              if (-not $hwBacked) {
-                try {
-                  $rsa2 = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
-                  if ($rsa2 -ne $null) {
-                    $prov = try { $rsa2.Key.Provider.Provider } catch { '' }
-                    if ($prov -like '*Smart Card*' -or $prov -like '*SC KSP*' -or $prov -like '*SmartCard*') { $hwBacked = $true }
-                  }
-                } catch {}
-              }
-              if ($hwBacked) { continue }` : ""}
-              $seen[$c.Thumbprint] = $true
-              $results += $c
-            }
-          }
-          $st.Close()
-        } catch { }
-      }
-      if ($results.Count -eq 0) { '[]' } else {
-        $results | Select-Object @{
-          Name='thumbprint'; Expression={$_.Thumbprint}
-        }, @{
-          Name='subject'; Expression={$_.Subject}
-        }, @{
-          Name='issuer'; Expression={$_.Issuer}
-        }, @{
-          Name='notBefore'; Expression={$_.NotBefore.ToString('o')}
-        }, @{
-          Name='notAfter'; Expression={$_.NotAfter.ToString('o')}
-        }, @{
-          Name='ekus'; Expression={
-            ($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join ','
-          }
-        } | ConvertTo-Json -Depth 4 -Compress
-      }
-    } finally {
-      if ($wts_ctx) { $wts_ctx.Undo() }
-    }
-  `;
-  const { stdout } = await execPowerShell(ps);
-  const trimmed = stdout.trim();
-  if (!trimmed || trimmed === "[]") return [];
-  const parsed = JSON.parse(trimmed);
-  return Array.isArray(parsed) ? parsed : [parsed];
+$wtok = [IntPtr]::Zero
+$cpau_psi = [IntPtr]::Zero
+$cpau_cnt = 0
+$cpau_sids = [uint32[]]@()
+if ([PurchasingCPAUL]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$cpau_psi, [ref]$cpau_cnt)) {
+  $cpau_sz = [Runtime.InteropServices.Marshal]::SizeOf((New-Object PurchasingCPAUL+WTS_SESSION_INFO))
+  for ($cpau_i = 0; $cpau_i -lt $cpau_cnt; $cpau_i++) {
+    $cpau_inf = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]::Add($cpau_psi, $cpau_i * $cpau_sz), [type][PurchasingCPAUL+WTS_SESSION_INFO])
+    if ($cpau_inf.State -eq 0 -or $cpau_inf.State -eq 4) { $cpau_sids += $cpau_inf.SessionID }
+  }
+  [PurchasingCPAUL]::WTSFreeMemory($cpau_psi) | Out-Null
+}
+$cpau_csid = [PurchasingCPAUL]::WTSGetActiveConsoleSessionId()
+if ($cpau_csid -ne 0xFFFFFFFF -and $cpau_sids -notcontains $cpau_csid) {
+  $cpau_sids = @($cpau_csid) + $cpau_sids
+}
+foreach ($cpau_sid in $cpau_sids) {
+  if ([PurchasingCPAUL]::WTSQueryUserToken($cpau_sid, [ref]$wtok)) { break }
+}
+if ($wtok -eq [IntPtr]::Zero) {
+  throw 'No active Windows session found. Is a user logged in?'
+}
+$cpau_env = [IntPtr]::Zero
+[PurchasingCPAUL]::CreateEnvironmentBlock([ref]$cpau_env, $wtok, $false) | Out-Null
+try {
+  $si = New-Object PurchasingCPAUL+STARTUPINFO
+  $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
+  $si.lpDesktop = "winsta0\\default"
+  $pi = New-Object PurchasingCPAUL+PROCESS_INFORMATION
+  $psExe = Join-Path $env:windir "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  if (-not (Test-Path $psExe)) { throw "powershell.exe not found at $psExe" }
+  $cmdStr = "\`"$psExe\`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${innerB64}"
+  $cmd = New-Object Text.StringBuilder $cmdStr, 32768
+  $cwdPath = Join-Path $env:windir "Temp"
+  $ok = [PurchasingCPAUL]::CreateProcessAsUser($wtok,$psExe,$cmd,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000400,$cpau_env,$cwdPath,[ref]$si,[ref]$pi)
+  if (-not $ok) {
+    $werr = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    throw ('CreateProcessAsUser failed (err=' + $werr + ')')
+  }
+  [PurchasingCPAUL]::WaitForSingleObject($pi.hProcess,30000) | Out-Null
+  $ec = 0
+  [PurchasingCPAUL]::GetExitCodeProcess($pi.hProcess,[ref]$ec) | Out-Null
+  [PurchasingCPAUL]::CloseHandle($pi.hProcess) | Out-Null
+  [PurchasingCPAUL]::CloseHandle($pi.hThread)  | Out-Null
+  if ($ec -ne 0) { throw ('Certificate list subprocess exited with code ' + $ec) }
+  if (-not (Test-Path '${outEsc}')) { throw 'Certificate list file was not written by subprocess' }
+} finally {
+  [PurchasingCPAUL]::CloseHandle($wtok)
+  if ($cpau_env -ne [IntPtr]::Zero) { [PurchasingCPAUL]::DestroyEnvironmentBlock($cpau_env) | Out-Null }
+}
+`.trim();
+
+    await execPowerShell(ps);
+    const json = fs.readFileSync(outFile, "utf8").trim();
+    if (!json || json === "[]") return [];
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } finally {
+    try { if (fs.existsSync(outFile)) fs.unlinkSync(outFile); } catch { /* ignore */ }
+  }
 }
 
 async function signData({ thumbprint, dataB64 }) {
@@ -590,7 +622,7 @@ const httpServer = http.createServer(async (req, res) => {
     // revealing the full secret.
     res.end(JSON.stringify({
       ok: true,
-      version: "0.2.7",
+      version: "0.2.8",
       tokenLen: SHARED_TOKEN.length,
       tokenPrefix: SHARED_TOKEN.slice(0, 8),
     }));
