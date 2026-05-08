@@ -262,13 +262,30 @@ public class PurchasingWtsSign {
           if ($cert) { break }
         }
         if (-not $cert) { throw "Certificate ${thumbprint} not found in CurrentUser or LocalMachine store" }
-        $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-        if (-not $rsa) { throw "No RSA private key accessible for certificate ${thumbprint}" }
         $bytes = [System.IO.File]::ReadAllBytes('${inFile.replace(/\\/g, "\\\\")}')
-        $sig = $rsa.SignData(
-          $bytes,
-          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        $sig = $null
+        # Try the legacy CAPI path first (RSACryptoServiceProvider).
+        # CAPI signing is in-process and does not use the CNG key isolation
+        # RPC, so it survives LocalSystem impersonation reliably.
+        try {
+          $capiKey = $cert.PrivateKey
+          if ($capiKey -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
+            $sha256 = [System.Security.Cryptography.SHA256]::Create()
+            $hash = $sha256.ComputeHash($bytes)
+            $oid = [System.Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256')
+            $sig = $capiKey.SignHash($hash, $oid)
+          }
+        } catch { $sig = $null }
+        # Fall back to the CNG path for keys enrolled via the CNG KSP.
+        if (-not $sig) {
+          $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+          if (-not $rsa) { throw "No RSA private key accessible for certificate ${thumbprint}" }
+          $sig = $rsa.SignData(
+            $bytes,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        }
+        if (-not $sig) { throw "Signing produced no output for certificate ${thumbprint}" }
         [System.IO.File]::WriteAllBytes('${outFile.replace(/\\/g, "\\\\")}', $sig)
       } finally {
         if ($wts_ctx) { $wts_ctx.Undo() }
