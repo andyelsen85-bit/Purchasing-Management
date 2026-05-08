@@ -170,7 +170,7 @@ $ErrorActionPreference = "SilentlyContinue"
 $ErrorActionPreference = $savedPref
 $LASTEXITCODE = 0
 
-& $NssmExe install $ServiceName $NodeExe $IndexJs            | Out-Host ; Assert-Native "nssm install"
+& $NssmExe install $ServiceName $NodeExe "`"$IndexJs`""       | Out-Host ; Assert-Native "nssm install"
 & $NssmExe set     $ServiceName AppDirectory   $InstallDir   | Out-Host ; Assert-Native "nssm set AppDirectory"
 & $NssmExe set     $ServiceName Start          SERVICE_AUTO_START | Out-Host ; Assert-Native "nssm set Start"
 & $NssmExe set     $ServiceName AppStdout      (Join-Path $DataDir "agent.out.log") | Out-Host ; Assert-Native "nssm set AppStdout"

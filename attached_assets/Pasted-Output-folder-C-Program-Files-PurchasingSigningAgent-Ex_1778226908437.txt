@@ -1,0 +1,182 @@
+Output folder: C:\Program Files\PurchasingSigningAgent
+Extract: index.js
+Extract: package.json
+Extract: config.example.json
+Extract: setup-service.ps1
+Extract: unsetup-service.ps1
+Extract: install-service.ps1
+Extract: uninstall-service.ps1
+Extract: LICENSE.txt
+Extract: README.txt
+Output folder: C:\Program Files\PurchasingSigningAgent\node_modules
+Extract: .package-lock.json
+Output folder: C:\Program Files\PurchasingSigningAgent\node_modules\ws
+Extract: LICENSE
+Extract: README.md
+Extract: browser.js
+Extract: index.js
+Extract: package.json
+Extract: wrapper.mjs
+Output folder: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib
+Extract: buffer-util.js
+Extract: constants.js
+Extract: event-target.js
+Extract: extension.js
+Extract: limiter.js
+Extract: permessage-deflate.js
+Extract: receiver.js
+Extract: sender.js
+Extract: stream.js
+Extract: subprotocol.js
+Extract: validation.js
+Extract: websocket-server.js
+Extract: websocket.js
+Output folder: C:\Program Files\PurchasingSigningAgent
+Output folder: C:\Program Files\PurchasingSigningAgent\node
+Extract: node.exe... 100%
+Output folder: C:\Program Files\PurchasingSigningAgent\bin
+Extract: nssm.exe
+Create folder: C:\ProgramData\PurchasingSigningAgent
+Running setup-service.ps1...
+Generated random shared token (length 64).
+Re-using existing TLS PFX: C:\ProgramData\PurchasingSigningAgent\agent.pfx
+Wrote C:\ProgramData\PurchasingSigningAgent\config.json
+S
+
+
+
+S
+
+
+
+S
+
+
+
+S
+
+
+
+S
+
+
+
+S
+
+
+
+S
+
+
+
+S
+
+
+
+S
+
+
+
+Ok.
+
+P
+
+Service 'PurchasingSigningAgent' did not reach Running state (status=Paused).
+Last stderr:
+Node.js v20.18.1
+node:internal/modules/cjs/loader:1228
+  throw err;
+  ^
+Error: Cannot find module 'C:\Program'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)
+    at Module._load (node:internal/modules/cjs/loader:1051:27)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:173:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v20.18.1
+node:internal/modules/cjs/loader:1228
+  throw err;
+  ^
+Error: Cannot find module 'C:\Program'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)
+    at Module._load (node:internal/modules/cjs/loader:1051:27)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:173:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v20.18.1
+At C:\Program Files\PurchasingSigningAgent\setup-service.ps1:238 char:3
++   throw ("Service '{0}' did not reach Running state (status={1}).`r`n ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Service 'Purcha...ode.js v20.18.1:String) [], RuntimeException
+    + FullyQualifiedErrorId : Service 'PurchasingSigningAgent' did not reach Running state (status=Paused).
+Last stderr:
+Node.js v20.18.1
+node:internal/modules/cjs/loader:1228
+  throw err;
+  ^
+Error: Cannot find module 'C:\Program'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)
+    at Module._load (node:internal/modules/cjs/loader:1051:27)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:173:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v20.18.1
+node:internal/modules/cjs/loader:1228
+  throw err;
+  ^
+Error: Cannot find module 'C:\Program'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)
+    at Module._load (node:internal/modules/cjs/loader:1051:27)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:173:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v20.18.1
+ 
+FATAL: setup-service.ps1 exited with code 1 — rolling back.
+Output folder: C:\Users\EA5193~1\AppData\Local\Temp
+Delete file: C:\Program Files\PurchasingSigningAgent\bin\nssm.exe
+Remove folder: C:\Program Files\PurchasingSigningAgent\bin\
+Delete file: C:\Program Files\PurchasingSigningAgent\config.example.json
+Delete file: C:\Program Files\PurchasingSigningAgent\index.js
+Delete file: C:\Program Files\PurchasingSigningAgent\install-service.ps1
+Delete file: C:\Program Files\PurchasingSigningAgent\LICENSE.txt
+Delete file: C:\Program Files\PurchasingSigningAgent\node\node.exe
+Remove folder: C:\Program Files\PurchasingSigningAgent\node\
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\.package-lock.json
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\browser.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\index.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\buffer-util.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\constants.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\event-target.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\extension.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\limiter.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\permessage-deflate.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\receiver.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\sender.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\stream.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\subprotocol.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\validation.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\websocket-server.js
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\websocket.js
+Remove folder: C:\Program Files\PurchasingSigningAgent\node_modules\ws\lib\
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\LICENSE
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\package.json
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\README.md
+Delete file: C:\Program Files\PurchasingSigningAgent\node_modules\ws\wrapper.mjs
+Remove folder: C:\Program Files\PurchasingSigningAgent\node_modules\ws\
+Remove folder: C:\Program Files\PurchasingSigningAgent\node_modules\
+Delete file: C:\Program Files\PurchasingSigningAgent\package.json
+Delete file: C:\Program Files\PurchasingSigningAgent\README.txt
+Delete file: C:\Program Files\PurchasingSigningAgent\setup-service.ps1
+Delete file: C:\Program Files\PurchasingSigningAgent\uninstall-service.ps1
+Delete file: C:\Program Files\PurchasingSigningAgent\unsetup-service.ps1
+Remove folder: C:\Program Files\PurchasingSigningAgent\
+Setup failed.
