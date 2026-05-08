@@ -28,7 +28,7 @@ if (Test-Path "$PSScriptRoot\config.json") {
   Copy-Item -Force "$PSScriptRoot\config.json" "$InstallDir\config.json"
 } elseif (-not (Test-Path "$InstallDir\config.json")) {
   Copy-Item -Force "$PSScriptRoot\config.example.json" "$InstallDir\config.json"
-  Write-Warning "Copied config.example.json to config.json — edit it before starting the service."
+  Write-Warning "Copied config.example.json to config.json -- edit it before starting the service."
 }
 
 Push-Location $InstallDir

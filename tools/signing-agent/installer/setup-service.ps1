@@ -208,12 +208,18 @@ $LASTEXITCODE = 0
     description="Purchasing Signing Agent ($Port/tcp)" | Out-Host
 Assert-Native "netsh advfirewall firewall add rule"
 
+# nssm start can return non-zero when the wrapped process is still coming
+# up or crashes before NSSM's own timeout. Don't Assert-Native here -- the
+# polling loop below is the authoritative gate and it reads the error log.
 & $NssmExe start $ServiceName | Out-Host
-Assert-Native "nssm start"
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning ("nssm start returned exit code {0} -- will wait for service status." -f $LASTEXITCODE)
+}
+$LASTEXITCODE = 0
 
-# Poll for up to 20s while the service starts. NSSM marks itself running
+# Poll for up to 30s while the service starts. NSSM marks itself running
 # almost immediately; we want the wrapped Node process to also be up.
-$deadline = (Get-Date).AddSeconds(20)
+$deadline = (Get-Date).AddSeconds(30)
 $svc = $null
 do {
   Start-Sleep -Milliseconds 500
