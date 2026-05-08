@@ -145,44 +145,71 @@ function execPowerShell(script) {
 }
 
 async function listCerts() {
-  // Search both CurrentUser\My (works when the service runs as the user) and
-  // LocalMachine\My (fallback when cert has been imported to the machine store).
-  // Deduplicates by thumbprint so the same cert does not appear twice.
+  // The service runs as LocalSystem which has an empty CurrentUser cert store.
+  // We use WTSQueryUserToken to impersonate the interactive console user inside
+  // this PowerShell process (thread impersonation applies to cert store and CNG
+  // private-key access within the same process — no child-process boundary).
+  // Falls back gracefully to LocalMachine\My if no WTS session exists.
   const ps = `
-    $now = Get-Date
-    $seen = @{}
-    $results = @()
-    foreach ($loc in @('CurrentUser', 'LocalMachine')) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+public class PurchasingWtsList {
+    [DllImport("Wtsapi32.dll", SetLastError=true)]
+    public static extern bool WTSQueryUserToken(uint sessionId, ref IntPtr phToken);
+    [DllImport("kernel32.dll")]
+    public static extern uint WTSGetActiveConsoleSessionId();
+}
+'@
+    $wts_sid = [PurchasingWtsList]::WTSGetActiveConsoleSessionId()
+    $wts_tok = [IntPtr]::Zero
+    $wts_ctx = $null
+    if ($wts_sid -ne 0xFFFFFFFF) {
       try {
-        $st = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-          'My',
-          [System.Security.Cryptography.X509Certificates.StoreLocation]$loc)
-        $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-        foreach ($c in $st.Certificates) {
-          if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
-            $seen[$c.Thumbprint] = $true
-            $results += $c
-          }
+        if ([PurchasingWtsList]::WTSQueryUserToken($wts_sid, [ref]$wts_tok)) {
+          $wts_ctx = [System.Security.Principal.WindowsIdentity]::new($wts_tok).Impersonate()
         }
-        $st.Close()
       } catch { }
     }
-    if ($results.Count -eq 0) { '[]' } else {
-      $results | Select-Object @{
-        Name='thumbprint'; Expression={$_.Thumbprint}
-      }, @{
-        Name='subject'; Expression={$_.Subject}
-      }, @{
-        Name='issuer'; Expression={$_.Issuer}
-      }, @{
-        Name='notBefore'; Expression={$_.NotBefore.ToString('o')}
-      }, @{
-        Name='notAfter'; Expression={$_.NotAfter.ToString('o')}
-      }, @{
-        Name='ekus'; Expression={
-          ($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join ','
-        }
-      } | ConvertTo-Json -Depth 4 -Compress
+    try {
+      $now = Get-Date
+      $seen = @{}
+      $results = @()
+      foreach ($loc in @('CurrentUser', 'LocalMachine')) {
+        try {
+          $st = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+            'My',
+            [System.Security.Cryptography.X509Certificates.StoreLocation]$loc)
+          $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+          foreach ($c in $st.Certificates) {
+            if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
+              $seen[$c.Thumbprint] = $true
+              $results += $c
+            }
+          }
+          $st.Close()
+        } catch { }
+      }
+      if ($results.Count -eq 0) { '[]' } else {
+        $results | Select-Object @{
+          Name='thumbprint'; Expression={$_.Thumbprint}
+        }, @{
+          Name='subject'; Expression={$_.Subject}
+        }, @{
+          Name='issuer'; Expression={$_.Issuer}
+        }, @{
+          Name='notBefore'; Expression={$_.NotBefore.ToString('o')}
+        }, @{
+          Name='notAfter'; Expression={$_.NotAfter.ToString('o')}
+        }, @{
+          Name='ekus'; Expression={
+            ($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join ','
+          }
+        } | ConvertTo-Json -Depth 4 -Compress
+      }
+    } finally {
+      if ($wts_ctx) { $wts_ctx.Undo() }
     }
   `;
   const { stdout } = await execPowerShell(ps);
@@ -202,18 +229,50 @@ async function signData({ thumbprint, dataB64 }) {
   const outFile = tempFile("sign-out", ".sig");
   fs.writeFileSync(inFile, data);
   try {
-    // Authenticode signs the *file*, not the bytes — for a generic byte
-    // signature we use RSA via the cert's private key from the store.
+    // Impersonate the interactive console user so the service (LocalSystem)
+    // can access Cert:\CurrentUser\My and the user's CNG private key.
+    // Falls back to LocalMachine\My when WTS impersonation is unavailable.
     const ps = `
-      $cert = Get-ChildItem -Path 'Cert:\\CurrentUser\\My\\${thumbprint}'
-      if (-not $cert) { throw "Certificate not found" }
-      $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-      $bytes = [System.IO.File]::ReadAllBytes('${inFile.replace(/\\/g, "\\\\")}')
-      $sig = $rsa.SignData(
-        $bytes,
-        [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-        [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-      [System.IO.File]::WriteAllBytes('${outFile.replace(/\\/g, "\\\\")}', $sig)
+      Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+public class PurchasingWtsSign {
+    [DllImport("Wtsapi32.dll", SetLastError=true)]
+    public static extern bool WTSQueryUserToken(uint sessionId, ref IntPtr phToken);
+    [DllImport("kernel32.dll")]
+    public static extern uint WTSGetActiveConsoleSessionId();
+}
+'@
+      $wts_sid = [PurchasingWtsSign]::WTSGetActiveConsoleSessionId()
+      $wts_tok = [IntPtr]::Zero
+      $wts_ctx = $null
+      if ($wts_sid -ne 0xFFFFFFFF) {
+        try {
+          if ([PurchasingWtsSign]::WTSQueryUserToken($wts_sid, [ref]$wts_tok)) {
+            $wts_ctx = [System.Security.Principal.WindowsIdentity]::new($wts_tok).Impersonate()
+          }
+        } catch { }
+      }
+      try {
+        $cert = $null
+        foreach ($loc in @('CurrentUser', 'LocalMachine')) {
+          $p = "Cert:\\$loc\\My\\${thumbprint}"
+          $cert = Get-ChildItem -Path $p -ErrorAction SilentlyContinue
+          if ($cert) { break }
+        }
+        if (-not $cert) { throw "Certificate ${thumbprint} not found in CurrentUser or LocalMachine store" }
+        $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+        if (-not $rsa) { throw "No RSA private key accessible for certificate ${thumbprint}" }
+        $bytes = [System.IO.File]::ReadAllBytes('${inFile.replace(/\\/g, "\\\\")}')
+        $sig = $rsa.SignData(
+          $bytes,
+          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        [System.IO.File]::WriteAllBytes('${outFile.replace(/\\/g, "\\\\")}', $sig)
+      } finally {
+        if ($wts_ctx) { $wts_ctx.Undo() }
+      }
     `;
     await execPowerShell(ps);
     const sig = fs.readFileSync(outFile);
