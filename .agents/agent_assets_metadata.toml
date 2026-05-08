@@ -24,3 +24,9 @@ id = "zt261TKOb5pdy1I_avWIf"
 uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.2-rdp.zip"
 type = "unspecified"
 title = "SigningAgent-Setup 0.2.2 (RDP/VDI fix)"
+
+[[outputs]]
+id = "FzQ5qo_KeWvlAY9iaL5dA"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.3-rdp.zip"
+type = "unspecified"
+title = "SigningAgent-Setup 0.2.3"

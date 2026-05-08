@@ -183,9 +183,9 @@ public class PurchasingWtsList {
     $wts_ctx = $null
     $wts_psi = [IntPtr]::Zero
     $wts_cnt = 0
-    $wts_sids = [uint[]]@()
+    $wts_sids = [uint32[]]@()
     if ([PurchasingWtsList]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$wts_psi, [ref]$wts_cnt)) {
-      $wts_sz = [Runtime.InteropServices.Marshal]::SizeOf([PurchasingWtsList+WTS_SESSION_INFO])
+      $wts_sz = [Runtime.InteropServices.Marshal]::SizeOf((New-Object PurchasingWtsList+WTS_SESSION_INFO))
       for ($wts_i = 0; $wts_i -lt $wts_cnt; $wts_i++) {
         $wts_inf = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]::Add($wts_psi, $wts_i * $wts_sz), [type][PurchasingWtsList+WTS_SESSION_INFO])
         if ($wts_inf.State -eq 0 -or $wts_inf.State -eq 4) { $wts_sids += $wts_inf.SessionID }
@@ -383,9 +383,9 @@ try {
 $wtok = [IntPtr]::Zero
 $cpau_psi = [IntPtr]::Zero
 $cpau_cnt = 0
-$cpau_sids = [uint[]]@()
+$cpau_sids = [uint32[]]@()
 if ([PurchasingCPAU]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$cpau_psi, [ref]$cpau_cnt)) {
-  $cpau_sz = [Runtime.InteropServices.Marshal]::SizeOf([PurchasingCPAU+WTS_SESSION_INFO])
+  $cpau_sz = [Runtime.InteropServices.Marshal]::SizeOf((New-Object PurchasingCPAU+WTS_SESSION_INFO))
   for ($cpau_i = 0; $cpau_i -lt $cpau_cnt; $cpau_i++) {
     $cpau_inf = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]::Add($cpau_psi, $cpau_i * $cpau_sz), [type][PurchasingCPAU+WTS_SESSION_INFO])
     if ($cpau_inf.State -eq 0 -or $cpau_inf.State -eq 4) { $cpau_sids += $cpau_inf.SessionID }
