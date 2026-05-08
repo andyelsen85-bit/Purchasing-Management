@@ -70,6 +70,13 @@ const ALLOWED_ORIGINS = (
 )
   .map((s) => String(s).trim())
   .filter(Boolean);
+// When true, hardware-backed certs (smart cards, HSM tokens, redirected
+// smart cards via RDP/VDI) are excluded from the certificate picker.
+// Set to true if your signing certificates are software certs installed
+// locally on the machine and you want to hide smart card certs.
+const SOFTWARE_CERTS_ONLY = !!(
+  process.env.SOFTWARE_CERTS_ONLY === "true" || cfg.softwareCertsOnly
+);
 
 if (!SHARED_TOKEN || SHARED_TOKEN === "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARS") {
   console.error(
@@ -184,6 +191,23 @@ public class PurchasingWtsList {
           $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
           foreach ($c in $st.Certificates) {
             if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
+              ${SOFTWARE_CERTS_ONLY ? `$hwBacked = $false
+              try {
+                $pk = $c.PrivateKey
+                if ($pk -ne $null -and $pk.GetType().Name -eq 'RSACryptoServiceProvider') {
+                  $hwBacked = $pk.CspKeyContainerInfo.HardwareDevice
+                }
+              } catch {}
+              if (-not $hwBacked) {
+                try {
+                  $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
+                  if ($rsa -ne $null) {
+                    $prov = try { $rsa.Key.Provider.Provider } catch { '' }
+                    if ($prov -like '*Smart Card*' -or $prov -like '*SC KSP*' -or $prov -like '*SmartCard*') { $hwBacked = $true }
+                  }
+                } catch {}
+              }
+              if ($hwBacked) { continue }` : ""}
               $seen[$c.Thumbprint] = $true
               $results += $c
             }

@@ -7,5 +7,6 @@
   "allowedOrigins": [
     "https://purchasing.example.lan",
     "https://purchasing.example.com"
-  ]
+  ],
+  "softwareCertsOnly": false
 }

@@ -12,3 +12,9 @@ id = "jq_c2je2qJlLNz-fNcIbQ"
 uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.0-pades.zip"
 type = "unspecified"
 title = "SigningAgent-Setup 0.2.0 (PAdES)"
+
+[[outputs]]
+id = "1r64g_Fmnno0yEKQc9c7U"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.1-pades.zip"
+type = "unspecified"
+title = "SigningAgent-Setup 0.2.1"

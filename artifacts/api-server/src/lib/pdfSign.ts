@@ -62,11 +62,19 @@ export async function prepareForSigning(
   const byteRangeEnd =
     byteRangePlaceholderPosition + byteRangePlaceholder.length;
 
-  // Search for the Contents <00…00> hex string that follows ByteRange.
-  const placeholderStart = savedBytes.indexOf(0x3c /* '<' */, byteRangeEnd);
-  const placeholderEnd = savedBytes.indexOf(0x3e /* '>' */, placeholderStart);
-  if (placeholderStart === -1 || placeholderEnd === -1) {
-    throw new Error("Contents placeholder not found in prepared PDF");
+  // Search for the exact "/Contents <" byte sequence so we land on the
+  // Contents hex string and not on a stray dictionary "<<" bracket that
+  // also contains 0x3C.  pdflibAddPlaceholder always writes this exact key.
+  const CONTENTS_TAG = Buffer.from("/Contents <", "latin1");
+  const contentsTagIdx = savedBytes.indexOf(CONTENTS_TAG);
+  if (contentsTagIdx === -1) {
+    throw new Error("'/Contents <' tag not found in prepared PDF");
+  }
+  // placeholderStart points at the '<' that opens the hex string
+  const placeholderStart = contentsTagIdx + CONTENTS_TAG.length - 1;
+  const placeholderEnd = savedBytes.indexOf(0x3e /* '>' */, placeholderStart + 1);
+  if (placeholderEnd === -1) {
+    throw new Error("Contents placeholder closing '>' not found in prepared PDF");
   }
 
   const byteRange = [
