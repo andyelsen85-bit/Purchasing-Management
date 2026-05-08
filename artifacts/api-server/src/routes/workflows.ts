@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, sql, desc, isNull, isNotNull } from "drizzle-orm";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   db,
   workflowsTable,
@@ -895,40 +895,126 @@ async function buildWorkflowPackPdf(
   });
 
   const merged = await PDFDocument.create();
-  const font = await merged.embedFont(StandardFonts.Helvetica);
+  const fontReg  = await merged.embedFont(StandardFonts.Helvetica);
   const fontBold = await merged.embedFont(StandardFonts.HelveticaBold);
 
-  const cover = merged.addPage([595.28, 841.89]);
-  cover.drawText(`${wf.reference} — workflow pack`, {
-    x: 50,
-    y: 790,
-    size: 20,
-    font: fontBold,
+  // ── Colour palette — CHdN navy blue (GT Invest design) ────────────────────
+  const NAVY     = rgb(0.00, 0.22, 0.44);
+  const NAVY_MID = rgb(0.00, 0.37, 0.65);
+  const ACCENT   = rgb(0.13, 0.59, 0.84);
+  const ROW_ALT  = rgb(0.93, 0.96, 0.99);
+  const INFO_BG  = rgb(0.96, 0.97, 1.00);
+  const BORDER   = rgb(0.76, 0.86, 0.94);
+  const WHITE    = rgb(1.00, 1.00, 1.00);
+  const TXT      = rgb(0.12, 0.12, 0.12);
+  const MUTED    = rgb(0.44, 0.44, 0.44);
+  const HDR_SUB  = rgb(0.70, 0.86, 0.95);
+
+  // ── A4 portrait layout (595 × 842) ────────────────────────────────────────
+  const PW = 595.28, PH = 841.89;
+  const ML = 40, MR = 40, UW = PW - ML - MR;
+  const HDR_H = 108, HDR_BOT = PH - HDR_H;
+  const INFO_H = 22, FOOTER_H = 22;
+  const ROW_H = 16, TABLE_MIN_Y = FOOTER_H + 6;
+  const APP = "Purchasing Management";
+
+  const genDate = new Date().toLocaleDateString("fr-FR", {
+    day: "2-digit", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
   });
-  cover.drawText(wf.title.slice(0, 90), { x: 50, y: 762, size: 12, font });
-  const meta: [string, string][] = [
-    ["Step", String(wf.currentStep)],
-    ["Priority", String(wf.priority)],
-    ["Estimated", `${wf.estimatedAmount ?? "?"} ${wf.currency ?? ""}`],
-    ["Created", new Date(wf.createdAt).toISOString().slice(0, 10)],
-    ["Documents", String(docs.length)],
-  ];
-  let y = 730;
-  for (const [k, v] of meta) {
-    cover.drawText(`${k}:`, { x: 50, y, size: 10, font: fontBold });
-    cover.drawText(v, { x: 130, y, size: 10, font });
-    y -= 16;
-  }
-  y -= 8;
-  cover.drawText("Contents", { x: 50, y, size: 12, font: fontBold });
-  y -= 18;
-  for (const d of docs) {
-    if (y < 60) break;
-    const line = `• [${d.kind}] ${d.filename} (v${d.version}, ${d.mimeType})`;
-    cover.drawText(line.slice(0, 95), { x: 50, y, size: 9, font });
-    y -= 14;
+
+  // Sanitise user text to Helvetica-safe ASCII
+  function safe(s: string) { return s.replace(/[^\x20-\x7E]/g, "?"); }
+  function trunc(s: string, max: number) {
+    return s.length > max ? s.slice(0, max - 1) + ">" : s;
   }
 
+  type Page = ReturnType<typeof merged.addPage>;
+
+  function drawChrome(
+    page: Page,
+    title: string,
+    subtitle: string,
+    badge: string,
+    pageNum: number,
+  ) {
+    // Header band
+    page.drawRectangle({ x: 0, y: HDR_BOT, width: PW, height: HDR_H, color: NAVY });
+    page.drawRectangle({ x: 0, y: HDR_BOT, width: PW, height: 5,     color: ACCENT });
+    page.drawRectangle({ x: PW - 10, y: HDR_BOT, width: 10, height: HDR_H, color: NAVY_MID });
+    page.drawText(trunc(title, 46),    { x: ML, y: PH - 43, size: 20, font: fontBold, color: WHITE });
+    page.drawText(trunc(subtitle, 74), { x: ML, y: PH - 67, size: 10, font: fontReg,  color: HDR_SUB });
+    page.drawText(APP,                 { x: ML, y: PH - 84, size:  8, font: fontReg,  color: HDR_SUB });
+    if (badge) {
+      const bw = fontBold.widthOfTextAtSize(badge, 9);
+      page.drawText(badge, { x: PW - MR - 14 - bw, y: PH - 26, size: 9, font: fontBold, color: WHITE });
+    }
+    // Info band
+    const infoY = HDR_BOT - INFO_H;
+    page.drawRectangle({ x: 0, y: infoY, width: PW, height: INFO_H, color: INFO_BG });
+    page.drawLine({ start: { x: 0, y: infoY }, end: { x: PW, y: infoY }, thickness: 0.5, color: BORDER });
+    page.drawText(`G\xE9n\xE9r\xE9 le ${genDate}`, { x: ML, y: infoY + 7, size: 7.5, font: fontReg, color: MUTED });
+    // Footer
+    page.drawRectangle({ x: 0, y: 0, width: PW, height: FOOTER_H, color: INFO_BG });
+    page.drawLine({ start: { x: 0, y: FOOTER_H }, end: { x: PW, y: FOOTER_H }, thickness: 0.5, color: BORDER });
+    page.drawText(APP, { x: ML, y: 8, size: 7, font: fontReg, color: MUTED });
+    const pgLabel = `Page ${pageNum}`;
+    page.drawText(pgLabel, {
+      x: PW - MR - fontReg.widthOfTextAtSize(pgLabel, 7),
+      y: 8, size: 7, font: fontReg, color: MUTED,
+    });
+  }
+
+  // ── Cover page ─────────────────────────────────────────────────────────────
+  const docBadge = `${docs.length} document${docs.length !== 1 ? "s" : ""}`;
+  const cover = merged.addPage([PW, PH]);
+  drawChrome(cover, safe(wf.reference), safe(trunc(wf.title, 90)), docBadge, 1);
+
+  // Metadata rows
+  let curY = HDR_BOT - INFO_H - 14;
+  const metaRows: [string, string][] = [
+    ["\xC9tape",          safe(String(wf.currentStep))],
+    ["Priorit\xE9",       safe(String(wf.priority))],
+    ["Montant estim\xE9", safe(`${wf.estimatedAmount ?? "?"} ${wf.currency ?? ""}`.trim())],
+    ["Cr\xE9\xE9 le",    new Date(wf.createdAt).toLocaleDateString("fr-FR")],
+  ];
+  for (const [k, v] of metaRows) {
+    cover.drawText(`${k} :`, { x: ML, y: curY, size: 9, font: fontBold, color: NAVY_MID });
+    cover.drawText(v,         { x: ML + 130, y: curY, size: 9, font: fontReg,  color: TXT });
+    curY -= 15;
+  }
+
+  // Documents table
+  curY -= 10;
+  const COL_KIND_W = 120, COL_VER_W = 30;
+  const COL_FILE_W = UW - COL_KIND_W - COL_VER_W;
+  const X_FILE = ML + COL_KIND_W, X_VER = ML + COL_KIND_W + COL_FILE_W;
+
+  // Column header bar
+  cover.drawRectangle({ x: ML, y: curY - ROW_H, width: UW, height: ROW_H, color: NAVY_MID });
+  cover.drawLine({ start: { x: X_FILE, y: curY - ROW_H }, end: { x: X_FILE, y: curY }, thickness: 0.3, color: WHITE });
+  cover.drawLine({ start: { x: X_VER,  y: curY - ROW_H }, end: { x: X_VER,  y: curY }, thickness: 0.3, color: WHITE });
+  cover.drawText("Type",    { x: ML + 4,     y: curY - ROW_H + 5, size: 7.5, font: fontBold, color: WHITE });
+  cover.drawText("Fichier", { x: X_FILE + 4, y: curY - ROW_H + 5, size: 7.5, font: fontBold, color: WHITE });
+  cover.drawText("v",       { x: X_VER + 4,  y: curY - ROW_H + 5, size: 7.5, font: fontBold, color: WHITE });
+  curY -= ROW_H;
+
+  let rowAlt = false;
+  for (const d of docs) {
+    if (curY - ROW_H < TABLE_MIN_Y) break;
+    if (rowAlt) cover.drawRectangle({ x: ML, y: curY - ROW_H, width: UW, height: ROW_H, color: ROW_ALT });
+    cover.drawLine({ start: { x: ML,     y: curY - ROW_H }, end: { x: ML + UW, y: curY - ROW_H }, thickness: 0.3, color: BORDER });
+    cover.drawLine({ start: { x: X_FILE, y: curY - ROW_H }, end: { x: X_FILE,  y: curY          }, thickness: 0.3, color: BORDER });
+    cover.drawLine({ start: { x: X_VER,  y: curY - ROW_H }, end: { x: X_VER,   y: curY          }, thickness: 0.3, color: BORDER });
+    cover.drawText(safe(d.kind),                 { x: ML + 4,     y: curY - ROW_H + 4, size: 7.5, font: fontReg, color: MUTED });
+    cover.drawText(trunc(safe(d.filename), 56),  { x: X_FILE + 4, y: curY - ROW_H + 4, size: 7.5, font: fontReg, color: TXT   });
+    cover.drawText(String(d.version),            { x: X_VER + 4,  y: curY - ROW_H + 4, size: 7.5, font: fontReg, color: TXT   });
+    curY -= ROW_H;
+    rowAlt = !rowAlt;
+  }
+
+  // ── Merge attachments ──────────────────────────────────────────────────────
+  let pageNum = 2;
   for (const d of docs) {
     if (d.mimeType === "application/pdf") {
       try {
@@ -936,45 +1022,31 @@ async function buildWorkflowPackPdf(
         const src = await PDFDocument.load(buf, { ignoreEncryption: true });
         const pages = await merged.copyPages(src, src.getPageIndices());
         for (const p of pages) merged.addPage(p);
+        pageNum += src.getPageCount();
       } catch (err) {
-        log?.warn?.(
-          { err: String(err), workflowId: wf.id, documentId: d.id },
-          "Failed to merge PDF",
+        log?.warn?.({ err: String(err), workflowId: wf.id, documentId: d.id }, "Failed to merge PDF");
+        const sep = merged.addPage([PW, PH]);
+        drawChrome(
+          sep,
+          trunc(safe(d.filename), 42),
+          safe(`${d.kind} - impossible d'integrer ce document`),
+          "",
+          pageNum++,
         );
-        const sep = merged.addPage([595.28, 841.89]);
-        sep.drawText(`${d.kind} — ${d.filename}`, {
-          x: 50,
-          y: 780,
-          size: 14,
-          font: fontBold,
-        });
-        sep.drawText("This PDF could not be opened and was skipped.", {
-          x: 50,
-          y: 750,
-          size: 10,
-          font,
-        });
       }
     } else {
-      const sep = merged.addPage([595.28, 841.89]);
-      sep.drawText(`${d.kind} — ${d.filename}`, {
-        x: 50,
-        y: 780,
-        size: 14,
-        font: fontBold,
-      });
-      sep.drawText(`MIME type: ${d.mimeType}`, {
-        x: 50,
-        y: 754,
-        size: 10,
-        font,
-      });
-      sep.drawText("(Non-PDF attachment cannot be inlined.)", {
-        x: 50,
-        y: 736,
-        size: 10,
-        font,
-      });
+      const sep = merged.addPage([PW, PH]);
+      drawChrome(
+        sep,
+        trunc(safe(d.filename), 42),
+        safe(`${d.kind} - Type : ${d.mimeType}`),
+        "",
+        pageNum++,
+      );
+      sep.drawText(
+        "(Pi\xE8ce non-PDF - impossible de l'incorporer dans le pack)",
+        { x: ML, y: HDR_BOT - INFO_H - 40, size: 10, font: fontReg, color: MUTED },
+      );
     }
   }
 
@@ -1004,131 +1076,14 @@ router.get(
       return;
     }
 
-    // Load every current revision; we sort in-memory so the cover sheet
-    // and concatenation order are stable regardless of upload order.
-    const docs = (
-      await db
-        .select()
-        .from(documentsTable)
-        .where(eq(documentsTable.workflowId, wf.id))
-    ).filter((d) => d.isCurrent);
-
-    const KIND_ORDER: Record<string, number> = {
-      QUOTE: 0,
-      GT_INVEST_WINNER: 1,
-      ORDER: 2,
-      DELIVERY: 3,
-      INVOICE: 4,
-      OTHER: 5,
-    };
-    docs.sort((a, b) => {
-      const ka = KIND_ORDER[a.kind] ?? 99;
-      const kb = KIND_ORDER[b.kind] ?? 99;
-      if (ka !== kb) return ka - kb;
-      return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
-    });
-
-    const merged = await PDFDocument.create();
-    const font = await merged.embedFont(StandardFonts.Helvetica);
-    const fontBold = await merged.embedFont(StandardFonts.HelveticaBold);
-
-    // ---------------- cover sheet ----------------
-    const cover = merged.addPage([595.28, 841.89]); // A4 portrait
-    cover.drawText(`${wf.reference} — workflow pack`, {
-      x: 50,
-      y: 790,
-      size: 20,
-      font: fontBold,
-    });
-    cover.drawText(wf.title.slice(0, 90), {
-      x: 50,
-      y: 762,
-      size: 12,
-      font,
-    });
-    const meta: [string, string][] = [
-      ["Step", String(wf.currentStep)],
-      ["Priority", String(wf.priority)],
-      ["Estimated", `${wf.estimatedAmount ?? "?"} ${wf.currency ?? ""}`],
-      [
-        "Created",
-        new Date(wf.createdAt).toISOString().slice(0, 10),
-      ],
-      ["Documents", String(docs.length)],
-    ];
-    let y = 730;
-    for (const [k, v] of meta) {
-      cover.drawText(`${k}:`, { x: 50, y, size: 10, font: fontBold });
-      cover.drawText(v, { x: 130, y, size: 10, font });
-      y -= 16;
-    }
-    y -= 8;
-    cover.drawText("Contents", { x: 50, y, size: 12, font: fontBold });
-    y -= 18;
-    for (const d of docs) {
-      if (y < 60) break;
-      const line = `• [${d.kind}] ${d.filename} (v${d.version}, ${d.mimeType})`;
-      cover.drawText(line.slice(0, 95), { x: 50, y, size: 9, font });
-      y -= 14;
-    }
-
-    // ---------------- attachments ----------------
-    for (const d of docs) {
-      if (d.mimeType === "application/pdf") {
-        try {
-          const buf = Buffer.from(d.contentBase64, "base64");
-          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
-          const pages = await merged.copyPages(src, src.getPageIndices());
-          for (const p of pages) merged.addPage(p);
-        } catch (err) {
-          req.log?.warn(
-            { err: String(err), workflowId: wf.id, documentId: d.id },
-            "Failed to merge PDF",
-          );
-          const sep = merged.addPage([595.28, 841.89]);
-          sep.drawText(`${d.kind} — ${d.filename}`, {
-            x: 50,
-            y: 780,
-            size: 14,
-            font: fontBold,
-          });
-          sep.drawText("This PDF could not be opened and was skipped.", {
-            x: 50,
-            y: 750,
-            size: 10,
-            font,
-          });
-        }
-      } else {
-        const sep = merged.addPage([595.28, 841.89]);
-        sep.drawText(`${d.kind} — ${d.filename}`, {
-          x: 50,
-          y: 780,
-          size: 14,
-          font: fontBold,
-        });
-        sep.drawText(`MIME type: ${d.mimeType}`, {
-          x: 50,
-          y: 754,
-          size: 10,
-          font,
-        });
-        sep.drawText("(Non-PDF attachment cannot be inlined.)", {
-          x: 50,
-          y: 736,
-          size: 10,
-          font,
-        });
-      }
-    }
-
+    const merged = await buildWorkflowPackPdf(wf, req.log);
     const bytes = await merged.save();
     await audit(
       user.id,
       "WORKFLOW_EXPORT_PDF",
       "workflow",
       wf.id,
-      `${docs.length} documents`,
+      "PDF export\xE9",
     );
 
     res.setHeader("Content-Type", "application/pdf");

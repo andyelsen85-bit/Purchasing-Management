@@ -53,27 +53,32 @@ async function drawSignatureVisual(
     minute: "2-digit",
   });
 
-  // Header band — 60 % opaque so underlying page content shows through
+  // CHdN green palette — RGB(150, 180, 35)
+  const GREEN      = rgb(150 / 255, 180 / 255,  35 / 255); // #96B423
+  const GREEN_DARK = rgb( 80 / 255, 100 / 255,  12 / 255); // labels
+  const GREEN_LIGHT = rgb(0.94, 0.97, 0.87);               // body bg
+
+  // Header band — 50 % opaque (CHdN green)
   firstPage.drawRectangle({
     x,
     y: y + BOX_H - 17,
     width: BOX_W,
     height: 17,
-    color: rgb(0.13, 0.22, 0.55),
-    opacity: 0.6,
+    color: GREEN,
+    opacity: 0.5,
   });
 
-  // Body background — same 60 % opacity
+  // Body background — same 50 % opacity
   firstPage.drawRectangle({
     x,
     y,
     width: BOX_W,
     height: BOX_H - 17,
-    color: rgb(0.94, 0.95, 0.99),
-    borderColor: rgb(0.13, 0.22, 0.55),
+    color: GREEN_LIGHT,
+    borderColor: GREEN,
     borderWidth: 1,
-    opacity: 0.6,
-    borderOpacity: 0.6,
+    opacity: 0.5,
+    borderOpacity: 0.5,
   });
 
   // Header text
@@ -100,7 +105,7 @@ async function drawSignatureVisual(
       y: lineY,
       size: 7,
       font: fontBold,
-      color: rgb(0.13, 0.22, 0.55),
+      color: GREEN_DARK,
     });
     firstPage.drawText(value, {
       x: x + 36,
