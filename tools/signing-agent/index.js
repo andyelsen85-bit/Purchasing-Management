@@ -217,19 +217,21 @@ public class PurchasingWtsList {
           foreach ($c in $st.Certificates) {
             if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
               # HasPrivateKey only checks the key provider association, NOT whether
-              # the key material is present and accessible. Verify it for real by
-              # trying to open the key handle — certs with orphaned or inaccessible
-              # keys (imported without private key, key deleted, wrong machine, etc.)
-              # are silently skipped so they never appear in the picker.
+              # the key material is present and accessible. We verify it is at least
+              # an RSA cert with a resolvable key object — certs that have no RSA key
+              # at all (EC, orphaned reference, public-only import) are excluded.
+              # We deliberately do NOT call .KeySize here because that goes through
+              # the CNG keyiso RPC service which ignores thread-level impersonation;
+              # it would drop valid CNG certs from the list.
               $keyOk = $false
               try {
                 $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
-                if ($rsa -ne $null) { $null = $rsa.KeySize; $keyOk = $true }
+                if ($rsa -ne $null) { $keyOk = $true }
               } catch {}
               if (-not $keyOk) {
                 try {
                   $pk = $c.PrivateKey
-                  if ($pk -ne $null) { $null = $pk.KeySize; $keyOk = $true }
+                  if ($pk -ne $null) { $keyOk = $true }
                 } catch {}
               }
               if (-not $keyOk) { continue }
@@ -349,7 +351,7 @@ async function signData({ thumbprint, dataB64 }) {
       `      $enc=$r.Encode()`,
       `      if($enc -and $enc.Length -gt 0){[IO.File]::WriteAllBytes('${outEsc}',$enc);exit 0}`,
       `      $errs+='encode-empty'`,
-      `    } else { $errs+=($sha+'/'+($silent?'silent':'ui')+': '+$r) }`,
+      `    } else { $errs+=($sha+'/'+$(if($silent){'silent'}else{'ui'})+': '+$r) }`,
       `  }`,
       `}`,
       `try{[IO.File]::WriteAllText('${errEsc}',$errs -join ' | ',[Text.Encoding]::UTF8)}catch{}`,
@@ -588,7 +590,7 @@ const httpServer = http.createServer(async (req, res) => {
     // revealing the full secret.
     res.end(JSON.stringify({
       ok: true,
-      version: "0.2.6",
+      version: "0.2.7",
       tokenLen: SHARED_TOKEN.length,
       tokenPrefix: SHARED_TOKEN.slice(0, 8),
     }));

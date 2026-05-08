@@ -48,3 +48,9 @@ id = "XlaKbNaLir8MxtIwRb5eW"
 uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.6-key-check.zip"
 type = "unspecified"
 title = "SigningAgent-Setup-0.2.6 (cert key check)"
+
+[[outputs]]
+id = "xdSR5NqNLy6t02gWb8ux8"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.7-fixes.zip"
+type = "unspecified"
+title = "SigningAgent-Setup-0.2.7 (2 bugs fixes)"
