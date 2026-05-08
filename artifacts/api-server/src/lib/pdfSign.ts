@@ -1,6 +1,6 @@
 import { pdflibAddPlaceholder } from "@signpdf/placeholder-pdf-lib";
 import { findByteRange } from "@signpdf/utils";
-import type { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import crypto from "node:crypto";
 
 // 16 KB hex-padding window for the PKCS#7 SignedData blob. A typical
@@ -23,11 +23,102 @@ export interface PrepareOptions {
   contactInfo?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Visual signature block — drawn directly into the page content stream so it
+// is covered by the signed ByteRange and cannot be altered after signing.
+// Placed in the bottom-right corner of the last page.
+// ---------------------------------------------------------------------------
+async function drawSignatureVisual(
+  pdfDoc: PDFDocument,
+  opts: PrepareOptions,
+): Promise<void> {
+  const lastPage = pdfDoc.getPage(pdfDoc.getPageCount() - 1);
+  const { width } = lastPage.getSize();
+
+  const BOX_W = 210;
+  const BOX_H = 78;
+  const MARGIN = 14;
+  const x = width - BOX_W - MARGIN;
+  const y = MARGIN;
+
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const now = new Date();
+  const dateStr = now.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  // Header band
+  lastPage.drawRectangle({
+    x,
+    y: y + BOX_H - 17,
+    width: BOX_W,
+    height: 17,
+    color: rgb(0.13, 0.22, 0.55),
+  });
+
+  // Body background
+  lastPage.drawRectangle({
+    x,
+    y,
+    width: BOX_W,
+    height: BOX_H - 17,
+    color: rgb(0.94, 0.95, 0.99),
+    borderColor: rgb(0.13, 0.22, 0.55),
+    borderWidth: 1,
+  });
+
+  // Header text
+  lastPage.drawText("SIGNATURE ELECTRONIQUE", {
+    x: x + 6,
+    y: y + BOX_H - 12,
+    size: 7,
+    font: fontBold,
+    color: rgb(1, 1, 1),
+  });
+
+  // Body lines
+  const lines: [string, string][] = [
+    ["Par", (opts.name ?? "").slice(0, 34)],
+    ["Motif", (opts.reason ?? "").slice(0, 34)],
+    ["Lieu", (opts.location ?? "").slice(0, 34)],
+    ["Date", dateStr],
+  ];
+
+  let lineY = y + BOX_H - 29;
+  for (const [label, value] of lines) {
+    lastPage.drawText(`${label} :`, {
+      x: x + 6,
+      y: lineY,
+      size: 7,
+      font: fontBold,
+      color: rgb(0.13, 0.22, 0.55),
+    });
+    lastPage.drawText(value, {
+      x: x + 36,
+      y: lineY,
+      size: 7,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    lineY -= 11;
+  }
+}
+
 /**
  * Add a PAdES signature placeholder to a PDF and return both the prepared
  * bytes (with /ByteRange already patched to the real offsets) and the
  * `signTarget` — the bytes covered by ByteRange that the external signer
  * must hash and sign with PKCS#7 SignedData (detached).
+ *
+ * A visible signature block is drawn on the last page **before** the crypto
+ * placeholder is inserted so it falls inside the signed byte ranges and
+ * cannot be altered post-signing.
  *
  * The PDF length is preserved from the placeholder add through the final
  * `embedSignature` call, so the byte offsets baked into /ByteRange remain
@@ -38,6 +129,10 @@ export async function prepareForSigning(
   pdfDoc: PDFDocument,
   opts: PrepareOptions = {},
 ): Promise<PreparedSign> {
+  // Draw the visible signature block first — it must be inside the signed
+  // byte ranges so it is tamper-evident.
+  await drawSignatureVisual(pdfDoc, opts);
+
   pdflibAddPlaceholder({
     pdfDoc,
     reason: opts.reason ?? "Validation facture",
