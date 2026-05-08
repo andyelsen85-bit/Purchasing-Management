@@ -2862,14 +2862,13 @@ function PaymentPanel({
 
   return (
     <div className="space-y-4">
-      <PriorStepsRecap wf={wf} throughStep="PAYMENT" />
     <Card>
       <CardHeader>
         <CardTitle>Paiement</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Consultez le récapitulatif ci-dessus, puis cliquez sur <em>Payer</em> une fois le virement de{" "}
+          Consultez le récapitulatif ci-dessous, puis cliquez sur <em>Payer</em> une fois le virement de{" "}
           <strong>
             {wf.invoiceAmount} €
           </strong>{" "}
@@ -2901,6 +2900,7 @@ function PaymentPanel({
         </div>
       </CardContent>
     </Card>
+      <PriorStepsRecap wf={wf} throughStep="PAYMENT" />
     </div>
   );
 }
