@@ -216,18 +216,35 @@ public class PurchasingWtsList {
           $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
           foreach ($c in $st.Certificates) {
             if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {
+              # HasPrivateKey only checks the key provider association, NOT whether
+              # the key material is present and accessible. Verify it for real by
+              # trying to open the key handle — certs with orphaned or inaccessible
+              # keys (imported without private key, key deleted, wrong machine, etc.)
+              # are silently skipped so they never appear in the picker.
+              $keyOk = $false
+              try {
+                $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
+                if ($rsa -ne $null) { $null = $rsa.KeySize; $keyOk = $true }
+              } catch {}
+              if (-not $keyOk) {
+                try {
+                  $pk = $c.PrivateKey
+                  if ($pk -ne $null) { $null = $pk.KeySize; $keyOk = $true }
+                } catch {}
+              }
+              if (-not $keyOk) { continue }
               ${SOFTWARE_CERTS_ONLY ? `$hwBacked = $false
               try {
-                $pk = $c.PrivateKey
-                if ($pk -ne $null -and $pk.GetType().Name -eq 'RSACryptoServiceProvider') {
-                  $hwBacked = $pk.CspKeyContainerInfo.HardwareDevice
+                $pk2 = $c.PrivateKey
+                if ($pk2 -ne $null -and $pk2.GetType().Name -eq 'RSACryptoServiceProvider') {
+                  $hwBacked = $pk2.CspKeyContainerInfo.HardwareDevice
                 }
               } catch {}
               if (-not $hwBacked) {
                 try {
-                  $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
-                  if ($rsa -ne $null) {
-                    $prov = try { $rsa.Key.Provider.Provider } catch { '' }
+                  $rsa2 = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
+                  if ($rsa2 -ne $null) {
+                    $prov = try { $rsa2.Key.Provider.Provider } catch { '' }
                     if ($prov -like '*Smart Card*' -or $prov -like '*SC KSP*' -or $prov -like '*SmartCard*') { $hwBacked = $true }
                   }
                 } catch {}
@@ -571,7 +588,7 @@ const httpServer = http.createServer(async (req, res) => {
     // revealing the full secret.
     res.end(JSON.stringify({
       ok: true,
-      version: "0.2.5",
+      version: "0.2.6",
       tokenLen: SHARED_TOKEN.length,
       tokenPrefix: SHARED_TOKEN.slice(0, 8),
     }));
