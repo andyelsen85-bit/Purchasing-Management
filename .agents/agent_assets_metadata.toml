@@ -60,3 +60,9 @@ id = "Pe2NWK1VOUuqnTyNf57C2"
 uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.8-cpau-list.zip"
 type = "unspecified"
 title = "SigningAgent-Setup-0.2.8 (fix cert listing)"
+
+[[outputs]]
+id = "WUZFx-Nte6g1gDGjTEYkV"
+uri = "file://tools/signing-agent/installer/dist/SigningAgent-Setup-0.2.9-sc-filter.zip"
+type = "unspecified"
+title = "SigningAgent-Setup-0.2.9 (smartcard filter)"

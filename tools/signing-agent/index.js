@@ -166,34 +166,62 @@ async function listCerts() {
     const outEsc = outFile.replace(/\\/g, "\\\\");
 
     // ── Inner script: runs AS the interactive user via CreateProcessAsUser ──
-    // Enumerates CurrentUser\My and LocalMachine\My, applies key-accessibility
-    // checks (safe to call .KeySize here — this is a real user process token,
-    // not thread impersonation, so keyiso RPC honours it correctly), then
-    // writes the JSON array to outFile and exits 0.
+    // Strategy for correct, non-blocking cert enumeration:
+    //
+    //   1. Read the key provider name from the cert's CRYPT_KEY_PROV_INFO
+    //      property bag via CertGetCertificateContextProperty — this is a
+    //      pure memory read, zero crypto operations, zero smartcard I/O.
+    //
+    //   2. Filter out smartcard certs by provider name BEFORE touching any
+    //      key handle. Calling .KeySize, GetRSAPrivateKey, or PrivateKey on
+    //      a smartcard cert opens the NCrypt/CAPI handle which triggers a
+    //      PIN dialog; with CREATE_NO_WINDOW that dialog never appears and
+    //      the process blocks until the 30-second WaitForSingleObject timeout
+    //      (exit code 259 = STILL_ACTIVE).
+    //
+    //   3. For the remaining (software) certs we trust HasPrivateKey=true.
+    //      The signing step will report a clear error if the key is truly gone.
+    //
+    //   CRYPT_KEY_PROV_INFO layout (x64):
+    //     offset 0: pwszContainerName (LPWSTR, 8 bytes)
+    //     offset 8: pwszProvName      (LPWSTR, 8 bytes)  ← what we read
+    //     offset 16: dwProvType, dwFlags, cProvParam...
     const innerPs = [
-      `Add-Type -AssemblyName System.Security`,
+      `Add-Type -TypeDefinition @'`,
+      `using System;`,
+      `using System.Runtime.InteropServices;`,
+      `public class PurchasingCertHelper {`,
+      `  [DllImport("crypt32.dll", SetLastError=true)]`,
+      `  public static extern bool CertGetCertificateContextProperty(`,
+      `    IntPtr pCert, uint dwPropId, IntPtr pvData, ref uint pcbData);`,
+      `  public static string GetKeyProviderName(IntPtr pCert) {`,
+      `    uint sz = 0;`,
+      `    if (!CertGetCertificateContextProperty(pCert, 2, IntPtr.Zero, ref sz)) return null;`,
+      `    IntPtr buf = Marshal.AllocHGlobal((int)sz);`,
+      `    try {`,
+      `      if (!CertGetCertificateContextProperty(pCert, 2, buf, ref sz)) return null;`,
+      `      IntPtr pName = Marshal.ReadIntPtr(buf, IntPtr.Size);`,  // pwszProvName is 2nd LPWSTR field
+      `      return pName != IntPtr.Zero ? Marshal.PtrToStringUni(pName) : null;`,
+      `    } finally { Marshal.FreeHGlobal(buf); }`,
+      `  }`,
+      `}`,
+      `'@`,
       `$now = Get-Date`,
       `$seen = @{}`,
       `$results = @()`,
+      `$scProvs = @('Smart Card','SC KSP','SmartCard','YKCS11','Yubico','eToken','SafeNet')`,
       `foreach ($loc in @('CurrentUser','LocalMachine')) {`,
       `  try {`,
       `    $st = [System.Security.Cryptography.X509Certificates.X509Store]::new('My',[System.Security.Cryptography.X509Certificates.StoreLocation]$loc)`,
       `    $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)`,
       `    foreach ($c in $st.Certificates) {`,
-      `      if ($c.HasPrivateKey -and $c.NotAfter -gt $now -and -not $seen[$c.Thumbprint]) {`,
-      `        $keyOk = $false`,
-      `        try { $rsa=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c); if($rsa -ne $null){$null=$rsa.KeySize;$keyOk=$true} } catch {}`,
-      `        if (-not $keyOk) { try { $pk=$c.PrivateKey; if($pk -ne $null){$null=$pk.KeySize;$keyOk=$true} } catch {} }`,
-      `        if (-not $keyOk) { continue }`,
-      ...(SOFTWARE_CERTS_ONLY ? [
-      `        $hwBacked = $false`,
-      `        try { $pk2=$c.PrivateKey; if($pk2 -ne $null -and $pk2.GetType().Name -eq 'RSACryptoServiceProvider'){$hwBacked=$pk2.CspKeyContainerInfo.HardwareDevice} } catch {}`,
-      `        if (-not $hwBacked) { try { $rsa2=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c); if($rsa2 -ne $null){$prov=try{$rsa2.Key.Provider.Provider}catch{''}; if($prov -like '*Smart Card*' -or $prov -like '*SC KSP*' -or $prov -like '*SmartCard*'){$hwBacked=$true}} } catch {} }`,
-      `        if ($hwBacked) { continue }`,
-      ] : []),
-      `        $seen[$c.Thumbprint] = $true`,
-      `        $results += $c`,
-      `      }`,
+      `      if (-not $c.HasPrivateKey -or $c.NotAfter -le $now -or $seen[$c.Thumbprint]) { continue }`,
+      `      $prov = try { [PurchasingCertHelper]::GetKeyProviderName($c.Handle) } catch { $null }`,
+      `      $isSC = $false`,
+      `      if ($prov) { foreach ($k in $scProvs) { if ($prov -like "*$k*") { $isSC = $true; break } } }`,
+      `      if ($isSC) { continue }`,
+      `      $seen[$c.Thumbprint] = $true`,
+      `      $results += $c`,
       `    }`,
       `    $st.Close()`,
       `  } catch {}`,
@@ -622,7 +650,7 @@ const httpServer = http.createServer(async (req, res) => {
     // revealing the full secret.
     res.end(JSON.stringify({
       ok: true,
-      version: "0.2.8",
+      version: "0.2.9",
       tokenLen: SHARED_TOKEN.length,
       tokenPrefix: SHARED_TOKEN.slice(0, 8),
     }));
