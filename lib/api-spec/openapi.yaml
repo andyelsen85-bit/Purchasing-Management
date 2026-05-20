@@ -1450,6 +1450,7 @@ components:
         # Step 5 - Ordering
         orderNumber: { type: ["string", "null"] }
         orderDate: { type: ["string", "null"], format: date }
+        amortissementNumbers: { type: ["string", "null"] }
         # Step 6 - Delivery
         deliveredOn: { type: ["string", "null"], format: date }
         deliveryNotes: { type: ["string", "null"] }
@@ -1585,6 +1586,7 @@ components:
         gtInvestComment: { type: ["string", "null"] }
         orderNumber: { type: ["string", "null"] }
         orderDate: { type: ["string", "null"], format: date }
+        amortissementNumbers: { type: ["string", "null"] }
         deliveredOn: { type: ["string", "null"], format: date }
         deliveryNotes: { type: ["string", "null"] }
         invoiceNumber: { type: ["string", "null"] }

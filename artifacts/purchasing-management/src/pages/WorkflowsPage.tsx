@@ -30,6 +30,7 @@ export function WorkflowsPage() {
   const [status, setStatus] = useState<"ACTIVE" | "ALL" | "DONE" | "REJECTED">(
     "ACTIVE",
   );
+  const [filterPriority, setFilterPriority] = useState<string>("ALL");
   const params = {
     ...(q ? { q } : {}),
     ...(step !== "ALL" ? { step: step as keyof typeof WorkflowStep } : {}),
@@ -43,7 +44,7 @@ export function WorkflowsPage() {
     if (status === "REJECTED") return w.currentStep === "REJECTED";
     // ACTIVE
     return w.currentStep !== "DONE" && w.currentStep !== "REJECTED";
-  });
+  }).filter((w) => filterPriority === "ALL" || w.priority === filterPriority);
 
   return (
     <div className="space-y-6 p-6">
@@ -71,7 +72,7 @@ export function WorkflowsPage() {
             <Filter className="h-4 w-4" /> Filters
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -107,6 +108,16 @@ export function WorkflowsPage() {
               <SelectItem value="ALL">Toutes les demandes</SelectItem>
               <SelectItem value="DONE">Terminées</SelectItem>
               <SelectItem value="REJECTED">Clôturées</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterPriority} onValueChange={setFilterPriority}>
+            <SelectTrigger data-testid="select-priority">
+              <SelectValue placeholder="Priorité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Toutes les priorités</SelectItem>
+              <SelectItem value="NORMAL">Normal</SelectItem>
+              <SelectItem value="URGENT">Urgent</SelectItem>
             </SelectContent>
           </Select>
           <Select value={departmentId} onValueChange={setDepartmentId}>

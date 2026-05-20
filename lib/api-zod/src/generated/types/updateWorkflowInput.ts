@@ -44,6 +44,8 @@ export interface UpdateWorkflowInput {
   /** @nullable */
   orderDate?: Date | null;
   /** @nullable */
+  amortissementNumbers?: string | null;
+  /** @nullable */
   deliveredOn?: Date | null;
   /** @nullable */
   deliveryNotes?: string | null;

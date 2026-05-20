@@ -1254,7 +1254,7 @@ function QuotationPanel({
               />
             </div>
             <div className="col-span-2 space-y-1">
-              <Label className="text-xs">Retenu</Label>
+              <Label className="text-xs">Offre retenue</Label>
               {threeQuotesRequired ? (
                 <Button
                   type="button"
@@ -1264,14 +1264,14 @@ function QuotationPanel({
                   onClick={() => setWinning(idx)}
                   data-testid={`button-winning-${idx}`}
                 >
-                  {q.winning ? "Sélectionné" : "Choisir"}
+                  {q.winning ? "Offre retenue" : "Non retenue"}
                 </Button>
               ) : (
                 <div
                   className="flex h-9 w-full items-center justify-center rounded-md border bg-muted/50 text-xs text-muted-foreground"
                   data-testid={`text-winning-auto-${idx}`}
                 >
-                  {idx === 0 ? "Retenu" : "—"}
+                  {idx === 0 ? "Offre retenue" : "—"}
                 </div>
               )}
             </div>
@@ -1705,13 +1705,20 @@ function ManagerApprovePanel({
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1">
-            <Label>Commentaire</Label>
+            <Label>
+              Commentaire{wf.threeQuoteRequired && <span className="text-destructive ml-0.5">*</span>}
+            </Label>
             <Textarea
               rows={3}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               data-testid="input-manager-comment"
             />
+            {wf.threeQuoteRequired && !comment.trim() && (
+              <p className="text-xs text-muted-foreground">
+                Un commentaire est requis lors d&apos;une sélection d&apos;offre.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -2243,6 +2250,7 @@ function OrderingPanel({
     s ? String(s).slice(0, 10) : "";
   const [orderNumber, setOrderNumber] = useState(wf.orderNumber ?? "");
   const [orderDate, setOrderDate] = useState(toDateInput(wf.orderDate));
+  const [amortissementNumbers, setAmortissementNumbers] = useState(wf.amortissementNumbers ?? "");
   const save = useSaveWorkflow(wf, onChange);
   const { missing, clearKey, setBeforeAdvance } = useMissingFields();
   // Auto-save the form when the user clicks the global Next Step
@@ -2252,17 +2260,18 @@ function OrderingPanel({
     setBeforeAdvance(async () => {
       await save.mutateAsync({
         id: wf.id,
-        data: { orderNumber, orderDate: orderDate || null },
+        data: { orderNumber, orderDate: orderDate || null, amortissementNumbers: amortissementNumbers || null },
       });
     });
     return () => setBeforeAdvance(null);
-  }, [setBeforeAdvance, save, wf.id, orderNumber, orderDate]);
+  }, [setBeforeAdvance, save, wf.id, orderNumber, orderDate, amortissementNumbers]);
   // Keep local form state in sync with the latest server snapshot so
   // a Save → refetch (or another tab editing) is reflected here.
   useEffect(() => {
     setOrderNumber(wf.orderNumber ?? "");
     setOrderDate(toDateInput(wf.orderDate));
-  }, [wf.orderNumber, wf.orderDate]);
+    setAmortissementNumbers(wf.amortissementNumbers ?? "");
+  }, [wf.orderNumber, wf.orderDate, wf.amortissementNumbers]);
   // Defensive: clear the "missing" badge as soon as the order number
   // has a value locally — covers the case where the user filled the
   // input after a failed Advance attempt.
@@ -2305,11 +2314,20 @@ function OrderingPanel({
             />
           </div>
         </div>
+        <div className="space-y-1">
+          <Label>N° d&apos;amortissement</Label>
+          <Input
+            value={amortissementNumbers}
+            onChange={(e) => setAmortissementNumbers(e.target.value)}
+            placeholder="Ex. AMORT-2024-001, AMORT-2024-002"
+            data-testid="input-amortissement-numbers"
+          />
+        </div>
         <Button
           onClick={() =>
             save.mutate({
               id: wf.id,
-              data: { orderNumber, orderDate: orderDate || null },
+              data: { orderNumber, orderDate: orderDate || null, amortissementNumbers: amortissementNumbers || null },
             })
           }
           disabled={save.isPending}
@@ -2322,7 +2340,6 @@ function OrderingPanel({
           kind="ORDER"
           step="ORDERING"
           label="Document de commande"
-          required
         />
       </CardContent>
     </Card>
@@ -2505,7 +2522,6 @@ function InvoicePanel({
           kind="INVOICE"
           step="INVOICE"
           label="Document de facture"
-          required
         />
       </CardContent>
     </Card>

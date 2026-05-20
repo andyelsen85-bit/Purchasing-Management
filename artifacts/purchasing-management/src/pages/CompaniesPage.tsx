@@ -66,9 +66,21 @@ function useCanAddSupplier(): boolean {
 }
 
 export function CompaniesPage() {
+  const { data: session } = useGetSession();
   const { data: companies } = useListCompanies();
   const [selected, setSelected] = useState<Company | null>(null);
   const canAdd = useCanAddSupplier();
+
+  const roles = session?.user?.roles ?? [];
+  const canViewPage = roles.includes("ADMIN") || roles.includes("FINANCIAL_ALL");
+
+  if (session && !canViewPage) {
+    return (
+      <div className="p-12 text-center text-sm text-muted-foreground">
+        Vous n'avez pas les autorisations nécessaires pour accéder à cette page.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6">

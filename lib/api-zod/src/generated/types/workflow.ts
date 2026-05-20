@@ -70,6 +70,8 @@ for "Livre I" / "Livre II" publication.
   /** @nullable */
   orderDate?: Date | null;
   /** @nullable */
+  amortissementNumbers?: string | null;
+  /** @nullable */
   deliveredOn?: Date | null;
   /** @nullable */
   deliveryNotes?: string | null;

@@ -63,11 +63,17 @@ export function StepProgress({ current, branch }: Props) {
     <div className="space-y-2" data-testid="status-step-progress">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
-          Step {ordinal} of {flow.length}
+          Étape {ordinal + 1} sur {flow.length + 1}
         </div>
         <div>{STEP_LABEL[effective]}</div>
       </div>
       <div className="flex items-stretch gap-1">
+        {/* Création Demande — always completed (green) since the workflow exists */}
+        <div className="group relative flex-1 min-w-0" title="Création Demande">
+          <div className="flex h-9 items-center justify-center rounded-md border px-2 text-[11px] font-medium bg-emerald-600 text-white border-emerald-700">
+            <span className="truncate">Création</span>
+          </div>
+        </div>
         {flow.map((step, idx) => {
           const done = idx < currentIdx;
           const active = idx === currentIdx;

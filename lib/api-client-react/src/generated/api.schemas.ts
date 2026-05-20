@@ -372,6 +372,8 @@ for "Livre I" / "Livre II" publication.
   /** @nullable */
   orderDate?: string | null;
   /** @nullable */
+  amortissementNumbers?: string | null;
+  /** @nullable */
   deliveredOn?: string | null;
   /** @nullable */
   deliveryNotes?: string | null;
@@ -500,6 +502,8 @@ export interface UpdateWorkflowInput {
   orderNumber?: string | null;
   /** @nullable */
   orderDate?: string | null;
+  /** @nullable */
+  amortissementNumbers?: string | null;
   /** @nullable */
   deliveredOn?: string | null;
   /** @nullable */

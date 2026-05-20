@@ -143,6 +143,7 @@ export const workflowsTable = pgTable(
     // Step 5 - ordering
     orderNumber: text("order_number"),
     orderDate: date("order_date"),
+    amortissementNumbers: text("amortissement_numbers"),
 
     // Step 6 - delivery
     deliveredOn: date("delivered_on"),
