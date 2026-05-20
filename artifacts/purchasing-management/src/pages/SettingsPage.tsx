@@ -67,6 +67,10 @@ import {
   useGetNotificationBatchStatus,
   useFlushNotificationQueue,
   getGetNotificationBatchStatusQueryKey,
+  useListNotificationRules,
+  useUpdateNotificationRule,
+  useSyncNotificationRulesFromAd,
+  getListNotificationRulesQueryKey,
 } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, RefreshCw } from "lucide-react";
@@ -152,6 +156,7 @@ const TAB_VALUES = [
   "gt",
   "https",
   "backup",
+  "notifications",
   "archive",
   "audit",
   "trash",
@@ -247,6 +252,9 @@ export function SettingsPage() {
           <TabsTrigger value="backup" data-testid="tab-backup">
             Backup &amp; Restore
           </TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-notifications">
+            Notifications
+          </TabsTrigger>
           <TabsTrigger value="archive" data-testid="tab-archive">
             Archive
           </TabsTrigger>
@@ -288,6 +296,9 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="backup">
           <BackupRestorePanel />
+        </TabsContent>
+        <TabsContent value="notifications">
+          <NotificationRulesPanel />
         </TabsContent>
         <TabsContent value="archive">
           <AttachmentArchivePanel />
@@ -2981,5 +2992,215 @@ function GtRecipientsPanel() {
         </section>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Settings → Notifications.
+ *
+ * One row per "trigger" (a specific Yes/I-don't-know answer to one of the
+ * publication-form questions that says "le service X sera notifié"). For
+ * each trigger the admin sets:
+ *   - the AD group whose members are signing authorities, and / or
+ *   - a free-form list of email recipients (added one at a time)
+ *
+ * "Sync from AD" pulls each rule's group membership from Active Directory
+ * and replaces the emails list with the resolved addresses. Currently the
+ * server-side sync is a stub when LDAP is not configured — it surfaces a
+ * toast and preserves the manually-entered emails.
+ */
+function NotificationRulesPanel() {
+  const { data: rules, isLoading } = useListNotificationRules();
+  const qc = useQueryClient();
+  const update = useUpdateNotificationRule({
+    mutation: {
+      onSuccess: () =>
+        qc.invalidateQueries({ queryKey: getListNotificationRulesQueryKey() }),
+    },
+  });
+  const sync = useSyncNotificationRulesFromAd({
+    mutation: {
+      onSuccess: (r) => {
+        qc.invalidateQueries({ queryKey: getListNotificationRulesQueryKey() });
+        toast({
+          title: r.synced > 0 ? "Synchronisation AD terminée" : "Synchronisation AD ignorée",
+          description: r.message ?? `${r.synced} règle(s) mises à jour.`,
+        });
+      },
+    },
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Destinataires des notifications par question</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Pour chaque question du formulaire qui déclenche une notification
+          de service (par ex. &laquo;&nbsp;Le Service Technique sera
+          notifié.&nbsp;&raquo;), définissez le groupe Active Directory
+          concerné et/ou les adresses email à prévenir. Ces destinataires
+          recevront une demande de signature pendant l&apos;étape
+          &laquo;&nbsp;Validations Services&nbsp;&raquo;.
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending}
+            data-testid="button-sync-notification-rules"
+          >
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${sync.isPending ? "animate-spin" : ""}`}
+            />
+            {sync.isPending ? "Synchronisation…" : "Synchroniser depuis AD"}
+          </Button>
+        </div>
+        {isLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        )}
+        {!isLoading && (rules ?? []).length === 0 && (
+          <p className="rounded-md border bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+            Aucune règle configurée pour le moment.
+          </p>
+        )}
+        <div className="space-y-3">
+          {(rules ?? []).map((rule) => (
+            <NotificationRuleRow
+              key={rule.id}
+              rule={rule}
+              saving={update.isPending}
+              onSave={(adGroup, emails) =>
+                update.mutate({ id: rule.id, data: { adGroup, emails } })
+              }
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface NotificationRuleRowProps {
+  rule: { id: number; key: string; label: string; adGroup: string | null; emails: string[] };
+  saving: boolean;
+  onSave: (adGroup: string | null, emails: string[]) => void;
+}
+
+function NotificationRuleRow({ rule, saving, onSave }: NotificationRuleRowProps) {
+  const [adGroup, setAdGroup] = useState<string>(rule.adGroup ?? "");
+  const [emails, setEmails] = useState<string[]>(rule.emails);
+  const [draftEmail, setDraftEmail] = useState("");
+  // Re-hydrate local state if the server payload changes (e.g. after sync).
+  useEffect(() => {
+    setAdGroup(rule.adGroup ?? "");
+    setEmails(rule.emails);
+  }, [rule.adGroup, rule.emails]);
+
+  function addEmail() {
+    const e = draftEmail.trim();
+    if (!e) return;
+    if (emails.some((x) => x.toLowerCase() === e.toLowerCase())) {
+      setDraftEmail("");
+      return;
+    }
+    setEmails([...emails, e]);
+    setDraftEmail("");
+  }
+
+  const dirty =
+    (adGroup || null) !== (rule.adGroup ?? null) ||
+    emails.length !== rule.emails.length ||
+    emails.some((e, i) => e !== rule.emails[i]);
+
+  return (
+    <div
+      className="rounded-md border p-3 space-y-3"
+      data-testid={`notification-rule-${rule.key}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">{rule.label}</div>
+          <div className="font-mono text-xs text-muted-foreground">{rule.key}</div>
+        </div>
+        <Button
+          size="sm"
+          disabled={!dirty || saving}
+          onClick={() => onSave(adGroup.trim() || null, emails)}
+          data-testid={`button-save-rule-${rule.key}`}
+        >
+          {saving ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="mr-2 h-4 w-4" />
+          )}
+          Enregistrer
+        </Button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Groupe Active Directory</Label>
+          <Input
+            value={adGroup}
+            placeholder="CN=Service Technique,OU=Groups,…"
+            onChange={(e) => setAdGroup(e.target.value)}
+            data-testid={`input-ad-group-${rule.key}`}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Ajouter une adresse email</Label>
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              value={draftEmail}
+              placeholder="prenom.nom@example.com"
+              onChange={(e) => setDraftEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addEmail();
+                }
+              }}
+              data-testid={`input-email-${rule.key}`}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addEmail}
+              disabled={!draftEmail.trim()}
+              data-testid={`button-add-email-${rule.key}`}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+      {emails.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {emails.map((e) => (
+            <span
+              key={e}
+              className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
+              data-testid={`pill-email-${rule.key}-${e}`}
+            >
+              {e}
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setEmails(emails.filter((x) => x !== e))}
+                aria-label={`Retirer ${e}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
