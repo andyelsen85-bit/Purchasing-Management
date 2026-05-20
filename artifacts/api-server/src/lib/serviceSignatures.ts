@@ -45,9 +45,29 @@ const RULE_DEFS: Array<{
     triggered: (f) => f.architecturalWorks === true,
   },
   {
+    // Merged rule — Service Informatique is notified when either
+    // Q6.2 (Connexion informatique requise) is answered "Oui", or
+    // Q6.3.1 (Type d'accès) has at least one access type selected
+    // (which only renders when Q6.3 systemInterop is "Oui"). One
+    // attestation covers both questions for the same service.
     key: "q_6_3_1_it",
-    label: "Service Informatique - Raccordement IT (6.3.1)",
-    triggered: (f) => f.itConnection === true,
+    label: "Service Informatique - Raccordement IT & Accès systèmes (6.2 / 6.3.1)",
+    triggered: (f) => {
+      if (f.itConnection === true) return true;
+      // Q6.3.1 only renders when Q6.3 systemInterop is "Oui", so guard the
+      // accessTypes branch with systemInterop to avoid false positives from
+      // stale state if the user toggled Q6.3 back to "Non" after picking
+      // access types.
+      const access = f.accessTypes;
+      if (
+        f.systemInterop === true &&
+        Array.isArray(access) &&
+        access.length > 0
+      ) {
+        return true;
+      }
+      return false;
+    },
   },
   {
     key: "q_6_3_1_security",
