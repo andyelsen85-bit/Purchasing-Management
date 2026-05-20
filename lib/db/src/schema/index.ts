@@ -308,6 +308,33 @@ export const notificationRulesTable = pgTable("notification_rules", {
 });
 export type DbNotificationRule = typeof notificationRulesTable.$inferSelect;
 
+// ---------------- SERVICE SIGNATURES ----------------
+// One row per (workflow × notification-rule) signature that is expected
+// during the VALIDATING_SERVICES step. Rows are created in PENDING
+// state when the workflow first enters that step (based on the answers
+// stored in `investmentForm`) and move to SIGNED once the targeted
+// service signs with their certificate, or OVERRIDDEN when an admin
+// manually bypasses the requirement. The signed PDF (1-page attestation)
+// is stored inline so it can be re-exported in the merged workflow pack.
+export const serviceSignaturesTable = pgTable("service_signatures", {
+  id: serial("id").primaryKey(),
+  workflowId: integer("workflow_id").notNull(),
+  ruleKey: text("rule_key").notNull(),
+  ruleLabel: text("rule_label").notNull(),
+  status: text("status").notNull().default("PENDING"), // PENDING|SIGNED|OVERRIDDEN
+  signedByUserId: integer("signed_by_user_id"),
+  signedByName: text("signed_by_name"),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  certThumbprint: text("cert_thumbprint"),
+  certSubject: text("cert_subject"),
+  signedPdfBase64: text("signed_pdf_base64"),
+  overrideByUserId: integer("override_by_user_id"),
+  overrideReason: text("override_reason"),
+  notifiedEmails: jsonb("notified_emails").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type DbServiceSignature = typeof serviceSignaturesTable.$inferSelect;
+
 // ---------------- SESSIONS (express-session compatible) ----------------
 export const sessionsTable = pgTable("sessions", {
   sid: text("sid").primaryKey(),

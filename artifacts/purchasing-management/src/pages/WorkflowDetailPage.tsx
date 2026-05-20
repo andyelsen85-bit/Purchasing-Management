@@ -67,6 +67,12 @@ import {
   useDeleteDocument,
   useCreateWorkflowNote,
   useGetSettings,
+  useListServiceSignatures,
+  usePrepareServiceSignature,
+  useFinalizeServiceSignature,
+  useOverrideServiceSignature,
+  getListServiceSignaturesQueryKey,
+  type ServiceSignature,
   AdvanceWorkflowInputBranch,
   UploadDocumentInputKind,
   getGetWorkflowQueryKey,
@@ -660,6 +666,8 @@ function StepPanel({
       return <DeliveryPanel wf={wf} onChange={onChange} />;
     case "INVOICE":
       return <InvoicePanel wf={wf} onChange={onChange} />;
+    case "VALIDATING_SERVICES":
+      return <ServiceSignaturesPanel wf={wf} user={user} onChange={onChange} />;
     case "VALIDATING_INVOICE":
       return <InvoiceValidationPanel wf={wf} user={user} onChange={onChange} />;
     case "PAYMENT":
@@ -2524,6 +2532,425 @@ function InvoicePanel({
         />
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// VALIDATING_SERVICES — per-service signature dashboard
+//
+// One row per notification rule that was triggered by the workflow's
+// `investmentForm` answers. Each row can be:
+//   • signed by an authorised user (member of the rule's notified emails,
+//     or Admin/Financial-All) using the local Windows signing agent;
+//   • overridden by Admin/Financial-All with a written reason when the
+//     responsible service can't sign promptly.
+// The step's Advance button is gated server-side until every row is
+// SIGNED or OVERRIDDEN.
+// ---------------------------------------------------------------------------
+function ServiceSignaturesPanel({
+  wf,
+  user,
+  onChange,
+}: {
+  wf: Workflow;
+  user: SessionUser;
+  onChange: () => void;
+}) {
+  const { data: sigs, refetch } = useListServiceSignatures(wf.id);
+  const { data: settings } = useGetSettings();
+  const queryClient = useQueryClient();
+  const prepare = usePrepareServiceSignature();
+  const finalize = useFinalizeServiceSignature();
+  const override = useOverrideServiceSignature();
+  const advance = useAdvanceWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        alert(msg);
+      },
+    },
+  });
+  const [signingId, setSigningId] = useState<number | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState<ServiceSignature | null>(
+    null,
+  );
+  const [overrideReason, setOverrideReason] = useState("");
+
+  interface AgentCert {
+    thumbprint: string;
+    subject: string;
+    issuer: string;
+    notBefore: string;
+    notAfter: string;
+  }
+  const [certPickerState, setCertPickerState] = useState<{
+    certs: AgentCert[];
+    resolve: (thumbprint: string | null) => void;
+  } | null>(null);
+  function openCertPicker(certs: AgentCert[]): Promise<string | null> {
+    return new Promise((resolve) => setCertPickerState({ certs, resolve }));
+  }
+
+  const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
+  const isPrivileged =
+    user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
+  const userEmail = (user.email ?? "").toLowerCase();
+
+  function canSign(sig: ServiceSignature): boolean {
+    if (sig.status !== "PENDING") return false;
+    if (isPrivileged) return true;
+    return sig.notifiedEmails
+      .map((e) => e.toLowerCase())
+      .includes(userEmail);
+  }
+
+  async function signOne(sig: ServiceSignature): Promise<void> {
+    const port = settings?.signingAgentPort;
+    const token = (settings as { signingAgentToken?: string | null } | undefined)
+      ?.signingAgentToken;
+    if (!port || !token) {
+      alert(
+        "L'agent de signature local n'est pas configuré (port ou jeton manquant dans les Paramètres).",
+      );
+      return;
+    }
+    setSigningId(sig.id);
+    try {
+      // 1. List certs from the local agent
+      const certsResp = await fetch(`http://localhost:${port}/list-certs`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!certsResp.ok) {
+        alert(`Impossible de lister les certificats (${certsResp.status}).`);
+        return;
+      }
+      const { certs } = (await certsResp.json()) as { certs: AgentCert[] };
+      if (!certs || certs.length === 0) {
+        alert("Aucun certificat de signature trouvé dans le magasin Windows.");
+        return;
+      }
+      const picked = await openCertPicker(certs);
+      if (!picked) return;
+      const selected = certs.find((c) => c.thumbprint === picked) ?? certs[0];
+      const certCn = selected.subject
+        .replace(/^.*?CN=/i, "")
+        .split(",")[0]
+        .trim();
+
+      // 2. Server prepares the attestation PDF + placeholder
+      const prep = await prepare.mutateAsync({
+        id: wf.id,
+        sigId: sig.id,
+        data: { certSubject: certCn },
+      });
+
+      // 3. Local agent signs the bytes
+      const bin = Uint8Array.from(atob(prep.signTargetB64), (c) =>
+        c.charCodeAt(0),
+      );
+      const r = await fetch(`http://localhost:${port}/sign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          Authorization: `Bearer ${token}`,
+          "X-Certificate-Thumbprint": picked,
+        },
+        body: bin,
+      });
+      if (!r.ok) {
+        alert(`L'agent de signature a rejeté la requête (${r.status}).`);
+        return;
+      }
+      const { signatureB64 } = (await r.json()) as { signatureB64: string };
+      if (!signatureB64) {
+        alert("L'agent de signature n'a renvoyé aucune signature.");
+        return;
+      }
+
+      // 4. Server embeds PKCS#7 and marks the row SIGNED
+      await finalize.mutateAsync({
+        id: wf.id,
+        sigId: sig.id,
+        data: {
+          nonce: prep.nonce,
+          pkcs7B64: signatureB64,
+        },
+      });
+      await queryClient.invalidateQueries({
+        queryKey: getListServiceSignaturesQueryKey(wf.id),
+      });
+      await refetch();
+    } catch (e) {
+      alert(
+        `Impossible de joindre l'agent de signature sur localhost:${port}. (${(e as Error).message})`,
+      );
+    } finally {
+      setSigningId(null);
+    }
+  }
+
+  async function doOverride(): Promise<void> {
+    if (!overrideOpen) return;
+    const reason = overrideReason.trim();
+    if (reason.length < 3) {
+      alert("Veuillez saisir une raison (3 caractères minimum).");
+      return;
+    }
+    await override.mutateAsync({
+      id: wf.id,
+      sigId: overrideOpen.id,
+      data: { reason },
+    });
+    setOverrideOpen(null);
+    setOverrideReason("");
+    await queryClient.invalidateQueries({
+      queryKey: getListServiceSignaturesQueryKey(wf.id),
+    });
+    await refetch();
+  }
+
+  const rows = sigs ?? [];
+  const pending = rows.filter((r) => r.status === "PENDING");
+  const allDone = rows.length > 0 && pending.length === 0;
+  const canAdvance =
+    user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Validations Services</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Chaque service concerné par ce dossier doit signer sa validation
+            avec son certificat. Le passage à l'étape suivante n'est possible
+            qu'une fois toutes les signatures recueillies (ou contournées par
+            un Admin / Financier-Tous).
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {rows.length === 0 ? (
+            <Alert>
+              <AlertDescription>
+                Aucun service n'est concerné par ce dossier d'après les
+                réponses du formulaire d'investissement. Vous pouvez avancer
+                directement à l'étape suivante.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="space-y-2">
+              {rows.map((sig) => {
+                const isBusy = signingId === sig.id;
+                const eligible = canSign(sig);
+                return (
+                  <div
+                    key={sig.id}
+                    className="rounded border border-border p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                    data-testid={`service-sig-${sig.ruleKey}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm">{sig.ruleLabel}</div>
+                      {sig.status === "SIGNED" && (
+                        <div className="text-xs text-muted-foreground">
+                          Signé par{" "}
+                          <strong>
+                            {sig.signedByName ?? "—"}
+                          </strong>{" "}
+                          le{" "}
+                          {sig.signedAt
+                            ? new Date(sig.signedAt).toLocaleString("fr-FR")
+                            : "—"}
+                          {sig.certSubject ? ` · ${sig.certSubject}` : ""}
+                        </div>
+                      )}
+                      {sig.status === "OVERRIDDEN" && (
+                        <div className="text-xs text-muted-foreground">
+                          Contournée — raison : {sig.overrideReason ?? "—"}
+                        </div>
+                      )}
+                      {sig.status === "PENDING" && (
+                        <div className="text-xs text-muted-foreground">
+                          En attente · destinataires notifiés :{" "}
+                          {sig.notifiedEmails.length > 0
+                            ? sig.notifiedEmails.join(", ")
+                            : "(aucun)"}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {sig.status === "SIGNED" && (
+                        <span className="text-xs font-medium text-green-700 px-2 py-1 rounded bg-green-50">
+                          ✓ Signée
+                        </span>
+                      )}
+                      {sig.status === "OVERRIDDEN" && (
+                        <span className="text-xs font-medium text-amber-700 px-2 py-1 rounded bg-amber-50">
+                          ⚠ Contournée
+                        </span>
+                      )}
+                      {sig.status === "PENDING" && (
+                        <>
+                          <Button
+                            size="sm"
+                            disabled={!eligible || isBusy}
+                            onClick={() => void signOne(sig)}
+                            data-testid={`button-sign-${sig.ruleKey}`}
+                          >
+                            {isBusy ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : null}
+                            Signer
+                          </Button>
+                          {isPrivileged && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setOverrideOpen(sig);
+                                setOverrideReason("");
+                              }}
+                              data-testid={`button-override-${sig.ruleKey}`}
+                            >
+                              Contourner
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <Button asChild variant="outline">
+              <a href={exportHref} target="_blank" rel="noreferrer">
+                <Download className="mr-2 h-4 w-4" />
+                Exporter PDF groupé
+              </a>
+            </Button>
+            <Button
+              onClick={() =>
+                advance.mutate({ id: wf.id, data: { branch: null } })
+              }
+              disabled={
+                advance.isPending ||
+                (!allDone && rows.length > 0) ||
+                !canAdvance
+              }
+              data-testid="button-services-advance"
+            >
+              {advance.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Passer à l'étape suivante
+            </Button>
+            {!canAdvance && (
+              <span className="text-xs text-muted-foreground">
+                Seul un Admin ou Financier-Tous peut faire avancer ce dossier.
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Override reason dialog */}
+      <Dialog
+        open={overrideOpen !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOverrideOpen(null);
+            setOverrideReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Contourner la signature</DialogTitle>
+            <DialogDescription>
+              {overrideOpen?.ruleLabel} — saisissez la raison du contournement.
+              Cette action est tracée dans le journal d'audit.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            placeholder="Raison du contournement…"
+            rows={4}
+            data-testid="textarea-override-reason"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOverrideOpen(null);
+                setOverrideReason("");
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={() => void doOverride()}
+              disabled={override.isPending || overrideReason.trim().length < 3}
+              data-testid="button-confirm-override"
+            >
+              {override.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Confirmer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cert picker — reused from invoice signing */}
+      <Dialog
+        open={certPickerState !== null}
+        onOpenChange={(open) => {
+          if (!open && certPickerState) {
+            certPickerState.resolve(null);
+            setCertPickerState(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Choisir un certificat de signature</DialogTitle>
+            <DialogDescription>
+              Sélectionnez le certificat à utiliser pour signer cette
+              validation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {certPickerState?.certs.map((c) => (
+              <button
+                key={c.thumbprint}
+                type="button"
+                className="w-full text-left px-3 py-3 rounded border border-border hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                onClick={() => {
+                  certPickerState.resolve(c.thumbprint);
+                  setCertPickerState(null);
+                }}
+              >
+                <div className="font-medium text-sm truncate">
+                  {c.subject.replace(/^.*?CN=/i, "").split(",")[0]}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  Émetteur : {c.issuer.replace(/^.*?CN=/i, "").split(",")[0]}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Expire le : {new Date(c.notAfter).toLocaleDateString("fr-FR")}
+                </div>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

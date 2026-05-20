@@ -1118,6 +1118,39 @@ export interface UpdateNotificationRuleInput {
   emails?: string[];
 }
 
+export type ServiceSignatureStatus =
+  (typeof ServiceSignatureStatus)[keyof typeof ServiceSignatureStatus];
+
+export const ServiceSignatureStatus = {
+  PENDING: "PENDING",
+  SIGNED: "SIGNED",
+  OVERRIDDEN: "OVERRIDDEN",
+} as const;
+
+export interface ServiceSignature {
+  id: number;
+  workflowId: number;
+  ruleKey: string;
+  ruleLabel: string;
+  status: ServiceSignatureStatus;
+  /** @nullable */
+  signedByUserId?: number | null;
+  /** @nullable */
+  signedByName?: string | null;
+  /** @nullable */
+  signedAt?: string | null;
+  /** @nullable */
+  certThumbprint?: string | null;
+  /** @nullable */
+  certSubject?: string | null;
+  /** @nullable */
+  overrideByUserId?: number | null;
+  /** @nullable */
+  overrideReason?: string | null;
+  notifiedEmails: string[];
+  createdAt: string;
+}
+
 export interface CsrRequest {
   commonName: string;
   /** @nullable */
@@ -1335,6 +1368,25 @@ export const ListNotificationsStatus = {
 
 export type ListAuditLogParams = {
   limit?: number;
+};
+
+export type PrepareServiceSignatureBody = {
+  certSubject?: string;
+};
+
+export type PrepareServiceSignature200 = {
+  nonce: string;
+  signTargetB64: string;
+};
+
+export type FinalizeServiceSignatureBody = {
+  nonce: string;
+  pkcs7B64: string;
+};
+
+export type OverrideServiceSignatureBody = {
+  /** @minLength 3 */
+  reason: string;
 };
 
 export type SyncNotificationRulesFromAd200 = {

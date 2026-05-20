@@ -2584,6 +2584,111 @@ export const UpdateNotificationRuleResponse = zod.object({
 });
 
 /**
+ * @summary List expected per-service signatures for a workflow
+ */
+export const ListServiceSignaturesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListServiceSignaturesResponseItem = zod.object({
+  id: zod.number(),
+  workflowId: zod.number(),
+  ruleKey: zod.string(),
+  ruleLabel: zod.string(),
+  status: zod.enum(["PENDING", "SIGNED", "OVERRIDDEN"]),
+  signedByUserId: zod.number().nullish(),
+  signedByName: zod.string().nullish(),
+  signedAt: zod.coerce.date().nullish(),
+  certThumbprint: zod.string().nullish(),
+  certSubject: zod.string().nullish(),
+  overrideByUserId: zod.number().nullish(),
+  overrideReason: zod.string().nullish(),
+  notifiedEmails: zod.array(zod.string()),
+  createdAt: zod.coerce.date(),
+});
+export const ListServiceSignaturesResponse = zod.array(
+  ListServiceSignaturesResponseItem,
+);
+
+/**
+ * @summary Prepare the 1-page attestation for a per-service signature
+ */
+export const PrepareServiceSignatureParams = zod.object({
+  id: zod.coerce.number(),
+  sigId: zod.coerce.number(),
+});
+
+export const PrepareServiceSignatureBody = zod.object({
+  certSubject: zod.string().optional(),
+});
+
+export const PrepareServiceSignatureResponse = zod.object({
+  nonce: zod.string(),
+  signTargetB64: zod.string(),
+});
+
+/**
+ * @summary Embed the PKCS#7 signature and mark the row as SIGNED
+ */
+export const FinalizeServiceSignatureParams = zod.object({
+  id: zod.coerce.number(),
+  sigId: zod.coerce.number(),
+});
+
+export const FinalizeServiceSignatureBody = zod.object({
+  nonce: zod.string(),
+  pkcs7B64: zod.string(),
+});
+
+export const FinalizeServiceSignatureResponse = zod.object({
+  id: zod.number(),
+  workflowId: zod.number(),
+  ruleKey: zod.string(),
+  ruleLabel: zod.string(),
+  status: zod.enum(["PENDING", "SIGNED", "OVERRIDDEN"]),
+  signedByUserId: zod.number().nullish(),
+  signedByName: zod.string().nullish(),
+  signedAt: zod.coerce.date().nullish(),
+  certThumbprint: zod.string().nullish(),
+  certSubject: zod.string().nullish(),
+  overrideByUserId: zod.number().nullish(),
+  overrideReason: zod.string().nullish(),
+  notifiedEmails: zod.array(zod.string()),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Admin override — mark a pending signature as OVERRIDDEN
+ */
+export const OverrideServiceSignatureParams = zod.object({
+  id: zod.coerce.number(),
+  sigId: zod.coerce.number(),
+});
+
+export const overrideServiceSignatureBodyReasonMin = 3;
+
+export const OverrideServiceSignatureBody = zod.object({
+  reason: zod.string().min(overrideServiceSignatureBodyReasonMin),
+});
+
+export const OverrideServiceSignatureResponse = zod.object({
+  id: zod.number(),
+  workflowId: zod.number(),
+  ruleKey: zod.string(),
+  ruleLabel: zod.string(),
+  status: zod.enum(["PENDING", "SIGNED", "OVERRIDDEN"]),
+  signedByUserId: zod.number().nullish(),
+  signedByName: zod.string().nullish(),
+  signedAt: zod.coerce.date().nullish(),
+  certThumbprint: zod.string().nullish(),
+  certSubject: zod.string().nullish(),
+  overrideByUserId: zod.number().nullish(),
+  overrideReason: zod.string().nullish(),
+  notifiedEmails: zod.array(zod.string()),
+  createdAt: zod.coerce.date(),
+});
+
+/**
  * Pulls each rule's `adGroup` membership from Active Directory and
 replaces its `emails` list with the resolved member addresses.
 Returns a per-rule summary. Currently a stub when LDAP is not

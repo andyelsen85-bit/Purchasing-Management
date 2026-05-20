@@ -1004,6 +1004,96 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NotificationRule" }
+  /workflows/{id}/service-signatures:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: listServiceSignatures
+      tags: [workflows]
+      summary: List expected per-service signatures for a workflow
+      responses:
+        "200":
+          description: Signature rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceSignature" }
+  /workflows/{id}/service-signatures/{sigId}/sign-prepare:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: sigId, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: prepareServiceSignature
+      tags: [workflows]
+      summary: Prepare the 1-page attestation for a per-service signature
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                certSubject: { type: string }
+      responses:
+        "200":
+          description: Signing target
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce, signTargetB64]
+                properties:
+                  nonce: { type: string }
+                  signTargetB64: { type: string }
+  /workflows/{id}/service-signatures/{sigId}/sign-finalize:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: sigId, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: finalizeServiceSignature
+      tags: [workflows]
+      summary: Embed the PKCS#7 signature and mark the row as SIGNED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nonce, pkcs7B64]
+              properties:
+                nonce: { type: string }
+                pkcs7B64: { type: string }
+      responses:
+        "200":
+          description: Signed row
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceSignature" }
+  /workflows/{id}/service-signatures/{sigId}/override:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: sigId, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: overrideServiceSignature
+      tags: [workflows]
+      summary: Admin override — mark a pending signature as OVERRIDDEN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3 }
+      responses:
+        "200":
+          description: Overridden row
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceSignature" }
+
   /settings/notification-rules/sync-ad:
     post:
       operationId: syncNotificationRulesFromAd
@@ -2185,6 +2275,28 @@ components:
         emails:
           type: array
           items: { type: string, format: email }
+
+    ServiceSignature:
+      type: object
+      properties:
+        id: { type: integer }
+        workflowId: { type: integer }
+        ruleKey: { type: string }
+        ruleLabel: { type: string }
+        status: { type: string, enum: [PENDING, SIGNED, OVERRIDDEN] }
+        signedByUserId: { type: ["integer", "null"] }
+        signedByName: { type: ["string", "null"] }
+        signedAt: { type: ["string", "null"], format: date-time }
+        certThumbprint: { type: ["string", "null"] }
+        certSubject: { type: ["string", "null"] }
+        overrideByUserId: { type: ["integer", "null"] }
+        overrideReason: { type: ["string", "null"] }
+        notifiedEmails:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+      required:
+        [id, workflowId, ruleKey, ruleLabel, status, notifiedEmails, createdAt]
 
     CsrRequest:
       type: object

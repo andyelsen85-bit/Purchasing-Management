@@ -45,6 +45,7 @@ import type {
   EmptyTrash200,
   ExportGtInvestPackageParams,
   ExportWorkflowsParams,
+  FinalizeServiceSignatureBody,
   FinalizeWorkflowSign200,
   FinalizeWorkflowSignBody,
   GtInvestDate,
@@ -70,9 +71,13 @@ import type {
   NotificationFlushResult,
   NotificationRule,
   NotifyGtInvestMeetingResult,
+  OverrideServiceSignatureBody,
   PendingSignature,
+  PrepareServiceSignature200,
+  PrepareServiceSignatureBody,
   PrepareWorkflowSign200,
   RejectWorkflowInput,
+  ServiceSignature,
   SessionResponse,
   SessionUser,
   SmtpTestInput,
@@ -5147,6 +5152,370 @@ export const useUpdateNotificationRule = <
   TContext
 > => {
   return useMutation(getUpdateNotificationRuleMutationOptions(options));
+};
+
+/**
+ * @summary List expected per-service signatures for a workflow
+ */
+export const getListServiceSignaturesUrl = (id: number) => {
+  return `/api/workflows/${id}/service-signatures`;
+};
+
+export const listServiceSignatures = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ServiceSignature[]> => {
+  return customFetch<ServiceSignature[]>(getListServiceSignaturesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListServiceSignaturesQueryKey = (id: number) => {
+  return [`/api/workflows/${id}/service-signatures`] as const;
+};
+
+export const getListServiceSignaturesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listServiceSignatures>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listServiceSignatures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListServiceSignaturesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listServiceSignatures>>
+  > = ({ signal }) => listServiceSignatures(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listServiceSignatures>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListServiceSignaturesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listServiceSignatures>>
+>;
+export type ListServiceSignaturesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List expected per-service signatures for a workflow
+ */
+
+export function useListServiceSignatures<
+  TData = Awaited<ReturnType<typeof listServiceSignatures>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listServiceSignatures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListServiceSignaturesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Prepare the 1-page attestation for a per-service signature
+ */
+export const getPrepareServiceSignatureUrl = (id: number, sigId: number) => {
+  return `/api/workflows/${id}/service-signatures/${sigId}/sign-prepare`;
+};
+
+export const prepareServiceSignature = async (
+  id: number,
+  sigId: number,
+  prepareServiceSignatureBody?: PrepareServiceSignatureBody,
+  options?: RequestInit,
+): Promise<PrepareServiceSignature200> => {
+  return customFetch<PrepareServiceSignature200>(
+    getPrepareServiceSignatureUrl(id, sigId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(prepareServiceSignatureBody),
+    },
+  );
+};
+
+export const getPrepareServiceSignatureMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof prepareServiceSignature>>,
+    TError,
+    { id: number; sigId: number; data: BodyType<PrepareServiceSignatureBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof prepareServiceSignature>>,
+  TError,
+  { id: number; sigId: number; data: BodyType<PrepareServiceSignatureBody> },
+  TContext
+> => {
+  const mutationKey = ["prepareServiceSignature"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof prepareServiceSignature>>,
+    { id: number; sigId: number; data: BodyType<PrepareServiceSignatureBody> }
+  > = (props) => {
+    const { id, sigId, data } = props ?? {};
+
+    return prepareServiceSignature(id, sigId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PrepareServiceSignatureMutationResult = NonNullable<
+  Awaited<ReturnType<typeof prepareServiceSignature>>
+>;
+export type PrepareServiceSignatureMutationBody =
+  BodyType<PrepareServiceSignatureBody>;
+export type PrepareServiceSignatureMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Prepare the 1-page attestation for a per-service signature
+ */
+export const usePrepareServiceSignature = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof prepareServiceSignature>>,
+    TError,
+    { id: number; sigId: number; data: BodyType<PrepareServiceSignatureBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof prepareServiceSignature>>,
+  TError,
+  { id: number; sigId: number; data: BodyType<PrepareServiceSignatureBody> },
+  TContext
+> => {
+  return useMutation(getPrepareServiceSignatureMutationOptions(options));
+};
+
+/**
+ * @summary Embed the PKCS#7 signature and mark the row as SIGNED
+ */
+export const getFinalizeServiceSignatureUrl = (id: number, sigId: number) => {
+  return `/api/workflows/${id}/service-signatures/${sigId}/sign-finalize`;
+};
+
+export const finalizeServiceSignature = async (
+  id: number,
+  sigId: number,
+  finalizeServiceSignatureBody: FinalizeServiceSignatureBody,
+  options?: RequestInit,
+): Promise<ServiceSignature> => {
+  return customFetch<ServiceSignature>(
+    getFinalizeServiceSignatureUrl(id, sigId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(finalizeServiceSignatureBody),
+    },
+  );
+};
+
+export const getFinalizeServiceSignatureMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof finalizeServiceSignature>>,
+    TError,
+    { id: number; sigId: number; data: BodyType<FinalizeServiceSignatureBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof finalizeServiceSignature>>,
+  TError,
+  { id: number; sigId: number; data: BodyType<FinalizeServiceSignatureBody> },
+  TContext
+> => {
+  const mutationKey = ["finalizeServiceSignature"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof finalizeServiceSignature>>,
+    { id: number; sigId: number; data: BodyType<FinalizeServiceSignatureBody> }
+  > = (props) => {
+    const { id, sigId, data } = props ?? {};
+
+    return finalizeServiceSignature(id, sigId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FinalizeServiceSignatureMutationResult = NonNullable<
+  Awaited<ReturnType<typeof finalizeServiceSignature>>
+>;
+export type FinalizeServiceSignatureMutationBody =
+  BodyType<FinalizeServiceSignatureBody>;
+export type FinalizeServiceSignatureMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Embed the PKCS#7 signature and mark the row as SIGNED
+ */
+export const useFinalizeServiceSignature = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof finalizeServiceSignature>>,
+    TError,
+    { id: number; sigId: number; data: BodyType<FinalizeServiceSignatureBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof finalizeServiceSignature>>,
+  TError,
+  { id: number; sigId: number; data: BodyType<FinalizeServiceSignatureBody> },
+  TContext
+> => {
+  return useMutation(getFinalizeServiceSignatureMutationOptions(options));
+};
+
+/**
+ * @summary Admin override — mark a pending signature as OVERRIDDEN
+ */
+export const getOverrideServiceSignatureUrl = (id: number, sigId: number) => {
+  return `/api/workflows/${id}/service-signatures/${sigId}/override`;
+};
+
+export const overrideServiceSignature = async (
+  id: number,
+  sigId: number,
+  overrideServiceSignatureBody: OverrideServiceSignatureBody,
+  options?: RequestInit,
+): Promise<ServiceSignature> => {
+  return customFetch<ServiceSignature>(
+    getOverrideServiceSignatureUrl(id, sigId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(overrideServiceSignatureBody),
+    },
+  );
+};
+
+export const getOverrideServiceSignatureMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof overrideServiceSignature>>,
+    TError,
+    { id: number; sigId: number; data: BodyType<OverrideServiceSignatureBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof overrideServiceSignature>>,
+  TError,
+  { id: number; sigId: number; data: BodyType<OverrideServiceSignatureBody> },
+  TContext
+> => {
+  const mutationKey = ["overrideServiceSignature"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof overrideServiceSignature>>,
+    { id: number; sigId: number; data: BodyType<OverrideServiceSignatureBody> }
+  > = (props) => {
+    const { id, sigId, data } = props ?? {};
+
+    return overrideServiceSignature(id, sigId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type OverrideServiceSignatureMutationResult = NonNullable<
+  Awaited<ReturnType<typeof overrideServiceSignature>>
+>;
+export type OverrideServiceSignatureMutationBody =
+  BodyType<OverrideServiceSignatureBody>;
+export type OverrideServiceSignatureMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Admin override — mark a pending signature as OVERRIDDEN
+ */
+export const useOverrideServiceSignature = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof overrideServiceSignature>>,
+    TError,
+    { id: number; sigId: number; data: BodyType<OverrideServiceSignatureBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof overrideServiceSignature>>,
+  TError,
+  { id: number; sigId: number; data: BodyType<OverrideServiceSignatureBody> },
+  TContext
+> => {
+  return useMutation(getOverrideServiceSignatureMutationOptions(options));
 };
 
 /**

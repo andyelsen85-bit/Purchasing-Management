@@ -13,6 +13,7 @@ import {
   documentVersionsTable,
   workflowStepsTable,
   notificationsTable,
+  serviceSignaturesTable,
 } from "@workspace/db";
 import {
   CreateWorkflowBody,
@@ -43,6 +44,11 @@ import {
 import { audit } from "../lib/audit";
 import { getSettings, derivePublicationTier } from "../lib/settings";
 import { queueNotification, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
+import {
+  seedServiceSignatures,
+  serviceSignaturesStatus,
+  listServiceSignatures,
+} from "../lib/serviceSignatures";
 import {
   prepareForSigning,
   embedSignature,
@@ -520,6 +526,17 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
     res.status(400).json({ error: gateError, message: gateError });
     return;
   }
+  // Cannot leave VALIDATING_SERVICES while any per-service signature row
+  // is still PENDING. Admins / Financial-All can override individual rows
+  // via the dedicated override endpoint, then re-advance.
+  if (wf.currentStep === "VALIDATING_SERVICES") {
+    const st = await serviceSignaturesStatus(wf.id);
+    if (st.pendingLabels.length > 0) {
+      const msg = `Signatures en attente : ${st.pendingLabels.join(" ; ")}`;
+      res.status(400).json({ error: msg, message: msg });
+      return;
+    }
+  }
   const rawNext = nextStep(wf.currentStep as WorkflowStep, branch);
   if (!rawNext) {
     res.status(400).json({ error: "Workflow already complete" });
@@ -581,6 +598,26 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
       `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
       { workflowId: wf.id, step: next },
     );
+  }
+
+  // When entering VALIDATING_SERVICES, seed one signature row per
+  // notification rule whose triggering answer is set on this workflow
+  // and dispatch an email to the configured recipients of each rule.
+  if (next === "VALIDATING_SERVICES") {
+    const sigs = await seedServiceSignatures({
+      id: wf.id,
+      investmentForm: wf.investmentForm,
+    });
+    for (const s of sigs) {
+      if (s.emails.length > 0) {
+        void queueNotification(
+          s.emails,
+          `${wf.reference} : ${s.label} - validation requise`,
+          `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\nConnectez-vous à Purchasing Management pour signer.`,
+          { workflowId: wf.id, step: "VALIDATING_SERVICES" },
+        );
+      }
+    }
   }
 
   res.json(await loadWorkflowFull(wf.id));
@@ -1039,6 +1076,15 @@ async function buildWorkflowPackPdf(
     rowAlt = !rowAlt;
   }
 
+  // ── Load any signed per-service attestations to append at the end ─────────
+  const serviceSigs = (
+    await db
+      .select()
+      .from(serviceSignaturesTable)
+      .where(eq(serviceSignaturesTable.workflowId, wf.id))
+      .orderBy(serviceSignaturesTable.id)
+  ).filter((s) => s.status === "SIGNED" && s.signedPdfBase64);
+
   // ── Merge attachments ──────────────────────────────────────────────────────
   let pageNum = 2;
   for (const d of docs) {
@@ -1072,6 +1118,22 @@ async function buildWorkflowPackPdf(
       sep.drawText(
         "(Pi\xE8ce non-PDF - impossible de l'incorporer dans le pack)",
         { x: ML, y: HDR_BOT - INFO_H - 40, size: 10, font: fontReg, color: MUTED },
+      );
+    }
+  }
+
+  // ── Append signed per-service attestations ────────────────────────────────
+  for (const s of serviceSigs) {
+    try {
+      const buf = Buffer.from(s.signedPdfBase64 ?? "", "base64");
+      const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+      const pages = await merged.copyPages(src, src.getPageIndices());
+      for (const p of pages) merged.addPage(p);
+      pageNum += src.getPageCount();
+    } catch (err) {
+      log?.warn?.(
+        { err: String(err), workflowId: wf.id, sigId: s.id },
+        "Failed to merge service signature PDF",
       );
     }
   }
@@ -1340,6 +1402,7 @@ router.post(
     });
 
     const nonce = createSignSession({
+      kind: "invoice",
       workflowId: wf.id,
       userId: user.id,
       filename: `${wf.reference}-signed.pdf`,
@@ -1373,7 +1436,7 @@ router.post(
       return;
     }
     const user = getUser(req);
-    const session = consumeSignSession(body.data.nonce);
+    const session = consumeSignSession(body.data.nonce, "invoice");
     if (!session) {
       res.status(410).json({
         error:

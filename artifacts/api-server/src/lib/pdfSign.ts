@@ -245,7 +245,10 @@ export function embedSignature(
 // browser round-trip to the local agent typically completes in <2s.
 // ---------------------------------------------------------------------------
 
+export type SignSessionKind = "invoice" | "service";
+
 interface PendingSession {
+  kind: SignSessionKind;
   workflowId: number;
   userId: number;
   filename: string;
@@ -272,10 +275,14 @@ export function createSignSession(
   return nonce;
 }
 
-export function consumeSignSession(nonce: string): PendingSession | null {
+export function consumeSignSession(
+  nonce: string,
+  expectedKind: SignSessionKind,
+): PendingSession | null {
   sweep();
   const s = pending.get(nonce);
   if (!s) return null;
+  if (s.kind !== expectedKind) return null;
   pending.delete(nonce);
   return s;
 }

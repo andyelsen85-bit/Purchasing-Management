@@ -18,6 +18,7 @@ import notificationsRouter from "./notifications";
 import backupRouter from "./backup";
 import archiveRouter from "./archive";
 import ldapTestRouter from "./ldapTest";
+import serviceSignaturesRouter from "./serviceSignatures";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(notificationsRouter);
 router.use(backupRouter);
 router.use(archiveRouter);
 router.use(ldapTestRouter);
+router.use(serviceSignaturesRouter);
 
 export default router;
