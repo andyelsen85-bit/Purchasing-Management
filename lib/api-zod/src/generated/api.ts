@@ -455,6 +455,7 @@ export const ListWorkflowsResponseItem = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -587,6 +588,7 @@ export const ListWorkflowsByStepResponseItem = zod.object({
         .union([
           zod.literal("K_ORDER"),
           zod.literal("GT_INVEST"),
+          zod.literal("GT_INVEST_ONLINE"),
           zod.literal(null),
         ])
         .nullish(),
@@ -639,6 +641,7 @@ export const GetWorkflowResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -904,6 +907,7 @@ export const UpdateWorkflowResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -1093,6 +1097,7 @@ export const RestoreWorkflowResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -1243,6 +1248,7 @@ export const AdvanceWorkflowBody = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -1277,6 +1283,7 @@ export const AdvanceWorkflowResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -1455,6 +1462,7 @@ export const RejectWorkflowResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -1629,6 +1637,7 @@ export const UndoWorkflowResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -1821,6 +1830,7 @@ export const SetGtInvestDecisionResponse = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),
@@ -2249,6 +2259,7 @@ export const ListGtInvestWorkflowsResponseItem = zod.object({
     .union([
       zod.literal("K_ORDER"),
       zod.literal("GT_INVEST"),
+      zod.literal("GT_INVEST_ONLINE"),
       zod.literal(null),
     ])
     .nullish(),

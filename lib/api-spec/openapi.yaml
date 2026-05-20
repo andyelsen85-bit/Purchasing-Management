@@ -1519,7 +1519,7 @@ components:
 
     Branch:
       type: string
-      enum: [K_ORDER, GT_INVEST]
+      enum: [K_ORDER, GT_INVEST, GT_INVEST_ONLINE]
 
     User:
       type: object
@@ -1707,7 +1707,7 @@ components:
         createdByName: { type: string }
         priority: { $ref: "#/components/schemas/Priority" }
         currentStep: { $ref: "#/components/schemas/WorkflowStep" }
-        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, GT_INVEST_ONLINE, null] }
         ageDays: { type: integer }
         isStalled: { type: boolean }
         # Step 1 - New
@@ -1795,7 +1795,7 @@ components:
         departmentName: { type: string }
         priority: { $ref: "#/components/schemas/Priority" }
         currentStep: { $ref: "#/components/schemas/WorkflowStep" }
-        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, GT_INVEST_ONLINE, null] }
         estimatedAmount: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         ageDays: { type: integer }
@@ -1907,7 +1907,7 @@ components:
     AdvanceWorkflowInput:
       type: object
       properties:
-        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, null] }
+        branch: { type: ["string", "null"], enum: [K_ORDER, GT_INVEST, GT_INVEST_ONLINE, null] }
 
     GtInvestDecision:
       type: ["string", "null"]

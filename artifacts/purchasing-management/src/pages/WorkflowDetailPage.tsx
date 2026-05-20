@@ -1936,7 +1936,7 @@ function FinancialApprovePanel({
         <CardHeader>
           <CardTitle>Validation financière</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Choisissez un circuit — K-Order ou GT Invest — puis approuvez pour faire avancer la demande.
+            Choisissez un circuit — K-Order, GT Invest Online ou GT Invest — puis approuvez pour faire avancer la demande.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1955,14 +1955,17 @@ function FinancialApprovePanel({
                 className={`w-full sm:w-64 ${missingInputCls(missing.has("branch"))}`}
                 data-testid="select-fin-branch"
               >
-                <SelectValue placeholder="Choisir K-Order ou GT Invest…" />
+                <SelectValue placeholder="Choisir un circuit…" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={AdvanceWorkflowInputBranch.K_ORDER}>
                   K-Order
                 </SelectItem>
+                <SelectItem value={AdvanceWorkflowInputBranch.GT_INVEST_ONLINE}>
+                  GT Invest Online (signatures en ligne, sans réunion)
+                </SelectItem>
                 <SelectItem value={AdvanceWorkflowInputBranch.GT_INVEST}>
-                  GT Invest
+                  GT Invest (réunion du comité)
                 </SelectItem>
               </SelectContent>
             </Select>

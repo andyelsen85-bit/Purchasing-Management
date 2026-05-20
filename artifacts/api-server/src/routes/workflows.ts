@@ -461,7 +461,7 @@ async function validateAdvancePrereqs(
       if (!wf.financialApproved)
         return "Financial must approve before advancing.";
       if (!branch)
-        return "Pick a routing branch (K-Order or GT Invest) before advancing.";
+        return "Pick a routing branch (K-Order, GT Invest Online or GT Invest) before advancing.";
       return null;
     case "GT_INVEST":
       // Manual advance from GT_INVEST is no longer the normal path —
@@ -542,7 +542,7 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
   if (wf.currentStep === "VALIDATING_SERVICES") {
     const st = await serviceSignaturesStatus(wf.id);
     if (st.pendingLabels.length > 0) {
-      const msg = `Toutes les Validations Services doivent être signées avant de passer à l'étape suivante (GT Invest). Signatures en attente : ${st.pendingLabels.join(" ; ")}`;
+      const msg = `Toutes les Validations Services doivent être signées avant de passer à l'étape suivante (Commande). Signatures en attente : ${st.pendingLabels.join(" ; ")}`;
       res.status(400).json({ error: msg, message: msg });
       return;
     }
@@ -681,7 +681,7 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
         if (s.emails.length === 0) continue;
         const body =
           `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\n` +
-          `Votre validation est requise pour que le dossier puisse passer à l'étape Invest.\n\n` +
+          `Votre validation est requise pour que le dossier puisse passer à l'étape Commande.\n\n` +
           `── Détails du dossier ─────────────────────────────\n` +
           summaryLines.join("\n") +
           `\n\nLes pièces jointes au dossier sont attachées à ce message. Vous pouvez aussi vous connecter à Purchasing Management pour signer électroniquement.`;

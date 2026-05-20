@@ -11,12 +11,14 @@ export function StepProgress({ current, branch }: Props) {
   // accepted as `current` for historical rows and is treated as
   // equivalent to QUOTATION for ribbon-positioning purposes.
   const flow: Step[] = (() => {
+    // Classic GT_INVEST goes to the committee meeting and skips the
+    // per-service signing step. K_ORDER and GT_INVEST_ONLINE both
+    // collect Validations Services and skip the GT_INVEST meeting.
     if (branch === "GT_INVEST") {
       return [
         "QUOTATION",
         "VALIDATING_QUOTE_FINANCIAL",
         "VALIDATING_BY_FINANCIAL",
-        "VALIDATING_SERVICES",
         "GT_INVEST",
         "ORDERING",
         "DELIVERY",

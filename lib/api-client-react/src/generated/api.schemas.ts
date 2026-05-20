@@ -61,6 +61,7 @@ export type Branch = (typeof Branch)[keyof typeof Branch];
 export const Branch = {
   K_ORDER: "K_ORDER",
   GT_INVEST: "GT_INVEST",
+  GT_INVEST_ONLINE: "GT_INVEST_ONLINE",
 } as const;
 
 export type UserSource = (typeof UserSource)[keyof typeof UserSource];
@@ -233,6 +234,7 @@ export type WorkflowBranch =
 export const WorkflowBranch = {
   K_ORDER: "K_ORDER",
   GT_INVEST: "GT_INVEST",
+  GT_INVEST_ONLINE: "GT_INVEST_ONLINE",
 } as const;
 
 /**
@@ -455,6 +457,7 @@ export type WorkflowSummaryBranch =
 export const WorkflowSummaryBranch = {
   K_ORDER: "K_ORDER",
   GT_INVEST: "GT_INVEST",
+  GT_INVEST_ONLINE: "GT_INVEST_ONLINE",
 } as const;
 
 export interface WorkflowSummary {
@@ -587,6 +590,7 @@ export type AdvanceWorkflowInputBranch =
 export const AdvanceWorkflowInputBranch = {
   K_ORDER: "K_ORDER",
   GT_INVEST: "GT_INVEST",
+  GT_INVEST_ONLINE: "GT_INVEST_ONLINE",
 } as const;
 
 export interface AdvanceWorkflowInput {

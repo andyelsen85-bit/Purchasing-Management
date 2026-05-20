@@ -202,13 +202,20 @@ export function nextStep(
     case "VALIDATING_QUOTE_FINANCIAL":
       return "VALIDATING_BY_FINANCIAL";
     case "VALIDATING_BY_FINANCIAL":
-      // Always pass through the new "Validations Services" signing step
-      // before branching to GT Invest or directly to Ordering.
+      // Branch decides whether per-service signatures are collected
+      // before the order is placed, or whether the workflow goes
+      // straight to the GT Invest committee:
+      //   K_ORDER            → VALIDATING_SERVICES → ORDERING
+      //   GT_INVEST_ONLINE   → VALIDATING_SERVICES → ORDERING
+      //                        (no committee, services sign online)
+      //   GT_INVEST (classic) → GT_INVEST → ORDERING
+      //                        (committee meeting; services bypassed)
+      if (branch === "GT_INVEST") return "GT_INVEST";
       return "VALIDATING_SERVICES";
     case "VALIDATING_SERVICES":
-      // Branch chooser is applied here (after services have signed).
-      if (branch === "GT_INVEST") return "GT_INVEST";
-      return "ORDERING"; // K_ORDER branch (or default)
+      // Both K_ORDER and GT_INVEST_ONLINE land here next; the
+      // committee branch never visits this step.
+      return "ORDERING";
     case "GT_INVEST":
       return "ORDERING";
     case "ORDERING":

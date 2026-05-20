@@ -16,4 +16,5 @@ export type AdvanceWorkflowInputBranch =
 export const AdvanceWorkflowInputBranch = {
   K_ORDER: "K_ORDER",
   GT_INVEST: "GT_INVEST",
+  GT_INVEST_ONLINE: "GT_INVEST_ONLINE",
 } as const;
