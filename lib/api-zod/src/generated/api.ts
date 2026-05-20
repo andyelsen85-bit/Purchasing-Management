@@ -2691,8 +2691,8 @@ export const OverrideServiceSignatureResponse = zod.object({
 /**
  * Pulls each rule's `adGroup` membership from Active Directory and
 replaces its `emails` list with the resolved member addresses.
-Returns a per-rule summary. Currently a stub when LDAP is not
-configured — surfaces `synced: 0` and a message.
+Returns a per-rule summary so the UI can show "12 users found,
+10 with mail" next to each rule.
 
  * @summary Sync recipient emails from the configured AD groups
  */
@@ -2709,6 +2709,17 @@ export const SyncNotificationRulesFromAdResponse = zod.object({
       updatedAt: zod.coerce.date(),
     }),
   ),
+  perRule: zod
+    .array(
+      zod.object({
+        key: zod.string(),
+        ok: zod.boolean(),
+        count: zod.number(),
+        error: zod.string().optional(),
+        details: zod.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 /**

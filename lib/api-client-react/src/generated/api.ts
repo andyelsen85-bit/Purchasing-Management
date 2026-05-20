@@ -83,6 +83,7 @@ import type {
   SmtpTestInput,
   SmtpTestResult,
   SyncNotificationRulesFromAd200,
+  SyncNotificationRulesFromAd400,
   UpdateNotificationRuleInput,
   UpdateSettingsInput,
   UpdateUserInput,
@@ -5521,8 +5522,8 @@ export const useOverrideServiceSignature = <
 /**
  * Pulls each rule's `adGroup` membership from Active Directory and
 replaces its `emails` list with the resolved member addresses.
-Returns a per-rule summary. Currently a stub when LDAP is not
-configured — surfaces `synced: 0` and a message.
+Returns a per-rule summary so the UI can show "12 users found,
+10 with mail" next to each rule.
 
  * @summary Sync recipient emails from the configured AD groups
  */
@@ -5543,7 +5544,7 @@ export const syncNotificationRulesFromAd = async (
 };
 
 export const getSyncNotificationRulesFromAdMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<SyncNotificationRulesFromAd400>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5582,13 +5583,14 @@ export type SyncNotificationRulesFromAdMutationResult = NonNullable<
   Awaited<ReturnType<typeof syncNotificationRulesFromAd>>
 >;
 
-export type SyncNotificationRulesFromAdMutationError = ErrorType<unknown>;
+export type SyncNotificationRulesFromAdMutationError =
+  ErrorType<SyncNotificationRulesFromAd400>;
 
 /**
  * @summary Sync recipient emails from the configured AD groups
  */
 export const useSyncNotificationRulesFromAd = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<SyncNotificationRulesFromAd400>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<

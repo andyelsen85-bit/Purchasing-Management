@@ -1389,10 +1389,34 @@ export type OverrideServiceSignatureBody = {
   reason: string;
 };
 
+export type SyncNotificationRulesFromAd200PerRuleItem = {
+  key: string;
+  ok: boolean;
+  count: number;
+  error?: string;
+  details?: string;
+};
+
 export type SyncNotificationRulesFromAd200 = {
   synced: number;
   message?: string;
   rules: NotificationRule[];
+  perRule?: SyncNotificationRulesFromAd200PerRuleItem[];
+};
+
+export type SyncNotificationRulesFromAd400PerRuleItem = {
+  key: string;
+  ok: boolean;
+  count: number;
+  error?: string;
+  details?: string;
+};
+
+export type SyncNotificationRulesFromAd400 = {
+  synced: number;
+  message?: string;
+  rules: NotificationRule[];
+  perRule?: SyncNotificationRulesFromAd400PerRuleItem[];
 };
 
 export type EmptyTrash200 = {

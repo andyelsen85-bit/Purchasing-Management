@@ -6,11 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { NotificationRule } from "./notificationRule";
-import type { SyncNotificationRulesFromAd200PerRuleItem } from "./syncNotificationRulesFromAd200PerRuleItem";
+import type { SyncNotificationRulesFromAd400PerRuleItem } from "./syncNotificationRulesFromAd400PerRuleItem";
 
-export type SyncNotificationRulesFromAd200 = {
+export type SyncNotificationRulesFromAd400 = {
   synced: number;
   message?: string;
   rules: NotificationRule[];
-  perRule?: SyncNotificationRulesFromAd200PerRuleItem[];
+  perRule?: SyncNotificationRulesFromAd400PerRuleItem[];
 };

@@ -23,6 +23,7 @@ import nodemailer from "nodemailer";
 import { requireAuth, requireRole, getUser } from "../middlewares/auth";
 import { getSettings, toPublicSettings, updateSettingsRecord } from "../lib/settings";
 import { audit } from "../lib/audit";
+import { resolveGroupMemberEmails } from "../lib/ldap";
 
 const router: IRouter = Router();
 
@@ -298,19 +299,111 @@ router.post(
   "/settings/notification-rules/sync-ad",
   requireAuth,
   requireRole("ADMIN", "FINANCIAL_ALL"),
-  async (_req, res): Promise<void> => {
-    // Stub — until LDAP/AD wiring is in place the sync is a no-op. We
-    // still return the current rules so the UI can refresh consistently.
+  async (req, res): Promise<void> => {
     await seedNotificationRulesIfEmpty();
-    const rows = await db
+    const settings = await getSettings();
+    const ldapCfg = settings.ldap;
+
+    if (!ldapCfg?.enabled || !ldapCfg.host || !ldapCfg.baseDn) {
+      res.status(400).json({
+        synced: 0,
+        message:
+          "LDAP / Active Directory n'est pas configuré dans les Paramètres (onglet LDAP). Activez la connexion, renseignez l'hôte et le Base DN, puis réessayez.",
+        rules: await db
+          .select()
+          .from(notificationRulesTable)
+          .orderBy(notificationRulesTable.id),
+        perRule: [],
+      });
+      return;
+    }
+    if (!ldapCfg.bindDn || !ldapCfg.bindPassword) {
+      res.status(400).json({
+        synced: 0,
+        message:
+          "Le compte de service LDAP (Bind DN + mot de passe) n'est pas configuré — il est nécessaire pour lire les membres des groupes AD.",
+        rules: await db
+          .select()
+          .from(notificationRulesTable)
+          .orderBy(notificationRulesTable.id),
+        perRule: [],
+      });
+      return;
+    }
+
+    const rules = await db
       .select()
       .from(notificationRulesTable)
       .orderBy(notificationRulesTable.id);
+
+    let synced = 0;
+    const perRule: Array<{
+      key: string;
+      ok: boolean;
+      count: number;
+      error?: string;
+      details?: string;
+    }> = [];
+
+    for (const rule of rules) {
+      const group = (rule.adGroup ?? "").trim();
+      if (!group) {
+        perRule.push({
+          key: rule.key,
+          ok: true,
+          count: rule.emails.length,
+          details: "Aucun groupe AD configuré — emails manuels conservés.",
+        });
+        continue;
+      }
+      try {
+        const r = await resolveGroupMemberEmails(ldapCfg, group);
+        if (!r.ok) {
+          perRule.push({
+            key: rule.key,
+            ok: false,
+            count: rule.emails.length,
+            error: r.error,
+          });
+          continue;
+        }
+        await db
+          .update(notificationRulesTable)
+          .set({ emails: r.emails })
+          .where(eq(notificationRulesTable.id, rule.id));
+        synced += 1;
+        perRule.push({
+          key: rule.key,
+          ok: true,
+          count: r.emails.length,
+          details: r.details,
+        });
+      } catch (err) {
+        perRule.push({
+          key: rule.key,
+          ok: false,
+          count: rule.emails.length,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    await audit(getUser(req).id, "NOTIFICATION_RULES_SYNC_AD", "notification-rules");
+
+    const refreshed = await db
+      .select()
+      .from(notificationRulesTable)
+      .orderBy(notificationRulesTable.id);
+
+    const failed = perRule.filter((p) => !p.ok);
     res.json({
-      synced: 0,
+      synced,
       message:
-        "Synchronisation Active Directory non configurée. Les emails actuels sont préservés.",
-      rules: rows,
+        failed.length === 0
+          ? `${synced} règle(s) synchronisée(s) depuis Active Directory.`
+          : `${synced} règle(s) synchronisée(s), ${failed.length} en échec — voir détails par règle.`,
+      rules: refreshed,
+      perRule,
     });
   },
 );

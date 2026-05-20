@@ -318,6 +318,203 @@ async function resolveAllGroups(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Resolve every email address of users transitively belonging to an AD
+ * group.
+ *
+ * `groupRef` may be a full DN (`CN=Service Technique,OU=Groups,DC=…`)
+ * or a short name / sAMAccountName (`Service Technique`). When it is
+ * not a DN we first look it up under `baseDn`.
+ *
+ * Uses the AD `LDAP_MATCHING_RULE_IN_CHAIN` OID (1.2.840.113556.1.4.1941)
+ * so nested group membership is followed in a single server-side query.
+ * Falls back to a direct `member` lookup on the group entry (one level
+ * only) when the OID returns nothing — useful for non-AD directories.
+ *
+ * Returns an object with `{ ok, emails, error, details }`. `details`
+ * is a short trace line shown next to each rule in the UI so the
+ * operator can see "found 7 users, 6 with mail" without digging
+ * through server logs.
+ */
+export async function resolveGroupMemberEmails(
+  cfg: LdapConfig,
+  groupRef: string,
+): Promise<{
+  ok: boolean;
+  emails: string[];
+  error?: string;
+  details?: string;
+}> {
+  if (!cfg.enabled || !cfg.host || !cfg.baseDn) {
+    return { ok: false, emails: [], error: "LDAP not enabled or host/baseDn missing." };
+  }
+  if (!cfg.bindDn || !cfg.bindPassword) {
+    return {
+      ok: false,
+      emails: [],
+      error:
+        "Bind DN / password not configured — required to read group members from AD.",
+    };
+  }
+  const transport = resolveTransport(cfg);
+  const conn = await connect(transport);
+  if (!conn.ok) return { ok: false, emails: [], error: conn.error };
+  const client = conn.client;
+  const cleanup = (): void => {
+    try {
+      client.unbind();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const bindErr = await new Promise<string | null>((resolve) => {
+    client.bind(cfg.bindDn!, cfg.bindPassword!, (err) => {
+      if (err) resolve(friendlyError(err));
+      else resolve(null);
+    });
+  });
+  if (bindErr) {
+    cleanup();
+    return { ok: false, emails: [], error: bindErr };
+  }
+
+  const a = attrs(cfg);
+  const isDn = /=/.test(groupRef) && /,/.test(groupRef);
+
+  // Resolve to a DN first when the operator only supplied a short name.
+  let groupDn = groupRef;
+  if (!isDn) {
+    const safe = groupRef.replace(/[\\*()\u0000]/g, (ch) => {
+      const map: Record<string, string> = {
+        "\\": "\\5c",
+        "*": "\\2a",
+        "(": "\\28",
+        ")": "\\29",
+        "\u0000": "\\00",
+      };
+      return map[ch] ?? ch;
+    });
+    const lookup = await new Promise<string | null>((resolve) => {
+      const filter = `(&(objectClass=group)(|(cn=${safe})(sAMAccountName=${safe})))`;
+      client.search(
+        cfg.baseDn!,
+        { filter, scope: "sub", attributes: ["dn"] },
+        (err, s) => {
+          if (err) return resolve(null);
+          let dn: string | null = null;
+          s.on("searchEntry", (entry) => {
+            dn = entry.pojo.objectName ?? dn;
+          });
+          s.on("error", () => resolve(dn));
+          s.on("end", () => resolve(dn));
+        },
+      );
+    });
+    if (!lookup) {
+      cleanup();
+      return {
+        ok: false,
+        emails: [],
+        error: `Group "${groupRef}" not found under ${cfg.baseDn}.`,
+      };
+    }
+    groupDn = lookup;
+  }
+
+  // 1. Transitive member lookup via LDAP_MATCHING_RULE_IN_CHAIN.
+  const escapedDn = groupDn.replace(/\\/g, "\\5c").replace(/\*/g, "\\2a");
+  const emails = new Set<string>();
+  let foundCount = 0;
+  let withMail = 0;
+  await new Promise<void>((resolve) => {
+    const filter = `(memberOf:1.2.840.113556.1.4.1941:=${escapedDn})`;
+    client.search(
+      cfg.baseDn!,
+      {
+        filter,
+        scope: "sub",
+        attributes: [a.emailAttr, "cn", "objectClass"],
+      },
+      (err, s) => {
+        if (err) return resolve();
+        s.on("searchEntry", (entry) => {
+          foundCount += 1;
+          for (const at of entry.pojo.attributes ?? []) {
+            if (at.type === a.emailAttr && at.values?.[0]) {
+              const e = String(at.values[0]).trim().toLowerCase();
+              if (e) {
+                if (!emails.has(e)) withMail += 1;
+                emails.add(e);
+              }
+            }
+          }
+        });
+        s.on("error", () => resolve());
+        s.on("end", () => resolve());
+      },
+    );
+  });
+
+  // 2. Fallback: read the group's `member` attribute and pull each
+  //    user's mail. Only runs when the OID returned nothing (older
+  //    directories or directories that ignore the OID silently).
+  if (emails.size === 0) {
+    const memberDns = await new Promise<string[]>((resolve) => {
+      const out: string[] = [];
+      client.search(
+        groupDn,
+        { scope: "base", attributes: ["member"] },
+        (err, s) => {
+          if (err) return resolve(out);
+          s.on("searchEntry", (entry) => {
+            for (const at of entry.pojo.attributes ?? []) {
+              if (at.type === "member") {
+                for (const v of at.values ?? []) out.push(String(v));
+              }
+            }
+          });
+          s.on("error", () => resolve(out));
+          s.on("end", () => resolve(out));
+        },
+      );
+    });
+    for (const dn of memberDns) {
+      const mail = await new Promise<string | null>((resolve) => {
+        client.search(
+          dn,
+          { scope: "base", attributes: [a.emailAttr] },
+          (err, s) => {
+            if (err) return resolve(null);
+            let m: string | null = null;
+            s.on("searchEntry", (entry) => {
+              for (const at of entry.pojo.attributes ?? []) {
+                if (at.type === a.emailAttr && at.values?.[0]) {
+                  m = String(at.values[0]).trim().toLowerCase();
+                }
+              }
+            });
+            s.on("error", () => resolve(m));
+            s.on("end", () => resolve(m));
+          },
+        );
+      });
+      foundCount += 1;
+      if (mail) {
+        if (!emails.has(mail)) withMail += 1;
+        emails.add(mail);
+      }
+    }
+  }
+
+  cleanup();
+  return {
+    ok: true,
+    emails: Array.from(emails).sort(),
+    details: `${foundCount} membre(s) trouvé(s), ${withMail} avec une adresse "${a.emailAttr}".`,
+  };
+}
+
 export async function ldapAuthenticate(
   cfg: LdapConfig,
   username: string,

@@ -1102,8 +1102,8 @@ paths:
       description: |
         Pulls each rule's `adGroup` membership from Active Directory and
         replaces its `emails` list with the resolved member addresses.
-        Returns a per-rule summary. Currently a stub when LDAP is not
-        configured — surfaces `synced: 0` and a message.
+        Returns a per-rule summary so the UI can show "12 users found,
+        10 with mail" next to each rule.
       responses:
         "200":
           description: Sync summary
@@ -1118,6 +1118,41 @@ paths:
                   rules:
                     type: array
                     items: { $ref: "#/components/schemas/NotificationRule" }
+                  perRule:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, ok, count]
+                      properties:
+                        key: { type: string }
+                        ok: { type: boolean }
+                        count: { type: integer }
+                        error: { type: string }
+                        details: { type: string }
+        "400":
+          description: LDAP not configured
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [synced, rules]
+                properties:
+                  synced: { type: integer }
+                  message: { type: string }
+                  rules:
+                    type: array
+                    items: { $ref: "#/components/schemas/NotificationRule" }
+                  perRule:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, ok, count]
+                      properties:
+                        key: { type: string }
+                        ok: { type: boolean }
+                        count: { type: integer }
+                        error: { type: string }
+                        details: { type: string }
 
   # ---------------- ADMIN / TRASH ----------------
   /admin/deleted-workflows:

@@ -3018,13 +3018,44 @@ function NotificationRulesPanel() {
         qc.invalidateQueries({ queryKey: getListNotificationRulesQueryKey() }),
     },
   });
+  const [perRule, setPerRule] = useState<
+    Record<string, { ok: boolean; count: number; error?: string; details?: string }>
+  >({});
   const sync = useSyncNotificationRulesFromAd({
     mutation: {
       onSuccess: (r) => {
         qc.invalidateQueries({ queryKey: getListNotificationRulesQueryKey() });
+        const next: Record<
+          string,
+          { ok: boolean; count: number; error?: string; details?: string }
+        > = {};
+        for (const p of r.perRule ?? []) {
+          next[p.key] = {
+            ok: p.ok,
+            count: p.count,
+            error: p.error,
+            details: p.details,
+          };
+        }
+        setPerRule(next);
+        const failed = (r.perRule ?? []).filter((p) => !p.ok);
         toast({
-          title: r.synced > 0 ? "Synchronisation AD terminée" : "Synchronisation AD ignorée",
-          description: r.message ?? `${r.synced} règle(s) mises à jour.`,
+          title:
+            r.synced > 0
+              ? "Synchronisation AD terminée"
+              : "Synchronisation AD ignorée",
+          description:
+            r.message ??
+            `${r.synced} règle(s) mises à jour${failed.length > 0 ? `, ${failed.length} en échec.` : "."}`,
+          variant: failed.length > 0 ? "destructive" : undefined,
+        });
+      },
+      onError: (err) => {
+        const e = err as { data?: { message?: string } } & Error;
+        toast({
+          title: "Synchronisation AD échouée",
+          description: e.data?.message ?? e.message,
+          variant: "destructive",
         });
       },
     },
@@ -3074,6 +3105,7 @@ function NotificationRulesPanel() {
               key={rule.id}
               rule={rule}
               saving={update.isPending}
+              syncResult={perRule[rule.key]}
               onSave={(adGroup, emails) =>
                 update.mutate({ id: rule.id, data: { adGroup, emails } })
               }
@@ -3088,10 +3120,16 @@ function NotificationRulesPanel() {
 interface NotificationRuleRowProps {
   rule: { id: number; key: string; label: string; adGroup: string | null; emails: string[] };
   saving: boolean;
+  syncResult?: { ok: boolean; count: number; error?: string; details?: string };
   onSave: (adGroup: string | null, emails: string[]) => void;
 }
 
-function NotificationRuleRow({ rule, saving, onSave }: NotificationRuleRowProps) {
+function NotificationRuleRow({
+  rule,
+  saving,
+  syncResult,
+  onSave,
+}: NotificationRuleRowProps) {
   const [adGroup, setAdGroup] = useState<string>(rule.adGroup ?? "");
   const [emails, setEmails] = useState<string[]>(rule.emails);
   const [draftEmail, setDraftEmail] = useState("");
@@ -3150,6 +3188,17 @@ function NotificationRuleRow({ rule, saving, onSave }: NotificationRuleRowProps)
             onChange={(e) => setAdGroup(e.target.value)}
             data-testid={`input-ad-group-${rule.key}`}
           />
+          {syncResult && (
+            <p
+              className={`text-xs ${syncResult.ok ? "text-muted-foreground" : "text-destructive"}`}
+              data-testid={`sync-status-${rule.key}`}
+            >
+              {syncResult.ok
+                ? syncResult.details ??
+                  `${syncResult.count} adresse(s) récupérée(s) depuis AD.`
+                : `Échec : ${syncResult.error ?? "erreur inconnue"}`}
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Ajouter une adresse email</Label>
