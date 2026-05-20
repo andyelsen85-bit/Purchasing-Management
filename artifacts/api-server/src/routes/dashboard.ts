@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, isNull } from "drizzle-orm";
-import { db, workflowsTable, historyTable, usersTable } from "@workspace/db";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { db, workflowsTable, departmentsTable, historyTable, usersTable } from "@workspace/db";
 import { requireAuth, getUser } from "../middlewares/auth";
-import { canSeeWorkflow, ACTIVE_WORKFLOW_STEPS } from "../lib/permissions";
+import { canSeeWorkflow, hasRole, ACTIVE_WORKFLOW_STEPS } from "../lib/permissions";
 
 const router: IRouter = Router();
 const STALL_DAYS = 7;
@@ -73,6 +73,71 @@ router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> =>
       createdAt: r.h.createdAt,
     })),
   });
+});
+
+// Returns workflows that are waiting for the current user's signature or
+// approval, scoped by their role:
+//   ADMIN / FINANCIAL_ALL — all three approval steps across every department
+//   FINANCIAL_INVOICE     — VALIDATING_INVOICE across every department
+//   DEPT_MANAGER          — VALIDATING_QUOTE_FINANCIAL in their own departments
+router.get("/dashboard/pending-signatures", requireAuth, async (req, res): Promise<void> => {
+  const user = getUser(req);
+
+  const approvalSteps: string[] = [];
+  let restrictDeptIds: number[] | null = null;
+
+  if (hasRole(user, "ADMIN", "FINANCIAL_ALL")) {
+    approvalSteps.push(
+      "VALIDATING_QUOTE_FINANCIAL",
+      "VALIDATING_BY_FINANCIAL",
+      "VALIDATING_INVOICE",
+    );
+  } else if (hasRole(user, "FINANCIAL_INVOICE")) {
+    approvalSteps.push("VALIDATING_INVOICE");
+  } else if (hasRole(user, "DEPT_MANAGER")) {
+    approvalSteps.push("VALIDATING_QUOTE_FINANCIAL");
+    restrictDeptIds = user.departmentIds;
+  }
+
+  if (approvalSteps.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const conditions = [
+    isNull(workflowsTable.deletedAt),
+    inArray(workflowsTable.currentStep, approvalSteps),
+    ...(restrictDeptIds !== null && restrictDeptIds.length > 0
+      ? [inArray(workflowsTable.departmentId, restrictDeptIds)]
+      : []),
+  ];
+
+  const rows = await db
+    .select({
+      id: workflowsTable.id,
+      reference: workflowsTable.reference,
+      title: workflowsTable.title,
+      currentStep: workflowsTable.currentStep,
+      priority: workflowsTable.priority,
+      lastStepChangeAt: workflowsTable.lastStepChangeAt,
+      departmentName: departmentsTable.name,
+    })
+    .from(workflowsTable)
+    .leftJoin(departmentsTable, eq(departmentsTable.id, workflowsTable.departmentId))
+    .where(and(...(conditions as [typeof conditions[0], ...typeof conditions])))
+    .orderBy(desc(workflowsTable.lastStepChangeAt));
+
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      reference: r.reference,
+      title: r.title,
+      currentStep: r.currentStep,
+      priority: r.priority,
+      lastStepChangeAt: r.lastStepChangeAt,
+      departmentName: r.departmentName ?? "",
+    })),
+  );
 });
 
 export default router;

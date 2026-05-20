@@ -76,6 +76,7 @@ export * from "./notificationEntry";
 export * from "./notificationEntryStatus";
 export * from "./notificationFlushResult";
 export * from "./notifyGtInvestMeetingResult";
+export * from "./pendingSignature";
 export * from "./prepareWorkflowSign200";
 export * from "./priority";
 export * from "./quoteEntry";

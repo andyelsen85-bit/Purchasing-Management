@@ -2092,6 +2092,22 @@ export const GetDashboardSummaryResponse = zod.object({
   ),
 });
 
+/**
+ * @summary Workflows waiting for the current user's signature / approval
+ */
+export const GetDashboardPendingSignaturesResponseItem = zod.object({
+  id: zod.number(),
+  reference: zod.string(),
+  title: zod.string(),
+  departmentName: zod.string(),
+  currentStep: zod.string(),
+  priority: zod.string(),
+  lastStepChangeAt: zod.coerce.date(),
+});
+export const GetDashboardPendingSignaturesResponse = zod.array(
+  GetDashboardPendingSignaturesResponseItem,
+);
+
 export const ListGtInvestWorkflowsResponseItem = zod.object({
   id: zod.number(),
   reference: zod.string(),

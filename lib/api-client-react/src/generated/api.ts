@@ -69,6 +69,7 @@ import type {
   NotificationEntry,
   NotificationFlushResult,
   NotifyGtInvestMeetingResult,
+  PendingSignature,
   PrepareWorkflowSign200,
   RejectWorkflowInput,
   SessionResponse,
@@ -3486,6 +3487,86 @@ export function useGetDashboardSummary<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDashboardSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Workflows waiting for the current user's signature / approval
+ */
+export const getGetDashboardPendingSignaturesUrl = () => {
+  return `/api/dashboard/pending-signatures`;
+};
+
+export const getDashboardPendingSignatures = async (
+  options?: RequestInit,
+): Promise<PendingSignature[]> => {
+  return customFetch<PendingSignature[]>(
+    getGetDashboardPendingSignaturesUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDashboardPendingSignaturesQueryKey = () => {
+  return [`/api/dashboard/pending-signatures`] as const;
+};
+
+export const getGetDashboardPendingSignaturesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardPendingSignatures>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardPendingSignatures>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardPendingSignaturesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardPendingSignatures>>
+  > = ({ signal }) =>
+    getDashboardPendingSignatures({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardPendingSignatures>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardPendingSignaturesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardPendingSignatures>>
+>;
+export type GetDashboardPendingSignaturesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Workflows waiting for the current user's signature / approval
+ */
+
+export function useGetDashboardPendingSignatures<
+  TData = Awaited<ReturnType<typeof getDashboardPendingSignatures>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardPendingSignatures>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardPendingSignaturesQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

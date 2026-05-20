@@ -672,6 +672,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DashboardSummary" }
 
+  /dashboard/pending-signatures:
+    get:
+      operationId: getDashboardPendingSignatures
+      tags: [dashboard]
+      summary: Workflows waiting for the current user's signature / approval
+      responses:
+        "200":
+          description: List of workflows pending approval by the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PendingSignature" }
+
   # ---------------- GT-INVEST ----------------
   /gt-invest/workflows:
     get:
@@ -1723,6 +1737,18 @@ components:
           type: array
           items: { $ref: "#/components/schemas/HistoryEntry" }
       required: [totalActive, totalDone, stalledCount, averageAgeDays, countsByStep, recent]
+
+    PendingSignature:
+      type: object
+      properties:
+        id: { type: integer }
+        reference: { type: string }
+        title: { type: string }
+        departmentName: { type: string }
+        currentStep: { type: string }
+        priority: { type: string }
+        lastStepChangeAt: { type: string, format: date-time }
+      required: [id, reference, title, departmentName, currentStep, priority, lastStepChangeAt]
 
     AuditEntry:
       type: object

@@ -661,6 +661,16 @@ export interface DashboardSummary {
   recent: HistoryEntry[];
 }
 
+export interface PendingSignature {
+  id: number;
+  reference: string;
+  title: string;
+  departmentName: string;
+  currentStep: string;
+  priority: string;
+  lastStepChangeAt: string;
+}
+
 export interface AuditEntry {
   id: number;
   /** @nullable */
