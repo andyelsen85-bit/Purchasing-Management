@@ -6,6 +6,7 @@ import {
   workflowsTable,
   departmentsTable,
   usersTable,
+  userDepartmentsTable,
   historyTable,
   documentsTable,
   notesTable,
@@ -519,11 +520,33 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
     res.status(400).json({ error: gateError, message: gateError });
     return;
   }
-  const next = nextStep(wf.currentStep as WorkflowStep, branch);
-  if (!next) {
+  const rawNext = nextStep(wf.currentStep as WorkflowStep, branch);
+  if (!rawNext) {
     res.status(400).json({ error: "Workflow already complete" });
     return;
   }
+
+  // Auto-skip VALIDATING_QUOTE_FINANCIAL when no Department Manager is
+  // assigned to the workflow's department — there is nobody to validate,
+  // so the step is meaningless and we jump straight to VALIDATING_BY_FINANCIAL.
+  let next: WorkflowStep = rawNext;
+  if (rawNext === "VALIDATING_QUOTE_FINANCIAL") {
+    const managers = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .innerJoin(userDepartmentsTable, eq(userDepartmentsTable.userId, usersTable.id))
+      .where(
+        and(
+          eq(userDepartmentsTable.departmentId, wf.departmentId),
+          sql`'DEPT_MANAGER' = ANY(${usersTable.roles})`,
+        ),
+      )
+      .limit(1);
+    if (managers.length === 0) {
+      next = "VALIDATING_BY_FINANCIAL";
+    }
+  }
+
   const update: Record<string, unknown> = {
     currentStep: next,
     previousStep: wf.currentStep,
@@ -539,7 +562,9 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
     fromStep: wf.currentStep,
     toStep: next,
     actorId: user.id,
-    details: branch ? `branch=${branch}` : null,
+    details: next !== rawNext
+      ? `auto-skipped ${rawNext}: no dept manager${branch ? `, branch=${branch}` : ""}`
+      : branch ? `branch=${branch}` : null,
   });
   await audit(user.id, "WORKFLOW_ADVANCE", "workflow", wf.id, `${wf.currentStep}->${next}`);
 

@@ -2068,7 +2068,6 @@ function PriorStepsRecap({
   const exportHref = `${import.meta.env.BASE_URL}api/workflows/${wf.id}/export-pdf`;
 
   const ORDER: Step[] = [
-    "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
     "VALIDATING_BY_FINANCIAL",
