@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Pencil,
+  ShieldCheck,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -218,6 +219,13 @@ export function WorkflowDetailPage({ id, user }: Props) {
           <TabsTrigger value="docs" data-testid="tab-documents">
             <FileText className="mr-1 h-3.5 w-3.5" /> Documents
           </TabsTrigger>
+          {/* The Validations tab is only meaningful once the workflow
+              has been routed through the VALIDATING_SERVICES gate (or
+              had one or more per-service signature rows seeded). The
+              hook short-circuits on undefined data, and we hide the
+              tab entirely when the list is empty so unrelated steps
+              don't show an empty pane. */}
+          <ValidationsTabTrigger wfId={wf.id} />
           <TabsTrigger value="notes" data-testid="tab-notes">
             <MessageSquare className="mr-1 h-3.5 w-3.5" /> Notes
           </TabsTrigger>
@@ -244,6 +252,9 @@ export function WorkflowDetailPage({ id, user }: Props) {
         </TabsContent>
         <TabsContent value="docs">
           <DocumentsPanel wf={wf} />
+        </TabsContent>
+        <TabsContent value="validations">
+          <ValidationsPanel wf={wf} />
         </TabsContent>
         <TabsContent value="notes">
           <NotesPanel wf={wf} />
@@ -2609,6 +2620,101 @@ function InvoicePanel({
 // The step's Advance button is gated server-side until every row is
 // SIGNED or OVERRIDDEN.
 // ---------------------------------------------------------------------------
+// Read-only "Validations" tab — shows, for every per-service
+// signature row attached to the workflow, the rule label (i.e. the
+// "position" / service), its current status, and who signed or
+// overrode it. The trigger is rendered only when the workflow has at
+// least one signature row to display, so it stays out of the way for
+// workflows that never went through VALIDATING_SERVICES.
+function ValidationsTabTrigger({ wfId }: { wfId: number }) {
+  const { data: sigs } = useListServiceSignatures(wfId);
+  if (!sigs || sigs.length === 0) return null;
+  return (
+    <TabsTrigger value="validations" data-testid="tab-validations">
+      <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Validations
+    </TabsTrigger>
+  );
+}
+
+function ValidationsPanel({ wf }: { wf: Workflow }) {
+  const { data: sigs } = useListServiceSignatures(wf.id);
+  if (!sigs || sigs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-5 text-sm text-muted-foreground">
+          Aucune validation par service n'a été demandée pour ce workflow.
+        </CardContent>
+      </Card>
+    );
+  }
+  const statusLabel: Record<string, string> = {
+    PENDING: "En attente",
+    SIGNED: "Signée",
+    OVERRIDDEN: "Outrepassée",
+  };
+  const statusVariant = (s: string): "default" | "secondary" | "outline" =>
+    s === "SIGNED" ? "default" : s === "OVERRIDDEN" ? "secondary" : "outline";
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Validations par service</CardTitle>
+        <CardDescription>
+          Qui a signé (ou outrepassé) quelle position pour ce workflow.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ul className="divide-y rounded-md border">
+          {sigs.map((sig) => (
+            <li
+              key={sig.id}
+              className="flex flex-col gap-1 px-4 py-3 text-sm"
+              data-testid={`validation-row-${sig.id}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-medium leading-snug">{sig.ruleLabel}</div>
+                <Badge variant={statusVariant(sig.status)}>
+                  {statusLabel[sig.status] ?? sig.status}
+                </Badge>
+              </div>
+              {sig.status === "SIGNED" && (
+                <div className="text-xs text-muted-foreground">
+                  Signée par{" "}
+                  <span className="font-medium text-foreground">
+                    {sig.signedByName ?? "—"}
+                  </span>
+                  {sig.signedAt
+                    ? ` le ${fmtDateTimeUtil(sig.signedAt)}`
+                    : ""}
+                  {sig.certSubject ? ` · ${sig.certSubject}` : ""}
+                </div>
+              )}
+              {sig.status === "OVERRIDDEN" && (
+                <div className="text-xs text-muted-foreground">
+                  Outrepassée
+                  {sig.signedByName
+                    ? ` par ${sig.signedByName}`
+                    : ""}
+                  {sig.signedAt ? ` le ${fmtDateTimeUtil(sig.signedAt)}` : ""}
+                  {sig.overrideReason ? ` · « ${sig.overrideReason} »` : ""}
+                </div>
+              )}
+              {sig.status === "PENDING" &&
+                sig.notifiedRecipients.length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    En attente de :{" "}
+                    {sig.notifiedRecipients
+                      .map((r) => r.name ?? r.email)
+                      .join(", ")}
+                  </div>
+                )}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ServiceSignaturesPanel({
   wf,
   user,
