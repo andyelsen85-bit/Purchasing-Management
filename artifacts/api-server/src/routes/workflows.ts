@@ -42,7 +42,11 @@ import {
   type WorkflowStep,
 } from "../lib/permissions";
 import { audit } from "../lib/audit";
-import { getSettings, derivePublicationTier } from "../lib/settings";
+import {
+  getSettings,
+  derivePublicationTier,
+  isNotificationEventEnabled,
+} from "../lib/settings";
 import { queueNotification, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
 import {
   seedServiceSignatures,
@@ -585,37 +589,43 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
   });
   await audit(user.id, "WORKFLOW_ADVANCE", "workflow", wf.id, `${wf.currentStep}->${next}`);
 
-  // Notification: route-targeted role recipients per spec
-  const settings = await getSettings();
-  const recipients = await recipientsForStep(
-    { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
-    next,
-  );
-  if (recipients.length > 0) {
-    void queueNotification(
-      recipients,
-      `${wf.reference} : ${STEP_LABEL_FR[next] ?? next}`,
-      `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
-      { workflowId: wf.id, step: next },
+  // Notification: route-targeted role recipients per spec.
+  // Gated by Settings → Notifications (master + per-event `stepAdvance`).
+  if (await isNotificationEventEnabled("stepAdvance")) {
+    const recipients = await recipientsForStep(
+      { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
+      next,
     );
+    if (recipients.length > 0) {
+      void queueNotification(
+        recipients,
+        `${wf.reference} : ${STEP_LABEL_FR[next] ?? next}`,
+        `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
+        { workflowId: wf.id, step: next },
+      );
+    }
   }
 
   // When entering VALIDATING_SERVICES, seed one signature row per
-  // notification rule whose triggering answer is set on this workflow
-  // and dispatch an email to the configured recipients of each rule.
+  // notification rule whose triggering answer is set on this workflow.
+  // The per-rule emails are dispatched only when `validatingServices`
+  // is enabled in Settings → Notifications (the rows are seeded
+  // either way so the UI can still collect signatures manually).
   if (next === "VALIDATING_SERVICES") {
     const sigs = await seedServiceSignatures({
       id: wf.id,
       investmentForm: wf.investmentForm,
     });
-    for (const s of sigs) {
-      if (s.emails.length > 0) {
-        void queueNotification(
-          s.emails,
-          `${wf.reference} : ${s.label} - validation requise`,
-          `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\nConnectez-vous à Purchasing Management pour signer.`,
-          { workflowId: wf.id, step: "VALIDATING_SERVICES" },
-        );
+    if (await isNotificationEventEnabled("validatingServices")) {
+      for (const s of sigs) {
+        if (s.emails.length > 0) {
+          void queueNotification(
+            s.emails,
+            `${wf.reference} : ${s.label} - validation requise`,
+            `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\nConnectez-vous à Purchasing Management pour signer.`,
+            { workflowId: wf.id, step: "VALIDATING_SERVICES" },
+          );
+        }
       }
     }
   }
@@ -703,18 +713,20 @@ router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void
 
   // Notify the same recipients we would for an advance, plus the
   // workflow creator so they know the request was closed.
-  const settings = await getSettings();
-  const recipients = await recipientsForStep(
-    { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
-    "REJECTED",
-  );
-  if (recipients.length > 0) {
-    void queueNotification(
-      recipients,
-      `${wf.reference} : rejeté et clôturé`,
-      `Ce dossier a été rejeté à l'étape « ${STEP_LABEL_FR[wf.currentStep] ?? wf.currentStep} » par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}`,
-      { workflowId: wf.id, step: "REJECTED" },
+  // Gated by Settings → Notifications (`reject`).
+  if (await isNotificationEventEnabled("reject")) {
+    const recipients = await recipientsForStep(
+      { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
+      "REJECTED",
     );
+    if (recipients.length > 0) {
+      void queueNotification(
+        recipients,
+        `${wf.reference} : rejeté et clôturé`,
+        `Ce dossier a été rejeté à l'étape « ${STEP_LABEL_FR[wf.currentStep] ?? wf.currentStep} » par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}`,
+        { workflowId: wf.id, step: "REJECTED" },
+      );
+    }
   }
 
   res.json(await loadWorkflowFull(wf.id));
@@ -884,8 +896,10 @@ router.post(
       `${decision}: ${wf.currentStep}->${nextStepValue}`,
     );
 
-    if (historyAction !== "EDIT") {
-      const settings = await getSettings();
+    if (
+      historyAction !== "EDIT" &&
+      (await isNotificationEventEnabled("gtInvestDecision"))
+    ) {
       const recipients = await recipientsForStep(
         {
           id: wf.id,

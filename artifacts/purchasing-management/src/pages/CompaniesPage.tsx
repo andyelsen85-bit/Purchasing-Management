@@ -50,6 +50,19 @@ import {
  *   suppliers, add contacts, and edit contacts. Department users
  *   onboard their own suppliers and keep contact info up to date.
  */
+// Roles allowed to *view* the Companies page. Per the session plan
+// decision, every Financial role (All / Invoice / Payment) joins ADMIN
+// here — they all consult the supplier directory while doing their
+// step. Department users and read-only roles do not see the page in
+// the nav and get a 403-style placeholder if they navigate to it
+// directly.
+const FINANCIAL_ROLES = [
+  "ADMIN",
+  "FINANCIAL_ALL",
+  "FINANCIAL_INVOICE",
+  "FINANCIAL_PAYMENT",
+] as const;
+
 function useCanEditMasterData(): boolean {
   const { data: session } = useGetSession();
   const roles = session?.user?.roles ?? [];
@@ -59,10 +72,9 @@ function useCanEditMasterData(): boolean {
 function useCanAddSupplier(): boolean {
   const { data: session } = useGetSession();
   const roles = session?.user?.roles ?? [];
-  if (roles.includes("ADMIN") || roles.includes("FINANCIAL_ALL")) return true;
-  if (roles.includes("READ_ONLY_DEPT") || roles.includes("READ_ONLY_ALL"))
-    return false;
-  return roles.length > 0;
+  // Adding a supplier is restricted to the same roles that can see
+  // the page — every Financial role plus ADMIN.
+  return FINANCIAL_ROLES.some((r) => roles.includes(r));
 }
 
 export function CompaniesPage() {
@@ -72,7 +84,7 @@ export function CompaniesPage() {
   const canAdd = useCanAddSupplier();
 
   const roles = session?.user?.roles ?? [];
-  const canViewPage = roles.includes("ADMIN") || roles.includes("FINANCIAL_ALL");
+  const canViewPage = FINANCIAL_ROLES.some((r) => roles.includes(r));
 
   if (session && !canViewPage) {
     return (

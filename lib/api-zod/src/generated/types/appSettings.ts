@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { AppSettingsNotifications } from "./appSettingsNotifications";
 import type { LdapsSettings } from "./ldapsSettings";
 import type { SmtpSettings } from "./smtpSettings";
 
@@ -35,4 +36,5 @@ export interface AppSettings {
    * @nullable
    */
   notificationLastSentAt?: Date | null;
+  notifications: AppSettingsNotifications;
 }

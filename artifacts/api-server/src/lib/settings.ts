@@ -94,6 +94,30 @@ export interface SmtpConfigStored {
   skipTlsVerify?: boolean;
 }
 
+/**
+ * Per-event automatic notification toggles. ALL DEFAULT OFF — the user
+ * opts in per event in Settings → Notifications. The per-rule emails
+ * configured for `VALIDATING_SERVICES` (notification_rules table) keep
+ * their own per-rule recipients but only fire when `validatingServices`
+ * is true here.
+ */
+export interface NotificationEventToggles {
+  /** Workflow advanced to a new step — notify creator + role recipients. */
+  stepAdvance?: boolean;
+  /** Workflow rejected / closed. */
+  reject?: boolean;
+  /** GT Invest committee decision recorded. */
+  gtInvestDecision?: boolean;
+  /** Entering VALIDATING_SERVICES — per-rule recipient emails. */
+  validatingServices?: boolean;
+}
+
+export interface NotificationConfigStored {
+  /** Master switch. When false, no automatic emails are queued at all. */
+  enabled?: boolean;
+  events?: NotificationEventToggles;
+}
+
 export interface AppSettings {
   appName: string;
   logoDataUrl?: string | null;
@@ -152,6 +176,12 @@ export interface AppSettings {
    * next send shown in the Settings page.
    */
   notificationLastSentAt: string | null;
+  /**
+   * Per-event opt-in for automatic workflow notifications. The master
+   * switch (`enabled`) gates everything; the per-event flags then
+   * decide which categories of email actually queue. ALL DEFAULT OFF.
+   */
+  notifications: NotificationConfigStored;
 }
 
 const DEFAULT: AppSettings = {
@@ -202,7 +232,33 @@ const DEFAULT: AppSettings = {
   },
   notificationIntervalMinutes: 15,
   notificationLastSentAt: null,
+  notifications: {
+    enabled: false,
+    events: {
+      stepAdvance: false,
+      reject: false,
+      gtInvestDecision: false,
+      validatingServices: false,
+    },
+  },
 };
+
+export type NotificationEventKey = keyof NotificationEventToggles;
+
+/**
+ * Returns true when the master switch is on AND the named event is
+ * enabled. All call sites that queue an automatic email must guard
+ * with this helper. Reads the latest settings from the DB each call
+ * (cheap — single row) so toggle changes take effect immediately.
+ */
+export async function isNotificationEventEnabled(
+  key: NotificationEventKey,
+): Promise<boolean> {
+  const s = await getSettings();
+  const n = s.notifications;
+  if (!n?.enabled) return false;
+  return !!n.events?.[key];
+}
 
 export async function getSettings(): Promise<AppSettings> {
   const [row] = await db.select().from(settingsTable).limit(1);
@@ -294,6 +350,15 @@ export function toPublicSettings(s: AppSettings) {
     },
     notificationIntervalMinutes: s.notificationIntervalMinutes ?? 15,
     notificationLastSentAt: s.notificationLastSentAt ?? null,
+    notifications: {
+      enabled: !!s.notifications?.enabled,
+      events: {
+        stepAdvance: !!s.notifications?.events?.stepAdvance,
+        reject: !!s.notifications?.events?.reject,
+        gtInvestDecision: !!s.notifications?.events?.gtInvestDecision,
+        validatingServices: !!s.notifications?.events?.validatingServices,
+      },
+    },
   };
 }
 
@@ -308,6 +373,14 @@ export async function updateSettingsRecord(
     ...patch,
     ldap: { ...current.ldap, ...(patch.ldap ?? {}) },
     smtp: { ...current.smtp, ...(patch.smtp ?? {}) },
+    notifications: {
+      ...current.notifications,
+      ...(patch.notifications ?? {}),
+      events: {
+        ...current.notifications?.events,
+        ...(patch.notifications?.events ?? {}),
+      },
+    },
   } as AppSettings;
   // If bindPassword/password/caCert is empty string in patch, treat as "unset"
   const [row] = await db.select().from(settingsTable).limit(1);

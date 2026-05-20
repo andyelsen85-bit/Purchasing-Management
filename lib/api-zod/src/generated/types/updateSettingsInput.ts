@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { UpdateSettingsInputLdap } from "./updateSettingsInputLdap";
+import type { UpdateSettingsInputNotifications } from "./updateSettingsInputNotifications";
 import type { UpdateSettingsInputSmtp } from "./updateSettingsInputSmtp";
 
 export interface UpdateSettingsInput {
@@ -33,6 +34,7 @@ export interface UpdateSettingsInput {
   archiveRetentionDays?: number | null;
   /** @nullable */
   notificationIntervalMinutes?: number | null;
+  notifications?: UpdateSettingsInputNotifications;
   gtInvestRecipients?: string[];
   budgetPositions?: string[];
   ldap?: UpdateSettingsInputLdap;

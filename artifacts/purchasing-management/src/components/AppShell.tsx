@@ -74,7 +74,10 @@ const NAV: NavItem[] = [
     to: "/companies",
     label: "Fournisseurs",
     icon: Building2,
-    roles: ["ADMIN", "FINANCIAL_ALL"],
+    // Visible to ADMIN + every Financial role (All / Invoice /
+    // Payment). They all consult the supplier directory in the course
+    // of their step; department users and read-only roles do not.
+    roles: ["ADMIN", "FINANCIAL_ALL", "FINANCIAL_INVOICE", "FINANCIAL_PAYMENT"],
   },
   { to: "/settings", label: "Paramètres", icon: Settings, roles: ["ADMIN"] },
 ];

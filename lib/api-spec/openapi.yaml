@@ -2117,6 +2117,22 @@ components:
         smtp: { $ref: "#/components/schemas/SmtpSettings" }
         notificationIntervalMinutes: { type: integer, description: "Minutes between automated notification batch sends" }
         notificationLastSentAt: { type: ["string", "null"], format: date-time, description: "ISO timestamp of the last batch flush" }
+        # Per-event opt-in for automatic workflow emails. Master switch
+        # gates everything; each event flag is independent. ALL DEFAULT
+        # OFF — the admin opts in per event on Settings → Notifications.
+        notifications:
+          type: object
+          required: [enabled, events]
+          properties:
+            enabled: { type: boolean }
+            events:
+              type: object
+              required: [stepAdvance, reject, gtInvestDecision, validatingServices]
+              properties:
+                stepAdvance: { type: boolean, description: "Workflow advanced to a new step" }
+                reject: { type: boolean, description: "Workflow rejected / closed" }
+                gtInvestDecision: { type: boolean, description: "GT Invest committee decision recorded" }
+                validatingServices: { type: boolean, description: "Per-rule emails when entering Validations Services" }
       required:
         - appName
         - limitX
@@ -2127,6 +2143,7 @@ components:
         - ldap
         - smtp
         - notificationIntervalMinutes
+        - notifications
 
     NotificationBatchStatus:
       type: object
@@ -2161,6 +2178,20 @@ components:
         signingAgentToken: { type: ["string", "null"] }
         archiveRetentionDays: { type: ["integer", "null"] }
         notificationIntervalMinutes: { type: ["integer", "null"] }
+        # Per-event opt-in for automatic workflow emails. Deep-merged
+        # against the existing config — omitting `events` keeps current
+        # per-event flags; omitting individual flags keeps their value.
+        notifications:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            events:
+              type: object
+              properties:
+                stepAdvance: { type: boolean }
+                reject: { type: boolean }
+                gtInvestDecision: { type: boolean }
+                validatingServices: { type: boolean }
         gtInvestRecipients:
           type: array
           items: { type: string }

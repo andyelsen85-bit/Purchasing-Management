@@ -64,6 +64,7 @@ import {
   useArchiveAttachments,
   getListUsersQueryKey,
   getListDeletedWorkflowsQueryKey,
+  getGetSettingsQueryKey,
   useGetNotificationBatchStatus,
   useFlushNotificationQueue,
   getGetNotificationBatchStatusQueryKey,
@@ -298,7 +299,10 @@ export function SettingsPage() {
           <BackupRestorePanel />
         </TabsContent>
         <TabsContent value="notifications">
-          <NotificationRulesPanel />
+          <div className="space-y-6">
+            <NotificationTogglesPanel />
+            <NotificationRulesPanel />
+          </div>
         </TabsContent>
         <TabsContent value="archive">
           <AttachmentArchivePanel />
@@ -3009,6 +3013,160 @@ function GtRecipientsPanel() {
  * server-side sync is a stub when LDAP is not configured — it surfaces a
  * toast and preserves the manually-entered emails.
  */
+/**
+ * Settings → Notifications → "Déclencheurs automatiques".
+ *
+ * Master switch + per-event toggles for the four categories of
+ * automatic workflow emails the server can queue:
+ *   - stepAdvance        : workflow advances to a new step
+ *   - reject             : workflow rejected / closed
+ *   - gtInvestDecision   : GT Invest decision recorded
+ *   - validatingServices : per-rule emails on entering Validations Services
+ *
+ * Every flag defaults to OFF — the admin must opt in. The master
+ * `enabled` switch short-circuits everything, so an admin can pause
+ * all auto-emails without losing the per-event configuration.
+ */
+function NotificationTogglesPanel() {
+  const { data: s } = useGetSettings();
+  const qc = useQueryClient();
+  const update = useUpdateSettings({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+        toast({ title: "Notifications enregistrées" });
+      },
+      onError: (err) => {
+        toast({
+          title: "Échec de l'enregistrement",
+          description: extractErrorMessage(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const enabled = !!s?.notifications?.enabled;
+  const ev = s?.notifications?.events;
+  const stepAdvance = !!ev?.stepAdvance;
+  const reject = !!ev?.reject;
+  const gtInvestDecision = !!ev?.gtInvestDecision;
+  const validatingServices = !!ev?.validatingServices;
+
+  function patch(next: {
+    enabled?: boolean;
+    events?: Partial<{
+      stepAdvance: boolean;
+      reject: boolean;
+      gtInvestDecision: boolean;
+      validatingServices: boolean;
+    }>;
+  }) {
+    update.mutate({ data: { notifications: next } });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Déclencheurs automatiques</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Toutes les notifications automatiques sont désactivées par défaut.
+          Activez l'interrupteur principal puis chaque événement que vous
+          souhaitez relayer par email.
+        </p>
+
+        <div className="flex items-center justify-between rounded-md border p-3">
+          <div className="space-y-0.5">
+            <Label>Notifications automatiques activées</Label>
+            <p className="text-xs text-muted-foreground">
+              Interrupteur principal. Lorsqu'il est désactivé, aucun email
+              automatique n'est envoyé, quel que soit l'état des
+              événements ci-dessous.
+            </p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => patch({ enabled: v })}
+            disabled={update.isPending}
+            data-testid="switch-notifications-master"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>Changement d'étape</Label>
+              <p className="text-xs text-muted-foreground">
+                Prévient le créateur et les destinataires de l'étape
+                suivante lorsqu'un dossier avance.
+              </p>
+            </div>
+            <Switch
+              checked={stepAdvance}
+              onCheckedChange={(v) => patch({ events: { stepAdvance: v } })}
+              disabled={update.isPending || !enabled}
+              data-testid="switch-notifications-step-advance"
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>Rejet / clôture</Label>
+              <p className="text-xs text-muted-foreground">
+                Prévient les destinataires lorsqu'un dossier est rejeté
+                et clôturé.
+              </p>
+            </div>
+            <Switch
+              checked={reject}
+              onCheckedChange={(v) => patch({ events: { reject: v } })}
+              disabled={update.isPending || !enabled}
+              data-testid="switch-notifications-reject"
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>Décision GT Invest</Label>
+              <p className="text-xs text-muted-foreground">
+                Prévient les destinataires après l'enregistrement d'une
+                décision du comité GT Invest.
+              </p>
+            </div>
+            <Switch
+              checked={gtInvestDecision}
+              onCheckedChange={(v) =>
+                patch({ events: { gtInvestDecision: v } })
+              }
+              disabled={update.isPending || !enabled}
+              data-testid="switch-notifications-gt-invest"
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>Validations Services (par règle)</Label>
+              <p className="text-xs text-muted-foreground">
+                Envoie l'email configuré dans le panneau
+                &laquo;&nbsp;Destinataires des notifications par
+                question&nbsp;&raquo; ci-dessous lorsqu'un dossier entre
+                à l'étape Validations Services.
+              </p>
+            </div>
+            <Switch
+              checked={validatingServices}
+              onCheckedChange={(v) =>
+                patch({ events: { validatingServices: v } })
+              }
+              disabled={update.isPending || !enabled}
+              data-testid="switch-notifications-validating-services"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function NotificationRulesPanel() {
   const { data: rules, isLoading } = useListNotificationRules();
   const qc = useQueryClient();

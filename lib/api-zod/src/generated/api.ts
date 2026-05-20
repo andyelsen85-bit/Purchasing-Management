@@ -2346,6 +2346,19 @@ export const GetSettingsResponse = zod.object({
     .date()
     .nullish()
     .describe("ISO timestamp of the last batch flush"),
+  notifications: zod.object({
+    enabled: zod.boolean(),
+    events: zod.object({
+      stepAdvance: zod.boolean().describe("Workflow advanced to a new step"),
+      reject: zod.boolean().describe("Workflow rejected \/ closed"),
+      gtInvestDecision: zod
+        .boolean()
+        .describe("GT Invest committee decision recorded"),
+      validatingServices: zod
+        .boolean()
+        .describe("Per-rule emails when entering Validations Services"),
+    }),
+  }),
 });
 
 export const UpdateSettingsBody = zod.object({
@@ -2361,6 +2374,19 @@ export const UpdateSettingsBody = zod.object({
   signingAgentToken: zod.string().nullish(),
   archiveRetentionDays: zod.number().nullish(),
   notificationIntervalMinutes: zod.number().nullish(),
+  notifications: zod
+    .object({
+      enabled: zod.boolean().optional(),
+      events: zod
+        .object({
+          stepAdvance: zod.boolean().optional(),
+          reject: zod.boolean().optional(),
+          gtInvestDecision: zod.boolean().optional(),
+          validatingServices: zod.boolean().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
   gtInvestRecipients: zod.array(zod.string()).optional(),
   budgetPositions: zod.array(zod.string()).optional(),
   ldap: zod
@@ -2481,6 +2507,19 @@ export const UpdateSettingsResponse = zod.object({
     .date()
     .nullish()
     .describe("ISO timestamp of the last batch flush"),
+  notifications: zod.object({
+    enabled: zod.boolean(),
+    events: zod.object({
+      stepAdvance: zod.boolean().describe("Workflow advanced to a new step"),
+      reject: zod.boolean().describe("Workflow rejected \/ closed"),
+      gtInvestDecision: zod
+        .boolean()
+        .describe("GT Invest committee decision recorded"),
+      validatingServices: zod
+        .boolean()
+        .describe("Per-rule emails when entering Validations Services"),
+    }),
+  }),
 });
 
 export const ListGtInvestDatesResponseItem = zod.object({

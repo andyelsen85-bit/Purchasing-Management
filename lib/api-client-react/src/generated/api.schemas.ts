@@ -850,6 +850,22 @@ export interface ArchiveAttachmentsResult {
   bytesFreed: number;
 }
 
+export type AppSettingsNotificationsEvents = {
+  /** Workflow advanced to a new step */
+  stepAdvance: boolean;
+  /** Workflow rejected / closed */
+  reject: boolean;
+  /** GT Invest committee decision recorded */
+  gtInvestDecision: boolean;
+  /** Per-rule emails when entering Validations Services */
+  validatingServices: boolean;
+};
+
+export type AppSettingsNotifications = {
+  enabled: boolean;
+  events: AppSettingsNotificationsEvents;
+};
+
 export interface AppSettings {
   appName: string;
   /** @nullable */
@@ -877,6 +893,7 @@ export interface AppSettings {
    * @nullable
    */
   notificationLastSentAt?: string | null;
+  notifications: AppSettingsNotifications;
 }
 
 export interface NotificationBatchStatus {
@@ -895,6 +912,18 @@ export interface NotificationFlushResult {
   /** @nullable */
   message?: string | null;
 }
+
+export type UpdateSettingsInputNotificationsEvents = {
+  stepAdvance?: boolean;
+  reject?: boolean;
+  gtInvestDecision?: boolean;
+  validatingServices?: boolean;
+};
+
+export type UpdateSettingsInputNotifications = {
+  enabled?: boolean;
+  events?: UpdateSettingsInputNotificationsEvents;
+};
 
 /**
  * @nullable
@@ -1015,6 +1044,7 @@ export interface UpdateSettingsInput {
   archiveRetentionDays?: number | null;
   /** @nullable */
   notificationIntervalMinutes?: number | null;
+  notifications?: UpdateSettingsInputNotifications;
   gtInvestRecipients?: string[];
   budgetPositions?: string[];
   ldap?: UpdateSettingsInputLdap;
