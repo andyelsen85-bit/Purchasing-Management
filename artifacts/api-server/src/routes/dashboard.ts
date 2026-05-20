@@ -1,6 +1,13 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { db, workflowsTable, departmentsTable, historyTable, usersTable } from "@workspace/db";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  db,
+  workflowsTable,
+  departmentsTable,
+  historyTable,
+  usersTable,
+  serviceSignaturesTable,
+} from "@workspace/db";
 import { requireAuth, getUser } from "../middlewares/auth";
 import { canSeeWorkflow, hasRole, ACTIVE_WORKFLOW_STEPS } from "../lib/permissions";
 
@@ -75,11 +82,18 @@ router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> =>
   });
 });
 
-// Returns workflows that are waiting for the current user's signature or
-// approval, scoped by their role:
-//   ADMIN / FINANCIAL_ALL — all three approval steps across every department
-//   FINANCIAL_INVOICE     — VALIDATING_INVOICE across every department
-//   DEPT_MANAGER          — VALIDATING_QUOTE_FINANCIAL in their own departments
+// Returns workflows that are waiting for an action from the current
+// user — quote / invoice validation, service signature, but also the
+// "doing" steps (placing the order, recording the invoice, paying)
+// since the dashboard card lists every workflow the user still has to
+// touch. Scoping by role:
+//   ADMIN / FINANCIAL_ALL — every action step across all departments
+//   FINANCIAL_INVOICE     — INVOICE + VALIDATING_INVOICE everywhere
+//   FINANCIAL_PAYMENT     — PAYMENT everywhere
+//   GT_INVEST             — GT_INVEST everywhere
+//   DEPT_MANAGER          — VALIDATING_QUOTE_FINANCIAL in their depts
+// Additionally, anyone whose email matches a PENDING per-service
+// signature row sees that workflow regardless of role.
 router.get("/dashboard/pending-signatures", requireAuth, async (req, res): Promise<void> => {
   const user = getUser(req);
 
@@ -90,23 +104,75 @@ router.get("/dashboard/pending-signatures", requireAuth, async (req, res): Promi
     approvalSteps.push(
       "VALIDATING_QUOTE_FINANCIAL",
       "VALIDATING_BY_FINANCIAL",
+      "VALIDATING_SERVICES",
+      "GT_INVEST",
+      "ORDERING",
+      "INVOICE",
       "VALIDATING_INVOICE",
+      "PAYMENT",
     );
-  } else if (hasRole(user, "FINANCIAL_INVOICE")) {
-    approvalSteps.push("VALIDATING_INVOICE");
-  } else if (hasRole(user, "DEPT_MANAGER")) {
-    approvalSteps.push("VALIDATING_QUOTE_FINANCIAL");
-    restrictDeptIds = user.departmentIds;
+  } else {
+    if (hasRole(user, "FINANCIAL_INVOICE")) {
+      approvalSteps.push("INVOICE", "VALIDATING_INVOICE");
+    }
+    if (hasRole(user, "FINANCIAL_PAYMENT")) {
+      approvalSteps.push("PAYMENT");
+    }
+    if (hasRole(user, "GT_INVEST")) {
+      approvalSteps.push("GT_INVEST");
+    }
+    if (hasRole(user, "DEPT_MANAGER")) {
+      approvalSteps.push("VALIDATING_QUOTE_FINANCIAL");
+      restrictDeptIds = user.departmentIds;
+    }
   }
 
-  if (approvalSteps.length === 0) {
+  // Per-service signatures: any user whose email is in a PENDING row's
+  // notifiedEmails list also owes a signature on that workflow.
+  let serviceSigWorkflowIds: number[] = [];
+  if (user.email) {
+    const sigRows = await db
+      .selectDistinct({ workflowId: serviceSignaturesTable.workflowId })
+      .from(serviceSignaturesTable)
+      .where(
+        and(
+          eq(serviceSignaturesTable.status, "PENDING"),
+          // notified_emails is a jsonb string[] — match case-insensitively
+          // so a user whose Active Directory address differs in casing
+          // from the rule still sees their pending signature.
+          sql`EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(${serviceSignaturesTable.notifiedEmails}) AS e
+            WHERE lower(e) = lower(${user.email})
+          )`,
+        ),
+      );
+    serviceSigWorkflowIds = sigRows.map((r) => r.workflowId);
+  }
+
+  if (approvalSteps.length === 0 && serviceSigWorkflowIds.length === 0) {
     res.json([]);
     return;
   }
 
+  const stepClause =
+    approvalSteps.length > 0
+      ? inArray(workflowsTable.currentStep, approvalSteps)
+      : undefined;
+  const sigClause =
+    serviceSigWorkflowIds.length > 0
+      ? inArray(workflowsTable.id, serviceSigWorkflowIds)
+      : undefined;
+
+  // Match either the role-based step OR a pending service signature
+  // addressed to this user's email.
+  const matchClause =
+    stepClause && sigClause
+      ? or(stepClause, sigClause)
+      : (stepClause ?? sigClause)!;
+
   const conditions = [
     isNull(workflowsTable.deletedAt),
-    inArray(workflowsTable.currentStep, approvalSteps),
+    matchClause,
     ...(restrictDeptIds !== null && restrictDeptIds.length > 0
       ? [inArray(workflowsTable.departmentId, restrictDeptIds)]
       : []),
