@@ -64,19 +64,21 @@ export function computeMissingFields(
         out.add("gtInvestDecision");
       return out;
     case "ORDERING":
-      // Order date is no longer required to advance — it's purely
-      // informational. Keep the order number and the attached order
-      // document as the only blocking prerequisites.
+      // Order date and the attached PO scan are no longer required to
+      // advance — finance teams sometimes move the workflow forward
+      // before the signed PO arrives. Only the order number gates the
+      // advance, mirroring the server's validateAdvancePrereqs.
       if (!wf.orderNumber) out.add("orderNumber");
-      if (!hasDoc(docs, "ORDER")) out.add("doc:ORDER");
       return out;
     case "DELIVERY":
       // No required fields on Delivery — see server validateAdvancePrereqs.
       return out;
     case "INVOICE":
+      // Invoice scan is now optional too — the validating step can
+      // run off the metadata while the physical document is in
+      // transit. Server only gates on number + amount.
       if (!wf.invoiceNumber) out.add("invoiceNumber");
       if (wf.invoiceAmount == null) out.add("invoiceAmount");
-      if (!hasDoc(docs, "INVOICE")) out.add("doc:INVOICE");
       return out;
     case "VALIDATING_INVOICE":
       if (!wf.invoiceValidated) out.add("invoiceValidated");
