@@ -1540,6 +1540,11 @@ export function NewWorkflowPage() {
                   <div className="space-y-1.5">
                     <Label>6.2 Connexion informatique requise ?<Req /></Label>
                     <YesNoSelect value={itConnection} onChange={setItConnection} />
+                    {itConnection === "true" && (
+                      <p className="text-xs text-amber-600 font-medium">
+                        Le Service Informatique sera notifié.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-1.5">
