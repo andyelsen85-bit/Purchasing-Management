@@ -27,7 +27,7 @@ export function WorkflowsPage() {
   const [departmentId, setDepartmentId] = useState<string>("ALL");
   // Active = anything not terminal (DONE / REJECTED). Default view hides
   // finished work because most users only care about what's in flight.
-  const [status, setStatus] = useState<"ACTIVE" | "ALL" | "DONE" | "REJECTED">(
+  const [status, setStatus] = useState<"ACTIVE" | "ALL" | "DONE" | "REJECTED" | "DRAFT">(
     "ACTIVE",
   );
   const [filterPriority, setFilterPriority] = useState<string>("ALL");
@@ -63,12 +63,17 @@ export function WorkflowsPage() {
     setDraft(null);
   }
   const workflows = (workflowsRaw ?? []).filter((w) => {
+    if (status === "DRAFT") return false;
     if (status === "ALL") return true;
     if (status === "DONE") return w.currentStep === "DONE";
     if (status === "REJECTED") return w.currentStep === "REJECTED";
     // ACTIVE
     return w.currentStep !== "DONE" && w.currentStep !== "REJECTED";
   }).filter((w) => filterPriority === "ALL" || w.priority === filterPriority);
+  // Only surface the local draft when the status filter includes drafts
+  // (ALL or DRAFT). Hide it when viewing Active / Done / Rejected so the
+  // draft does not pollute filtered views.
+  const showDraft = !!draft && (status === "ALL" || status === "DRAFT");
 
   return (
     <div className="space-y-6 p-6">
@@ -130,6 +135,7 @@ export function WorkflowsPage() {
             <SelectContent>
               <SelectItem value="ACTIVE">Actives seulement</SelectItem>
               <SelectItem value="ALL">Toutes les demandes</SelectItem>
+              <SelectItem value="DRAFT">Brouillons</SelectItem>
               <SelectItem value="DONE">Terminées</SelectItem>
               <SelectItem value="REJECTED">Clôturées</SelectItem>
             </SelectContent>
@@ -168,7 +174,7 @@ export function WorkflowsPage() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
-          ) : workflows.length === 0 && !draft ? (
+          ) : workflows.length === 0 && !showDraft ? (
             <div
               className="p-12 text-center text-sm text-muted-foreground"
               data-testid="status-no-workflows"
@@ -185,7 +191,7 @@ export function WorkflowsPage() {
                 <div className="col-span-1">Priorité</div>
                 <div className="col-span-1 text-right">Âge</div>
               </div>
-              {draft && (
+              {showDraft && (
                 <Link href="/workflows/new?resume=1">
                   <a
                     className="grid grid-cols-12 items-center gap-3 px-5 py-3 text-sm hover-elevate bg-amber-50/60 dark:bg-amber-950/20"
