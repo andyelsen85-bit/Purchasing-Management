@@ -90,6 +90,7 @@ export * from "./quoteEntry";
 export * from "./rejectWorkflowInput";
 export * from "./role";
 export * from "./serviceSignature";
+export * from "./serviceSignatureNotifiedRecipientsItem";
 export * from "./serviceSignatureStatus";
 export * from "./sessionResponse";
 export * from "./sessionUser";

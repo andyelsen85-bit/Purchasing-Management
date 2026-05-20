@@ -2837,8 +2837,12 @@ function ServiceSignaturesPanel({
                       {sig.status === "PENDING" && (
                         <div className="text-xs text-muted-foreground">
                           En attente · destinataires notifiés :{" "}
-                          {sig.notifiedEmails.length > 0
-                            ? sig.notifiedEmails.join(", ")
+                          {sig.notifiedRecipients.length > 0
+                            ? sig.notifiedRecipients
+                                .map((r) =>
+                                  r.name ? `${r.name} <${r.email}>` : r.email,
+                                )
+                                .join(", ")
                             : "(aucun)"}
                         </div>
                       )}

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import {
   db,
   serviceSignaturesTable,
+  usersTable,
   workflowsTable,
 } from "@workspace/db";
 import { requireAuth, getUser } from "../middlewares/auth";
@@ -47,7 +48,34 @@ router.get(
       return;
     }
     const rows = await listServiceSignatures(wfId);
-    res.json(rows);
+    // Resolve every notified email to a user displayName so the UI can
+    // show the actual person(s) on the hook rather than a raw address.
+    // Emails not matching any local user fall back to the email itself.
+    const allEmails = Array.from(
+      new Set(
+        rows
+          .flatMap((r) => r.notifiedEmails)
+          .map((e) => e.toLowerCase())
+          .filter((e) => e.length > 0),
+      ),
+    );
+    const nameByEmail = new Map<string, string>();
+    if (allEmails.length > 0) {
+      const users = await db
+        .select({ email: usersTable.email, displayName: usersTable.displayName })
+        .from(usersTable);
+      for (const u of users) {
+        if (u.email) nameByEmail.set(u.email.toLowerCase(), u.displayName);
+      }
+    }
+    const enriched = rows.map((r) => ({
+      ...r,
+      notifiedRecipients: r.notifiedEmails.map((email) => ({
+        email,
+        name: nameByEmail.get(email.toLowerCase()) ?? null,
+      })),
+    }));
+    res.json(enriched);
   },
 );
 

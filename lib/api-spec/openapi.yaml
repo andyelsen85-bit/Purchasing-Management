@@ -2386,9 +2386,30 @@ components:
         notifiedEmails:
           type: array
           items: { type: string }
+        notifiedRecipients:
+          type: array
+          description: >-
+            Resolved display names for each notified email (joined against the
+            users table). Falls back to the raw email when no matching user
+            exists in the local directory.
+          items:
+            type: object
+            properties:
+              name: { type: ["string", "null"] }
+              email: { type: string }
+            required: [email]
         createdAt: { type: string, format: date-time }
       required:
-        [id, workflowId, ruleKey, ruleLabel, status, notifiedEmails, createdAt]
+        [
+          id,
+          workflowId,
+          ruleKey,
+          ruleLabel,
+          status,
+          notifiedEmails,
+          notifiedRecipients,
+          createdAt,
+        ]
 
     CsrRequest:
       type: object

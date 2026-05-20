@@ -1168,6 +1168,12 @@ export const ServiceSignatureStatus = {
   OVERRIDDEN: "OVERRIDDEN",
 } as const;
 
+export type ServiceSignatureNotifiedRecipientsItem = {
+  /** @nullable */
+  name?: string | null;
+  email: string;
+};
+
 export interface ServiceSignature {
   id: number;
   workflowId: number;
@@ -1189,6 +1195,8 @@ export interface ServiceSignature {
   /** @nullable */
   overrideReason?: string | null;
   notifiedEmails: string[];
+  /** Resolved display names for each notified email (joined against the users table). Falls back to the raw email when no matching user exists in the local directory. */
+  notifiedRecipients: ServiceSignatureNotifiedRecipientsItem[];
   createdAt: string;
 }
 

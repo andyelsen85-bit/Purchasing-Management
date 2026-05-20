@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { ServiceSignatureNotifiedRecipientsItem } from "./serviceSignatureNotifiedRecipientsItem";
 import type { ServiceSignatureStatus } from "./serviceSignatureStatus";
 
 export interface ServiceSignature {
@@ -28,5 +29,7 @@ export interface ServiceSignature {
   /** @nullable */
   overrideReason?: string | null;
   notifiedEmails: string[];
+  /** Resolved display names for each notified email (joined against the users table). Falls back to the raw email when no matching user exists in the local directory. */
+  notifiedRecipients: ServiceSignatureNotifiedRecipientsItem[];
   createdAt: Date;
 }

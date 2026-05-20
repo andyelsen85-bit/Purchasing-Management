@@ -2691,6 +2691,16 @@ export const ListServiceSignaturesResponseItem = zod.object({
   overrideByUserId: zod.number().nullish(),
   overrideReason: zod.string().nullish(),
   notifiedEmails: zod.array(zod.string()),
+  notifiedRecipients: zod
+    .array(
+      zod.object({
+        name: zod.string().nullish(),
+        email: zod.string(),
+      }),
+    )
+    .describe(
+      "Resolved display names for each notified email (joined against the users table). Falls back to the raw email when no matching user exists in the local directory.",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListServiceSignaturesResponse = zod.array(
@@ -2741,6 +2751,16 @@ export const FinalizeServiceSignatureResponse = zod.object({
   overrideByUserId: zod.number().nullish(),
   overrideReason: zod.string().nullish(),
   notifiedEmails: zod.array(zod.string()),
+  notifiedRecipients: zod
+    .array(
+      zod.object({
+        name: zod.string().nullish(),
+        email: zod.string(),
+      }),
+    )
+    .describe(
+      "Resolved display names for each notified email (joined against the users table). Falls back to the raw email when no matching user exists in the local directory.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -2770,6 +2790,16 @@ export const SignServiceSignatureNoCertResponse = zod.object({
   overrideByUserId: zod.number().nullish(),
   overrideReason: zod.string().nullish(),
   notifiedEmails: zod.array(zod.string()),
+  notifiedRecipients: zod
+    .array(
+      zod.object({
+        name: zod.string().nullish(),
+        email: zod.string(),
+      }),
+    )
+    .describe(
+      "Resolved display names for each notified email (joined against the users table). Falls back to the raw email when no matching user exists in the local directory.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -2801,6 +2831,16 @@ export const OverrideServiceSignatureResponse = zod.object({
   overrideByUserId: zod.number().nullish(),
   overrideReason: zod.string().nullish(),
   notifiedEmails: zod.array(zod.string()),
+  notifiedRecipients: zod
+    .array(
+      zod.object({
+        name: zod.string().nullish(),
+        email: zod.string(),
+      }),
+    )
+    .describe(
+      "Resolved display names for each notified email (joined against the users table). Falls back to the raw email when no matching user exists in the local directory.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
