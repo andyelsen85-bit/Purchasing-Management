@@ -59,6 +59,7 @@ export * from "./importCompaniesResult";
 export * from "./importCompaniesResultErrorsItem";
 export * from "./importCompanyRow";
 export * from "./investmentForm";
+export * from "./investmentFormDocumentDocIds";
 export * from "./ldapDiagnosticStep";
 export * from "./ldapDiagnosticStepStatus";
 export * from "./ldapsSettings";

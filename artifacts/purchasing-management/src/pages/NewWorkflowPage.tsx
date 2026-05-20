@@ -27,6 +27,7 @@ import {
   useUpdateWorkflow,
   useGetWorkflow,
   useAdvanceWorkflow,
+  useListWorkflowDocuments,
   Priority,
   type InvestmentForm,
   type Workflow,
@@ -239,6 +240,13 @@ export function NewWorkflowPage() {
       queryKey: ["draft-workflow", draftId] as const,
     },
   });
+  // Documents already uploaded with this draft (if any).
+  const draftDocsQuery = useListWorkflowDocuments(draftId ?? 0, {
+    query: {
+      enabled: draftId != null,
+      queryKey: ["draft-workflow-documents", draftId] as const,
+    },
+  });
   const advance = useAdvanceWorkflow();
   const [hydratedFromDraft, setHydratedFromDraft] = useState(false);
 
@@ -337,6 +345,14 @@ export function NewWorkflowPage() {
 
   // ── Step 7 – uploads, one per checked item in section 11 ──────
   const [files, setFiles] = useState<Record<string, File | null>>({});
+  // When resuming a draft, files already uploaded the previous time are
+  // hydrated here so the user can keep them, replace them, or remove
+  // them without having to re-pick the original file from disk. The
+  // mapping (section-11 label → document id) is persisted in the
+  // workflow's `investmentForm.documentDocIds` field.
+  const [existingDocs, setExistingDocs] = useState<
+    Record<string, { id: number; filename: string; sizeBytes: number }>
+  >({});
 
   // Default the department selector to the first one once departments
   // load — the user can change it but this avoids an empty required.
@@ -355,6 +371,10 @@ export function NewWorkflowPage() {
     if (draftId == null) return;
     const wf = draftQuery.data;
     if (!wf) return;
+    // Wait for the documents list to settle before hydrating — otherwise
+    // workflow data can resolve first, the early-return guard flips on,
+    // and `existingDocs` never picks up the previously uploaded files.
+    if (!draftDocsQuery.isSuccess && !draftDocsQuery.isError) return;
     const b2s = (v: boolean | null | undefined): string =>
       v === true ? "true" : v === false ? "false" : "";
     const inv = (wf.investmentForm ?? {}) as Partial<InvestmentForm> & {
@@ -426,10 +446,33 @@ export function NewWorkflowPage() {
     if (Array.isArray(inv.documentsProvided) && inv.documentsProvided.length) {
       setDocumentsProvided(inv.documentsProvided);
     }
+    // Rehydrate the uploaded-files panel. The label → docId mapping is
+    // stored on the workflow's investmentForm; we join it with the live
+    // documents list so we can show each one's filename and size.
+    const docIdMap = (inv as { documentDocIds?: Record<string, number> })
+      .documentDocIds;
+    if (docIdMap && draftDocsQuery.data) {
+      const byId = new Map(draftDocsQuery.data.map((d) => [d.id, d]));
+      const next: Record<
+        string,
+        { id: number; filename: string; sizeBytes: number }
+      > = {};
+      for (const [label, docId] of Object.entries(docIdMap)) {
+        const doc = byId.get(docId);
+        if (doc) {
+          next[label] = {
+            id: doc.id,
+            filename: doc.filename,
+            sizeBytes: doc.sizeBytes,
+          };
+        }
+      }
+      setExistingDocs(next);
+    }
     setHydratedFromDraft(true);
     toast({ description: "Brouillon repris." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId, draftQuery.data]);
+  }, [draftId, draftQuery.data, draftDocsQuery.data]);
 
   // Selected company → contacts list filtered for the 5.2 dropdown.
   // The list endpoint does not embed contacts, so we re-query the
@@ -597,7 +640,36 @@ export function NewWorkflowPage() {
       trainingOfferAttached: boolVal(trainingOfferAttached),
       commissioningDate: commissioningDate || null,
       documentsProvided: documentsProvided.length ? documentsProvided : undefined,
+      // Carry the label → docId map so reopening a draft still finds
+      // its attached files. Callers that have just uploaded new files
+      // merge their fresh ids in via `buildInvestmentFormWithDocs`.
+      ...(Object.keys(existingDocs).length > 0
+        ? {
+            documentDocIds: Object.fromEntries(
+              Object.entries(existingDocs).map(([k, v]) => [k, v.id]),
+            ),
+          }
+        : {}),
+    } as InvestmentForm;
+  }
+
+  // Variant used right after uploading new files on a draft save. The
+  // returned form merges the freshly-uploaded ids into documentDocIds
+  // so the workflow row records the link in one PATCH.
+  function buildInvestmentFormWithDocs(
+    freshDocIds: Record<string, number>,
+  ): InvestmentForm {
+    const base = buildInvestmentForm() as InvestmentForm & {
+      documentDocIds?: Record<string, number>;
     };
+    const merged: Record<string, number> = {
+      ...(base.documentDocIds ?? {}),
+      ...freshDocIds,
+    };
+    return {
+      ...base,
+      ...(Object.keys(merged).length > 0 ? { documentDocIds: merged } : {}),
+    } as InvestmentForm;
   }
 
   // Per-step validation: lists the missing fields for the current page.
@@ -684,7 +756,9 @@ export function NewWorkflowPage() {
     }
     if (s === 7) {
       for (const d of documentsProvided) {
-        if (!files[d]) m.push(`Fichier pour « ${d} »`);
+        // A label is satisfied either by a freshly-picked File or by a
+        // document carried over from a resumed draft.
+        if (!files[d] && !existingDocs[d]) m.push(`Fichier pour « ${d} »`);
       }
     }
     return m;
@@ -723,10 +797,11 @@ export function NewWorkflowPage() {
     }
     setSubmitting(true);
     try {
+      let savedId: number;
       if (draftId != null) {
         // Resuming an existing draft — PATCH the same row instead of
         // creating a new workflow each time the user re-saves.
-        await update.mutateAsync({
+        const wf = await update.mutateAsync({
           id: draftId,
           data: {
             title,
@@ -737,8 +812,9 @@ export function NewWorkflowPage() {
             investmentForm: buildInvestmentForm(),
           },
         });
+        savedId = wf.id;
       } else {
-        await create.mutateAsync({
+        const wf = await create.mutateAsync({
           data: {
             title,
             departmentId: Number(departmentId),
@@ -751,6 +827,42 @@ export function NewWorkflowPage() {
             investmentForm: buildInvestmentForm(),
             asDraft: true,
           },
+        });
+        savedId = wf.id;
+      }
+
+      // Upload any files the user picked in section 12, mapping each
+      // back to its section-11 label so a resumed draft can show the
+      // attachments without forcing the user to re-pick them. We use
+      // step="DRAFT" so the upload is allowed on a workflow that
+      // hasn't advanced past the DRAFT step yet.
+      const freshDocIds: Record<string, number> = {};
+      for (const label of documentsProvided) {
+        const file = files[label];
+        if (!file) continue;
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("step", "DRAFT");
+        fd.append("kind", docKindFor(label));
+        const r = await fetch(`/api/workflows/${savedId}/documents`, {
+          method: "POST",
+          body: fd,
+          credentials: "include",
+        });
+        if (!r.ok) {
+          const txt = await r.text();
+          throw new Error(`Upload failed for « ${label} »: ${txt}`);
+        }
+        const doc = (await r.json()) as { id: number };
+        freshDocIds[label] = doc.id;
+      }
+      // If new files were uploaded, persist the updated label → docId
+      // map onto the workflow's investmentForm so we can rehydrate
+      // them on reopen.
+      if (Object.keys(freshDocIds).length > 0) {
+        await update.mutateAsync({
+          id: savedId,
+          data: { investmentForm: buildInvestmentFormWithDocs(freshDocIds) },
         });
       }
       localStorage.removeItem(DRAFT_KEY);
@@ -829,7 +941,16 @@ export function NewWorkflowPage() {
       let offrePrixDocId: number | null = null;
       for (const label of documentsProvided) {
         const file = files[label];
-        if (!file) continue;
+        if (!file) {
+          // No fresh file picked — but a file from a resumed draft may
+          // already be attached. Reuse its id (notably for the "Offre
+          // de prix" → first quote linkage below).
+          const existing = existingDocs[label];
+          if (existing && label === "Offre de prix") {
+            offrePrixDocId = existing.id;
+          }
+          continue;
+        }
         const fd = new FormData();
         fd.append("file", file);
         fd.append("step", "QUOTATION");
@@ -1616,6 +1737,7 @@ export function NewWorkflowPage() {
                   </p>
                   {documentsProvided.map((label) => {
                     const f = files[label] ?? null;
+                    const existing = existingDocs[label] ?? null;
                     return (
                       <div
                         key={label}
@@ -1648,6 +1770,34 @@ export function NewWorkflowPage() {
                               onClick={() =>
                                 setFiles((m) => ({ ...m, [label]: null }))
                               }
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : existing ? (
+                          <div className="flex items-center justify-between gap-2 rounded bg-muted/40 px-3 py-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="h-4 w-4 flex-shrink-0 text-primary" />
+                              <span className="truncate text-sm">
+                                {existing.filename}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                ({Math.round(existing.sizeBytes / 1024)} KB)
+                              </span>
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">
+                                Déjà déposé
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                setExistingDocs((m) => {
+                                  const { [label]: _omit, ...rest } = m;
+                                  return rest;
+                                })
+                              }
+                              data-testid={`remove-existing-${label}`}
                             >
                               <X className="h-4 w-4" />
                             </Button>

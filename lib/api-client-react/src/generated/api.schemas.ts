@@ -255,6 +255,8 @@ export const WorkflowPublicationTier = {
   LIVRE_II: "LIVRE_II",
 } as const;
 
+export type InvestmentFormDocumentDocIds = { [key: string]: number };
+
 /**
  * GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE
 D'INVESTISSEMENT). All fields optional — the form may be filled
@@ -338,6 +340,7 @@ export interface InvestmentForm {
   /** @nullable */
   commissioningDate?: string | null;
   documentsProvided?: string[];
+  documentDocIds?: InvestmentFormDocumentDocIds;
 }
 
 /**

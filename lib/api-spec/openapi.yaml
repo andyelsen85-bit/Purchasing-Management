@@ -2671,6 +2671,14 @@ components:
         documentsProvided:
           type: array
           items: { type: string }
+        # Mapping of section-11 label → uploaded document id. Populated
+        # by the creation form when files are saved alongside a draft
+        # so the workflow can be reopened with the files still attached.
+        # Keys are the human-readable section-11 labels (e.g. "Offre de
+        # prix"), values are the document row id.
+        documentDocIds:
+          type: object
+          additionalProperties: { type: integer }
 
     NotificationEntry:
       type: object

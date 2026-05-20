@@ -521,6 +521,7 @@ export const CreateWorkflowBody = zod.object({
       trainingOfferAttached: zod.boolean().nullish(),
       commissioningDate: zod.string().nullish(),
       documentsProvided: zod.array(zod.string()).optional(),
+      documentDocIds: zod.record(zod.string(), zod.number()).optional(),
     })
     .optional()
     .describe(
@@ -692,6 +693,7 @@ export const GetWorkflowResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
@@ -832,6 +834,7 @@ export const UpdateWorkflowBody = zod.object({
       trainingOfferAttached: zod.boolean().nullish(),
       commissioningDate: zod.string().nullish(),
       documentsProvided: zod.array(zod.string()).optional(),
+      documentDocIds: zod.record(zod.string(), zod.number()).optional(),
     })
     .optional()
     .describe(
@@ -955,6 +958,7 @@ export const UpdateWorkflowResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
@@ -1143,6 +1147,7 @@ export const RestoreWorkflowResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
@@ -1326,6 +1331,7 @@ export const AdvanceWorkflowResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
@@ -1503,6 +1509,7 @@ export const RejectWorkflowResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
@@ -1676,6 +1683,7 @@ export const UndoWorkflowResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
@@ -1867,6 +1875,7 @@ export const SetGtInvestDecisionResponse = zod.object({
           trainingOfferAttached: zod.boolean().nullish(),
           commissioningDate: zod.string().nullish(),
           documentsProvided: zod.array(zod.string()).optional(),
+          documentDocIds: zod.record(zod.string(), zod.number()).optional(),
         })
         .describe(
           "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",

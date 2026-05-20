@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvestmentFormDocumentDocIds } from "./investmentFormDocumentDocIds";
 
 /**
  * GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE
@@ -89,4 +90,5 @@ export interface InvestmentForm {
   /** @nullable */
   commissioningDate?: string | null;
   documentsProvided?: string[];
+  documentDocIds?: InvestmentFormDocumentDocIds;
 }
