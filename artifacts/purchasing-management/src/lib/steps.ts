@@ -1,4 +1,5 @@
 export const STEPS = [
+  "DRAFT",
   "NEW",
   "QUOTATION",
   "VALIDATING_QUOTE_FINANCIAL",
@@ -34,6 +35,7 @@ export const ACTIVE_STEPS = [
 ] as const satisfies readonly Step[];
 
 export const STEP_LABEL: Record<Step, string> = {
+  DRAFT: "Brouillon",
   NEW: "Nouveau",
   QUOTATION: "Offre de prix",
   VALIDATING_QUOTE_FINANCIAL: "Validation Responsable",

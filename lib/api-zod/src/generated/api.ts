@@ -374,6 +374,7 @@ export const ListWorkflowsQueryParams = zod.object({
   departmentId: zod.coerce.number().optional(),
   step: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -400,6 +401,7 @@ export const ListWorkflowsResponseItem = zod.object({
   departmentName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -487,6 +489,12 @@ export const CreateWorkflowBody = zod.object({
     .describe(
       "GT Invest investment request questionnaire (FORMULAIRE DE DEMANDE\nD'INVESTISSEMENT). All fields optional — the form may be filled\nincrementally. Stored as JSONB on the workflow row.\n",
     ),
+  asDraft: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the workflow is created in the DRAFT step instead of\nadvancing directly to QUOTATION. Drafts skip every advance\nprerequisite, are visible to the whole department, and can be\ndeleted by their creator (or any admin).\n",
+    ),
 });
 
 export const ListWorkflowsByStepQueryParams = zod.object({
@@ -498,6 +506,7 @@ export const ListWorkflowsByStepQueryParams = zod.object({
 
 export const ListWorkflowsByStepResponseItem = zod.object({
   step: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -521,6 +530,7 @@ export const ListWorkflowsByStepResponseItem = zod.object({
       departmentName: zod.string(),
       priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
       currentStep: zod.enum([
+        "DRAFT",
         "NEW",
         "QUOTATION",
         "VALIDATING_QUOTE_FINANCIAL",
@@ -572,6 +582,7 @@ export const GetWorkflowResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -708,6 +719,7 @@ export const GetWorkflowResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -829,6 +841,7 @@ export const UpdateWorkflowResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -965,6 +978,7 @@ export const UpdateWorkflowResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -1013,6 +1027,7 @@ export const RestoreWorkflowResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -1149,6 +1164,7 @@ export const RestoreWorkflowResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -1192,6 +1208,7 @@ export const AdvanceWorkflowResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -1328,6 +1345,7 @@ export const AdvanceWorkflowResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -1365,6 +1383,7 @@ export const RejectWorkflowResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -1501,6 +1520,7 @@ export const RejectWorkflowResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -1534,6 +1554,7 @@ export const UndoWorkflowResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -1670,6 +1691,7 @@ export const UndoWorkflowResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -1721,6 +1743,7 @@ export const SetGtInvestDecisionResponse = zod.object({
   createdByName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -1857,6 +1880,7 @@ export const SetGtInvestDecisionResponse = zod.object({
   paymentReference: zod.string().nullish(),
   previousStep: zod
     .enum([
+      "DRAFT",
       "NEW",
       "QUOTATION",
       "VALIDATING_QUOTE_FINANCIAL",
@@ -1919,6 +1943,7 @@ export const ListWorkflowDocumentsResponseItem = zod.object({
   id: zod.number(),
   workflowId: zod.number(),
   step: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -1970,6 +1995,7 @@ export const UploadWorkflowDocumentParams = zod.object({
 
 export const UploadWorkflowDocumentBody = zod.object({
   step: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -2010,6 +2036,7 @@ export const ListWorkflowNotesResponseItem = zod.object({
   id: zod.number(),
   workflowId: zod.number(),
   step: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -2039,6 +2066,7 @@ export const CreateWorkflowNoteParams = zod.object({
 
 export const CreateWorkflowNoteBody = zod.object({
   step: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -2083,6 +2111,7 @@ export const GetDashboardSummaryResponse = zod.object({
   countsByStep: zod.array(
     zod.object({
       step: zod.enum([
+        "DRAFT",
         "NEW",
         "QUOTATION",
         "VALIDATING_QUOTE_FINANCIAL",
@@ -2139,6 +2168,7 @@ export const ListGtInvestWorkflowsResponseItem = zod.object({
   departmentName: zod.string(),
   priority: zod.enum(["LOW", "NORMAL", "HIGH", "URGENT"]),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",
@@ -2771,6 +2801,7 @@ export const ListDeletedWorkflowsResponseItem = zod.object({
   departmentId: zod.number(),
   departmentName: zod.string(),
   currentStep: zod.enum([
+    "DRAFT",
     "NEW",
     "QUOTATION",
     "VALIDATING_QUOTE_FINANCIAL",

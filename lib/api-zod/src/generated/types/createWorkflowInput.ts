@@ -23,4 +23,10 @@ export interface CreateWorkflowInput {
   /** @nullable */
   neededBy?: Date | null;
   investmentForm?: InvestmentForm;
+  /** When true, the workflow is created in the DRAFT step instead of
+advancing directly to QUOTATION. Drafts skip every advance
+prerequisite, are visible to the whole department, and can be
+deleted by their creator (or any admin).
+ */
+  asDraft?: boolean;
 }

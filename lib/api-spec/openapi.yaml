@@ -1445,6 +1445,7 @@ components:
     WorkflowStep:
       type: string
       enum:
+        - DRAFT
         - NEW
         - QUOTATION
         - VALIDATING_QUOTE_FINANCIAL
@@ -1764,6 +1765,13 @@ components:
         currency: { type: ["string", "null"] }
         neededBy: { type: ["string", "null"], format: date }
         investmentForm: { $ref: "#/components/schemas/InvestmentForm" }
+        asDraft:
+          type: boolean
+          description: |
+            When true, the workflow is created in the DRAFT step instead of
+            advancing directly to QUOTATION. Drafts skip every advance
+            prerequisite, are visible to the whole department, and can be
+            deleted by their creator (or any admin).
       required: [title, departmentId, priority]
 
     UpdateWorkflowInput:

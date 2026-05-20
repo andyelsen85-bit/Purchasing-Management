@@ -16,6 +16,7 @@ import { getSettings, updateSettingsRecord } from "./settings";
 // ─── Step → notification role mapping ────────────────────────────────────────
 
 const STEP_NOTIFY_ROLES: Record<WorkflowStep, string[]> = {
+  DRAFT: [],
   NEW: [],
   QUOTATION: ["DEPT_MANAGER"],
   VALIDATING_QUOTE_FINANCIAL: ["DEPT_MANAGER"],
@@ -94,6 +95,7 @@ export interface NotificationAttachment {
 // ─── Step labels in French ────────────────────────────────────────────────────
 
 export const STEP_LABEL_FR: Record<string, string> = {
+  DRAFT: "Brouillon",
   NEW: "Nouveau",
   QUOTATION: "Devis",
   VALIDATING_QUOTE_FINANCIAL: "Validation devis",

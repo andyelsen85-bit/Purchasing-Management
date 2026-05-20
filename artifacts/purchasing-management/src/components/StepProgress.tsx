@@ -39,7 +39,12 @@ export function StepProgress({ current, branch }: Props) {
       "DONE",
     ];
   })();
-  const effective: Step = current === "NEW" ? "QUOTATION" : current;
+  // DRAFT and the legacy NEW value both render as if the workflow
+  // were at the start of the linear flow — they are pre-Quotation
+  // states that share the first ribbon position.
+  const effective: Step =
+    current === "NEW" || current === "DRAFT" ? "QUOTATION" : current;
+  const isDraft = current === "DRAFT";
 
   // Rejected workflows render their own banner instead of the step
   // ribbon — the linear progress bar is meaningless once the workflow
@@ -65,9 +70,11 @@ export function StepProgress({ current, branch }: Props) {
     <div className="space-y-2" data-testid="status-step-progress">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
-          Étape {ordinal + 1} sur {flow.length + 1}
+          {isDraft
+            ? "Brouillon — pas encore soumis"
+            : `Étape ${ordinal + 1} sur ${flow.length + 1}`}
         </div>
-        <div>{STEP_LABEL[effective]}</div>
+        <div>{isDraft ? "Brouillon" : STEP_LABEL[effective]}</div>
       </div>
       <div className="flex items-stretch gap-1">
         {/* Création Demande — always completed (green) since the workflow exists */}

@@ -250,19 +250,20 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
       investmentForm: parsed.data.investmentForm ?? null,
       threeQuoteRequired: false,
       publicationTier: "STANDARD",
-      // Workflows now skip the legacy "NEW" step entirely — every
-      // field that used to live there is captured on the creation
-      // form, so the request lands the user directly on Quotation
-      // (the next real action). NEW is kept as a recognised legacy
-      // value so historical rows still render.
-      currentStep: "QUOTATION",
+      // Workflows normally skip the legacy "NEW" step and land
+      // directly on Quotation. When the client passes asDraft=true,
+      // the request is parked in DRAFT instead — visible to the
+      // whole department but skipping every advance prerequisite,
+      // and deletable by the creator (or any admin).
+      currentStep: parsed.data.asDraft ? "DRAFT" : "QUOTATION",
     })
     .returning();
   if (created) {
+    const initialStep = parsed.data.asDraft ? "DRAFT" : "QUOTATION";
     await db.insert(historyTable).values({
       workflowId: created.id,
       action: "CREATE",
-      toStep: "QUOTATION",
+      toStep: initialStep,
       actorId: user.id,
       details: `Created workflow ${reference}`,
     });
@@ -419,6 +420,11 @@ async function validateAdvancePrereqs(
     winning?: boolean;
   };
   switch (wf.currentStep) {
+    case "DRAFT":
+      // Drafts have no advance prerequisites — they are explicitly
+      // unfinished. Advancing simply promotes the workflow to
+      // QUOTATION where the normal gates kick in.
+      return null;
     case "NEW":
       return null;
     case "QUOTATION": {
@@ -473,8 +479,8 @@ async function validateAdvancePrereqs(
       // advance on it.
       if (!wf.orderNumber)
         return "Enter the order number before advancing.";
-      if (!hasDoc("ORDER"))
-        return "Attach the order document before advancing.";
+      // Order document is now optional — finance teams sometimes
+      // advance the workflow before the signed PO scan arrives.
       return null;
     case "DELIVERY":
       // Delivery has no hard prerequisites: the printed delivery
@@ -490,8 +496,8 @@ async function validateAdvancePrereqs(
       // invoice document are required to advance.
       if (!wf.invoiceNumber || wf.invoiceAmount == null)
         return "Enter the invoice number and amount before advancing.";
-      if (!hasDoc("INVOICE"))
-        return "Attach the invoice document before advancing.";
+      // Invoice scan is now optional — the validating step can run
+      // off the metadata while the physical document is in transit.
       return null;
     case "VALIDATING_INVOICE":
       if (!wf.invoiceValidated)
@@ -1212,14 +1218,29 @@ router.delete("/workflows/:id", requireAuth, async (req, res): Promise<void> => 
     return;
   }
   const user = getUser(req);
-  if (!user.roles.includes("ADMIN")) {
-    res.status(403).json({ error: "Only admins can delete workflows" });
-    return;
-  }
   const [existing] = await db
-    .select({ id: workflowsTable.id, deletedAt: workflowsTable.deletedAt })
+    .select({
+      id: workflowsTable.id,
+      deletedAt: workflowsTable.deletedAt,
+      currentStep: workflowsTable.currentStep,
+      createdById: workflowsTable.createdById,
+    })
     .from(workflowsTable)
     .where(eq(workflowsTable.id, params.data.id));
+  // Admins can delete anything; the workflow creator can delete
+  // their own row while it is still a DRAFT (matches the session
+  // plan's "creator + admins" rule).
+  const isAdmin = user.roles.includes("ADMIN");
+  const isOwnDraft =
+    existing != null &&
+    existing.currentStep === "DRAFT" &&
+    existing.createdById === user.id;
+  if (!isAdmin && !isOwnDraft) {
+    res.status(403).json({
+      error: "Only admins (or the draft owner) can delete this workflow",
+    });
+    return;
+  }
   if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;

@@ -633,6 +633,49 @@ export function NewWorkflowPage() {
   }
 
   const DRAFT_KEY = "purchasing-workflow-draft";
+  // Server-side draft: same payload as a real submission but with
+  // asDraft=true, which parks the workflow in the DRAFT step. The
+  // browser-local draft (below) is kept as a separate convenience —
+  // it preserves the unsaved form state across navigations even
+  // before the user has picked a department/title.
+  async function handleSaveAsServerDraft() {
+    if (!title.trim() || !departmentId) {
+      toast({
+        variant: "destructive",
+        description:
+          "Renseignez au moins un titre et un département pour enregistrer un brouillon.",
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const wf = await create.mutateAsync({
+        data: {
+          title,
+          departmentId: Number(departmentId),
+          priority,
+          description: description || null,
+          category: category || null,
+          estimatedAmount: null,
+          currency: null,
+          neededBy: commissioningDate || null,
+          investmentForm: buildInvestmentForm(),
+          asDraft: true,
+        },
+      });
+      localStorage.removeItem(DRAFT_KEY);
+      qc.invalidateQueries();
+      setLocation(`/workflows/${wf.id}`);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Brouillon non enregistré",
+        description: extractApiError(err, "Le brouillon n'a pas pu être créé."),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
   function handleSaveDraft() {
     const draft = {
       step,
@@ -1594,8 +1637,17 @@ export function NewWorkflowPage() {
             variant="ghost"
             onClick={handleSaveDraft}
             disabled={submitting}
+            data-testid="button-save-draft-local"
+          >
+            Enregistrer localement
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleSaveAsServerDraft}
+            disabled={submitting}
             data-testid="button-save-draft"
           >
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Enregistrer comme brouillon
           </Button>
 

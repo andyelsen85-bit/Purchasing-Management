@@ -9,6 +9,7 @@
 export type WorkflowStep = (typeof WorkflowStep)[keyof typeof WorkflowStep];
 
 export const WorkflowStep = {
+  DRAFT: "DRAFT",
   NEW: "NEW",
   QUOTATION: "QUOTATION",
   VALIDATING_QUOTE_FINANCIAL: "VALIDATING_QUOTE_FINANCIAL",

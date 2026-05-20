@@ -343,7 +343,12 @@ function ActionBar({
   });
   const canUndo =
     user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
-  const canDelete = user.roles.includes("ADMIN");
+  // Admin can delete anything; the workflow creator can also delete
+  // their own row while it is still a draft. Mirrors the server-side
+  // rule in DELETE /api/workflows/:id.
+  const canDelete =
+    user.roles.includes("ADMIN") ||
+    (wf.currentStep === "DRAFT" && wf.createdById === user.id);
   // The branch picker AND the advance button are both moved INTO the
   // Financial Approval panel for VALIDATING_BY_FINANCIAL — that step
   // bundles "approve + route" into a single inline action, so we hide
@@ -1685,6 +1690,10 @@ function ManagerApprovePanel({
     },
   });
   const busy = save.isPending || advance.isPending || reject.isPending;
+  // When 3 quotes are required, the manager must justify their
+  // choice — empty comment blocks the Approve button. Mirrors the
+  // existing visual asterisk + helper text on the textarea.
+  const commentRequired = wf.threeQuoteRequired && !comment.trim();
 
   function approveAndAdvance() {
     save.mutate(
@@ -1731,7 +1740,7 @@ function ManagerApprovePanel({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={approveAndAdvance}
-              disabled={busy}
+              disabled={busy || commentRequired}
               data-testid="button-approve"
             >
               {save.isPending || advance.isPending ? (

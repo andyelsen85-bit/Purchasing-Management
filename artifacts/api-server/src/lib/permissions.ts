@@ -6,6 +6,7 @@ import type { Role, SessionUser } from "./auth";
 // the active linear ordering (dashboard counters, by-step columns,
 // progress ribbons) must use `ACTIVE_WORKFLOW_STEPS` instead.
 export const WORKFLOW_STEPS = [
+  "DRAFT",
   "NEW",
   "QUOTATION",
   "VALIDATING_QUOTE_FINANCIAL",
@@ -73,6 +74,7 @@ export function canActOnStep(
 ): boolean {
   if (isAdmin(user)) return true;
   switch (step) {
+    case "DRAFT":
     case "NEW":
     case "QUOTATION":
       return (
@@ -190,6 +192,9 @@ export function nextStep(
   branch?: string | null,
 ): WorkflowStep | null {
   switch (current) {
+    case "DRAFT":
+      // Advancing a draft promotes it to the normal flow.
+      return "QUOTATION";
     case "NEW":
       return "QUOTATION";
     case "QUOTATION":
