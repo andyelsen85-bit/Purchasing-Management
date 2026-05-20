@@ -1261,6 +1261,7 @@ components:
         - QUOTATION
         - VALIDATING_QUOTE_FINANCIAL
         - VALIDATING_BY_FINANCIAL
+        - VALIDATING_SERVICES
         - GT_INVEST
         - ORDERING
         - DELIVERY

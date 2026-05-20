@@ -1385,7 +1385,7 @@ export function NewWorkflowPage() {
                   <YesNoSelect value={hazardousConsumables} onChange={setHazardousConsumables} />
                   {hazardousConsumables === "true" && (
                     <p className="text-xs text-amber-600">
-                      Validation du service PP requise.
+                      Le service Protection et Prévention sera notifié.
                     </p>
                   )}
                 </div>
@@ -1422,7 +1422,7 @@ export function NewWorkflowPage() {
                     <Label>9.5 Stérilisation requise ?<Req /></Label>
                     <YesNoSelect value={sterilizationRequired} onChange={setSterilizationRequired} />
                     {sterilizationRequired === "true" && (
-                      <p className="text-xs text-amber-600">Contacter le service stérilisation.</p>
+                      <p className="text-xs text-amber-600">Le service Stérilisation sera notifié.</p>
                     )}
                   </div>
                 </div>

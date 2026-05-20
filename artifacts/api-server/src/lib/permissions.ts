@@ -10,6 +10,7 @@ export const WORKFLOW_STEPS = [
   "QUOTATION",
   "VALIDATING_QUOTE_FINANCIAL",
   "VALIDATING_BY_FINANCIAL",
+  "VALIDATING_SERVICES",
   "GT_INVEST",
   "ORDERING",
   "DELIVERY",
@@ -27,6 +28,7 @@ export const ACTIVE_WORKFLOW_STEPS = [
   "QUOTATION",
   "VALIDATING_QUOTE_FINANCIAL",
   "VALIDATING_BY_FINANCIAL",
+  "VALIDATING_SERVICES",
   "GT_INVEST",
   "ORDERING",
   "DELIVERY",
@@ -85,6 +87,10 @@ export function canActOnStep(
         hasRole(user, "FINANCIAL_ALL")
       );
     case "VALIDATING_BY_FINANCIAL":
+      return hasRole(user, "FINANCIAL_ALL");
+    case "VALIDATING_SERVICES":
+      // Notified-services signing step. Until per-service signature
+      // tracking is in place, ADMIN / FINANCIAL_ALL can advance it.
       return hasRole(user, "FINANCIAL_ALL");
     case "GT_INVEST":
       return hasRole(user, "GT_INVEST", "FINANCIAL_ALL");
@@ -191,7 +197,11 @@ export function nextStep(
     case "VALIDATING_QUOTE_FINANCIAL":
       return "VALIDATING_BY_FINANCIAL";
     case "VALIDATING_BY_FINANCIAL":
-      // Branch chooser
+      // Always pass through the new "Validations Services" signing step
+      // before branching to GT Invest or directly to Ordering.
+      return "VALIDATING_SERVICES";
+    case "VALIDATING_SERVICES":
+      // Branch chooser is applied here (after services have signed).
       if (branch === "GT_INVEST") return "GT_INVEST";
       return "ORDERING"; // K_ORDER branch (or default)
     case "GT_INVEST":

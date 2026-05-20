@@ -1,0 +1,56 @@
+Quelques changements à faire:
+
+Au Formulaire de demande chnager le contenue de la listbox Priorité sur Normal et Urgent. Rien d'autre.
+Ajouter la possibilité de filtrer la priorité dans la liste des demandes.
+
+Question 4.1.1 ajouter "Je ne sais pas" En cas de Oui ou je ne sais pas, afficher texte "Service juridique sera notifié"
+Question 4.1.3 ajouter "Je ne sais pas" En cas de Oui ou je ne sais pas ou non, afficher texte "Service juridique sera notifié"
+
+Question 5 Fournisseurs:
+Ajouter une option "Ne figure pas dans la liste" qui change le champs de selection du fournisseur et son contact en Texte libre.
+Retirer les droits pour la création des Fournisseurs et des contacts pour les utilisateurs non Admin ou non Financial. C'est le Departement Financier qui va gérer la liste des fournisseurs. Cacher la page et menu de tous les autres utilisateurs.
+
+Question 6.3.1 ajouter "Je ne sais pas" afficher texte "Service informatique et Sécurité informatique seront notifiés"
+
+9.4 changer texte affichée de "Service Hygiènique" sur "Service SPCI"
+
+Si question 9.2 et "Oui" précocher sous question 11 "Offre de prix pour la maintenance"
+
+Question 11 rajouter type de documents:
+
+Déclaration de conformité
+Question 11: Changer texte "Certificat CE (si équipement médical ou hardware)" sur "Certificat CE (obligatoire si équipement médical ou hardware)" et obligatoire en bold
+
+Ajouter à la question 1.4 "Hardware IT"
+
+Si question 1.4 est "Équipement médical" Précocher sous question 11 "Déclaration de conformité"
+Si question 1.4 est "Hardware IT" Précocher sous question 11 "Certificat CE..."
+
+On a besoin de sauvegarder le questionnaire de creation de demande "As Draft" ou broillon. de pouvoir à tout moment le sauvegarder et finir le remplissage par après. Ajouter aussi ceci en tant que filtre dans la vue de tous les commandes.
+
+Dans la page de creation pour le dépose de fichiers qui sont cochez, il faut renommer le titre à "12 Dépôt de documents"
+
+Après création on se retrouve à l'étappe "Offre de prix" en tant que Step 1.
+
+Rajoute un Step avant qui sera donc step 1 "Creation Demande" mais ceci déjà en direct en vert, pour voir qu'on se retrouve après création à l'étappe 2 "Offre de prix"
+
+Changer dans Step Offre de prix le texte pour l'offre retenue. "Offre retenue" au lieu de Retenue et le bouton sur non pour non retenue et oui pour l'offre retenue.
+
+En cas que 3 offres ont du mises à cette étappe, le champ Notes dans le step Validation Responsable devra obligatoire, et un texte est affichée, Argumentaire pour l'offre retenue.
+
+Au step Commande l'import du document n'est pas obligatoire. Comme c'est le cas pour la livraison. Mettre l'import au step facturation égallement non obligatoire.
+
+Arreter d'envoyer des notifications à tout le monde, je vais maintenant définir les notifications à mettre.
+
+Donne moi la possibilité de configurer les notifications dans le paramétrage.
+
+Une plage avec des questions à ajouter et de définir quel groupe ActiveDirectory sera notifiée avec un bouton de syncronisation, et une syncro automatique une fois par jour, qui importe à cette table les personnes avec leurs adresses mail de l'active directory. Comme cela on a une visualisation et configuration si un utilisateur répond oui dans la question x.x.x qu'on doit notifier telle et telle personne.
+Les notifications ne sortenet pas tout de suite, mais seulement après l'étape validation financière.
+
+Toutes les Services qui ont été notifiés doivent dans un step après validation financiere et avant le step GTInvest signer la demande.
+
+Ces services qui sont notifiés et qui doivent signer la demande (une des personnes par sérvice) doivent donc entrer dans l'application, et se retrouvent au step "Validations Services" et qui peuvent donc signer la partie pour leur département.
+
+Exemple: Si je selectionne à la question 6.1 Oui, un texte est affichée "Le Service Technique sera informé" (Il faut changer ce type de texte sur tous les questions sur "Le service XY sera notifié" au lieu de "Contacter le service XY") Après le step validation financière, les notifications vont êtres envoyés à tous les services impactés, et le step validation services sera composé de X Signatures à faire par chaque membre du service concerné. Et seul un membre de son Service dont il est configuré par groupe AD peut signer sa validation et non une validation pour un autre service. Ces signatures peuvent être affichés sur la page au step validation service, et dans le document mergé de cette demande, il faut rajouter une dernière page cqui contient les signatures dans une même couleur et format que la signature de la validation facture.
+
+Ajoute dans le step Commande la possibilité d'ajouter des numéros Amortissement
