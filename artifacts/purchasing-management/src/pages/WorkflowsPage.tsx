@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
-import { Plus, Search, Filter, FileEdit, X } from "lucide-react";
+import { Plus, Search, Filter, FileEdit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,41 +39,18 @@ export function WorkflowsPage() {
   const { data: workflowsRaw, isLoading } = useListWorkflows(params);
   const { data: departments } = useListDepartments();
 
-  // Locally-saved draft from the New Workflow page ("Enregistrer comme
-  // brouillon" button). Surfaced here so the user can find and resume it —
-  // drafts are not persisted server-side, only in this browser.
-  const [draft, setDraft] = useState<{ title: string; savedAt?: number } | null>(null);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("purchasing-workflow-draft");
-      if (!raw) {
-        setDraft(null);
-        return;
-      }
-      const d = JSON.parse(raw);
-      setDraft({ title: typeof d.title === "string" ? d.title : "" });
-    } catch {
-      setDraft(null);
-    }
-  }, []);
-  function handleDeleteDraft(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    localStorage.removeItem("purchasing-workflow-draft");
-    setDraft(null);
-  }
   const workflows = (workflowsRaw ?? []).filter((w) => {
-    if (status === "DRAFT") return false;
+    if (status === "DRAFT") return w.currentStep === "DRAFT";
     if (status === "ALL") return true;
     if (status === "DONE") return w.currentStep === "DONE";
     if (status === "REJECTED") return w.currentStep === "REJECTED";
-    // ACTIVE
-    return w.currentStep !== "DONE" && w.currentStep !== "REJECTED";
+    // ACTIVE — drafts are a parking lot, not in-flight work, so exclude.
+    return (
+      w.currentStep !== "DRAFT" &&
+      w.currentStep !== "DONE" &&
+      w.currentStep !== "REJECTED"
+    );
   }).filter((w) => filterPriority === "ALL" || w.priority === filterPriority);
-  // Only surface the local draft when the status filter includes drafts
-  // (ALL or DRAFT). Hide it when viewing Active / Done / Rejected so the
-  // draft does not pollute filtered views.
-  const showDraft = !!draft && (status === "ALL" || status === "DRAFT");
 
   return (
     <div className="space-y-6 p-6">
@@ -174,7 +151,7 @@ export function WorkflowsPage() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
-          ) : workflows.length === 0 && !showDraft ? (
+          ) : workflows.length === 0 ? (
             <div
               className="p-12 text-center text-sm text-muted-foreground"
               data-testid="status-no-workflows"
@@ -191,56 +168,34 @@ export function WorkflowsPage() {
                 <div className="col-span-1">Priorité</div>
                 <div className="col-span-1 text-right">Âge</div>
               </div>
-              {showDraft && (
-                <Link href="/workflows/new?resume=1">
+              {workflows.map((w: WorkflowSummary) => {
+                const isDraft = w.currentStep === "DRAFT";
+                const href = isDraft
+                  ? `/workflows/new?draftId=${w.id}`
+                  : `/workflows/${w.id}`;
+                return (
+                <Link key={w.id} href={href}>
                   <a
-                    className="grid grid-cols-12 items-center gap-3 px-5 py-3 text-sm hover-elevate bg-amber-50/60 dark:bg-amber-950/20"
-                    data-testid="row-draft"
-                  >
-                    <div className="col-span-2 font-mono text-xs flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
-                      <FileEdit className="h-3.5 w-3.5" /> Brouillon
-                    </div>
-                    <div className="col-span-4 font-medium truncate">
-                      {draft.title || <span className="italic text-muted-foreground">(sans titre)</span>}
-                    </div>
-                    <div className="col-span-2 text-muted-foreground truncate">—</div>
-                    <div className="col-span-2">
-                      <Badge variant="outline" className="text-[11px] border-amber-400 text-amber-700 dark:text-amber-400">
-                        Brouillon local
-                      </Badge>
-                    </div>
-                    <div className="col-span-1">—</div>
-                    <div className="col-span-1 text-right">
-                      <button
-                        type="button"
-                        onClick={handleDeleteDraft}
-                        className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label="Supprimer le brouillon"
-                        data-testid="button-delete-draft"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </a>
-                </Link>
-              )}
-              {workflows.map((w: WorkflowSummary) => (
-                <Link key={w.id} href={`/workflows/${w.id}`}>
-                  <a
-                    className="grid grid-cols-12 items-center gap-3 px-5 py-3 text-sm hover-elevate"
+                    className={`grid grid-cols-12 items-center gap-3 px-5 py-3 text-sm hover-elevate ${
+                      isDraft ? "bg-amber-50/60 dark:bg-amber-950/20" : ""
+                    }`}
                     data-testid={`row-workflow-${w.id}`}
                   >
-                    <div className="col-span-2 font-mono text-xs">
+                    <div className={`col-span-2 font-mono text-xs ${isDraft ? "flex items-center gap-1.5 text-amber-700 dark:text-amber-400" : ""}`}>
+                      {isDraft ? <FileEdit className="h-3.5 w-3.5" /> : null}
                       {w.reference}
                     </div>
                     <div className="col-span-4 font-medium truncate">
-                      {w.title}
+                      {w.title || <span className="italic text-muted-foreground">(sans titre)</span>}
                     </div>
                     <div className="col-span-2 text-muted-foreground truncate">
                       {w.departmentName}
                     </div>
                     <div className="col-span-2">
-                      <Badge variant="secondary" className="text-[11px]">
+                      <Badge
+                        variant={isDraft ? "outline" : "secondary"}
+                        className={`text-[11px] ${isDraft ? "border-amber-400 text-amber-700 dark:text-amber-400" : ""}`}
+                      >
                         {STEP_LABEL[w.currentStep]}
                       </Badge>
                     </div>
@@ -262,7 +217,8 @@ export function WorkflowsPage() {
                     </div>
                   </a>
                 </Link>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

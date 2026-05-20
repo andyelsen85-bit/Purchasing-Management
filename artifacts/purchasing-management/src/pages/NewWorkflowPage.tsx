@@ -25,6 +25,8 @@ import {
   useGetCompany,
   useGetSettings,
   useUpdateWorkflow,
+  useGetWorkflow,
+  useAdvanceWorkflow,
   Priority,
   type InvestmentForm,
   type Workflow,
@@ -222,6 +224,24 @@ export function NewWorkflowPage() {
   const [showErrors, setShowErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // If the URL carries ?draftId=<n> we're resuming a server-side draft.
+  // The full workflow record is fetched and used to hydrate the form
+  // below; saving re-PATCHes the same row instead of creating a new one.
+  const draftId = (() => {
+    if (typeof window === "undefined") return null;
+    const v = new URLSearchParams(window.location.search).get("draftId");
+    const n = v ? Number(v) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+  const draftQuery = useGetWorkflow(draftId ?? 0, {
+    query: {
+      enabled: draftId != null,
+      queryKey: ["draft-workflow", draftId] as const,
+    },
+  });
+  const advance = useAdvanceWorkflow();
+  const [hydratedFromDraft, setHydratedFromDraft] = useState(false);
+
   // ── Basic workflow fields ──────────────────────────────────────
   const [title, setTitle] = useState("");
   const [departmentId, setDepartmentId] = useState<string>("");
@@ -326,67 +346,90 @@ export function NewWorkflowPage() {
     }
   }, [departments, departmentId]);
 
-  // If the user navigated here with ?resume=1 (from the "Brouillon" row in
-  // the workflows list), hydrate every field from the localStorage draft.
+  // If the URL carries ?draftId=<n>, hydrate every form field from the
+  // server-side draft once. The InvestmentForm uses real booleans /
+  // numbers; the form state uses strings ("true" / "false" / "") so we
+  // convert back here. This is the exact reverse of buildInvestmentForm.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("resume") !== "1") return;
-    const raw = localStorage.getItem("purchasing-workflow-draft");
-    if (!raw) return;
-    try {
-      const d = JSON.parse(raw);
-      if (typeof d.step === "number") setStep(d.step);
-      if (typeof d.title === "string") setTitle(d.title);
-      if (d.priority) setPriority(d.priority);
-      if (d.departmentId) setDepartmentId(d.departmentId);
-      if (typeof d.projectLeader === "string") setProjectLeader(d.projectLeader);
-      if (Array.isArray(d.investmentTypes)) setInvestmentTypes(d.investmentTypes);
-      if (typeof d.investmentTypeOther === "string") setInvestmentTypeOther(d.investmentTypeOther);
-      if (typeof d.description === "string") setDescription(d.description);
-      if (typeof d.justification === "string") setJustification(d.justification);
-      if (typeof d.demoTested === "string") setDemoTested(d.demoTested);
-      if (typeof d.demoContext === "string") setDemoContext(d.demoContext);
-      if (typeof d.requestNature === "string") setRequestNature(d.requestNature);
-      if (typeof d.replacedEquipmentRef === "string") setReplacedEquipmentRef(d.replacedEquipmentRef);
-      if (typeof d.replacedEquipmentLocation === "string") setReplacedEquipmentLocation(d.replacedEquipmentLocation);
-      if (typeof d.replacementReason === "string") setReplacementReason(d.replacementReason);
-      if (typeof d.decommissioned === "string") setDecommissioned(d.decommissioned);
-      if (typeof d.decommissionedNote === "string") setDecommissionedNote(d.decommissionedNote);
-      if (typeof d.estimatedAmount5y === "string") setEstimatedAmount5y(d.estimatedAmount5y);
-      if (typeof d.livreIException === "string") setLivreIException(d.livreIException);
-      if (typeof d.livreIIException === "string") setLivreIIException(d.livreIIException);
-      if (typeof d.exceptionJustification === "string") setExceptionJustification(d.exceptionJustification);
-      if (typeof d.budgetPositionKnown === "string") setBudgetPositionKnown(d.budgetPositionKnown);
-      if (typeof d.budgetPosition === "string") setBudgetPosition(d.budgetPosition);
-      if (typeof d.supplierCompanyId === "string") setSupplierCompanyId(d.supplierCompanyId);
-      if (typeof d.supplierContactId === "string") setSupplierContactId(d.supplierContactId);
-      if (typeof d.supplierFreeTextName === "string") setSupplierFreeTextName(d.supplierFreeTextName);
-      if (typeof d.supplierFreeTextContact === "string") setSupplierFreeTextContact(d.supplierFreeTextContact);
-      if (typeof d.architecturalWorks === "string") setArchitecturalWorks(d.architecturalWorks);
-      if (typeof d.itConnection === "string") setItConnection(d.itConnection);
-      if (typeof d.systemInterop === "string") setSystemInterop(d.systemInterop);
-      if (Array.isArray(d.accessTypes)) setAccessTypes(d.accessTypes);
-      if (Array.isArray(d.dataTypes)) setDataTypes(d.dataTypes);
-      if (typeof d.availabilityImpact === "string") setAvailabilityImpact(d.availabilityImpact);
-      if (typeof d.hasAI === "string") setHasAI(d.hasAI);
-      if (typeof d.consumablesNeeded === "string") setConsumablesNeeded(d.consumablesNeeded);
-      if (typeof d.consumablesOfferAttached === "string") setConsumablesOfferAttached(d.consumablesOfferAttached);
-      if (typeof d.hazardousConsumables === "string") setHazardousConsumables(d.hazardousConsumables);
-      if (typeof d.warrantyDuration === "string") setWarrantyDuration(d.warrantyDuration);
-      if (typeof d.maintenanceContract === "string") setMaintenanceContract(d.maintenanceContract);
-      if (typeof d.cleaningRequired === "string") setCleaningRequired(d.cleaningRequired);
-      if (typeof d.sterilizationRequired === "string") setSterilizationRequired(d.sterilizationRequired);
-      if (typeof d.trainingRequired === "string") setTrainingRequired(d.trainingRequired);
-      if (typeof d.trainingOfferAttached === "string") setTrainingOfferAttached(d.trainingOfferAttached);
-      if (typeof d.commissioningDate === "string") setCommissioningDate(d.commissioningDate);
-      if (Array.isArray(d.documentsProvided)) setDocumentsProvided(d.documentsProvided);
-      toast({ description: "Brouillon repris." });
-    } catch {
-      // Corrupted draft — ignore.
+    if (hydratedFromDraft) return;
+    if (draftId == null) return;
+    const wf = draftQuery.data;
+    if (!wf) return;
+    const b2s = (v: boolean | null | undefined): string =>
+      v === true ? "true" : v === false ? "false" : "";
+    const inv = (wf.investmentForm ?? {}) as Partial<InvestmentForm> & {
+      livreIAnswer?: string | null;
+      livreIIAnswer?: string | null;
+    };
+    if (wf.title) setTitle(wf.title);
+    if (wf.priority) setPriority(wf.priority as keyof typeof Priority);
+    if (wf.departmentId != null) setDepartmentId(String(wf.departmentId));
+    if (wf.description) setDescription(wf.description);
+    if (wf.category) setCategory(wf.category);
+    if (inv.projectLeader) setProjectLeader(inv.projectLeader);
+    if (Array.isArray(inv.investmentTypes)) {
+      // "Autre: <text>" was packed by buildInvestmentForm — unpack it.
+      const types: string[] = [];
+      let other = "";
+      for (const t of inv.investmentTypes) {
+        if (t.startsWith("Autre:")) {
+          types.push("Autre");
+          other = t.slice("Autre:".length).trim();
+        } else {
+          types.push(t);
+        }
+      }
+      setInvestmentTypes(types);
+      if (other) setInvestmentTypeOther(other);
     }
+    if (inv.justification) setJustification(inv.justification);
+    setDemoTested(b2s(inv.demoTested));
+    if (inv.demoContext) setDemoContext(inv.demoContext);
+    if (inv.requestNature) setRequestNature(inv.requestNature);
+    if (inv.replacedEquipmentRef) setReplacedEquipmentRef(inv.replacedEquipmentRef);
+    if (inv.replacedEquipmentLocation) setReplacedEquipmentLocation(inv.replacedEquipmentLocation);
+    if (inv.replacementReason) setReplacementReason(inv.replacementReason);
+    setDecommissioned(b2s(inv.decommissioned));
+    if (inv.decommissionedNote) setDecommissionedNote(inv.decommissionedNote);
+    if (inv.estimatedAmount5y != null) setEstimatedAmount5y(String(inv.estimatedAmount5y));
+    if (inv.livreIAnswer) setLivreIException(inv.livreIAnswer);
+    if (inv.livreIIAnswer) setLivreIIException(inv.livreIIAnswer);
+    if (inv.exceptionJustification) setExceptionJustification(inv.exceptionJustification);
+    if (inv.budgetPositionKnown) setBudgetPositionKnown(inv.budgetPositionKnown);
+    if (inv.budgetPosition) setBudgetPosition(inv.budgetPosition);
+    if (inv.supplierCompanyId != null) {
+      setSupplierCompanyId(String(inv.supplierCompanyId));
+    } else if (inv.supplierName) {
+      // Free-text supplier — buildInvestmentForm sets companyId=null.
+      setSupplierCompanyId("NE_FIGURE_PAS");
+      setSupplierFreeTextName(inv.supplierName);
+      if (inv.supplierContact) setSupplierFreeTextContact(inv.supplierContact);
+    }
+    if (inv.supplierContactId != null) setSupplierContactId(String(inv.supplierContactId));
+    setArchitecturalWorks(b2s(inv.architecturalWorks));
+    setItConnection(b2s(inv.itConnection));
+    setSystemInterop(b2s(inv.systemInterop));
+    if (Array.isArray(inv.accessTypes)) setAccessTypes(inv.accessTypes);
+    if (Array.isArray(inv.dataTypes)) setDataTypes(inv.dataTypes);
+    if (inv.availabilityImpact) setAvailabilityImpact(inv.availabilityImpact);
+    setHasAI(b2s(inv.hasAI));
+    setConsumablesNeeded(b2s(inv.consumablesNeeded));
+    setConsumablesOfferAttached(b2s(inv.consumablesOfferAttached));
+    setHazardousConsumables(b2s(inv.hazardousConsumables));
+    if (inv.warrantyDuration) setWarrantyDuration(inv.warrantyDuration);
+    setMaintenanceContract(b2s(inv.maintenanceContract));
+    setCleaningRequired(b2s(inv.cleaningRequired));
+    setSterilizationRequired(b2s(inv.sterilizationRequired));
+    setTrainingRequired(b2s(inv.trainingRequired));
+    setTrainingOfferAttached(b2s(inv.trainingOfferAttached));
+    if (inv.commissioningDate) setCommissioningDate(inv.commissioningDate);
+    if (Array.isArray(inv.documentsProvided) && inv.documentsProvided.length) {
+      setDocumentsProvided(inv.documentsProvided);
+    }
+    setHydratedFromDraft(true);
+    toast({ description: "Brouillon repris." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [draftId, draftQuery.data]);
 
   // Selected company → contacts list filtered for the 5.2 dropdown.
   // The list endpoint does not embed contacts, so we re-query the
@@ -680,23 +723,43 @@ export function NewWorkflowPage() {
     }
     setSubmitting(true);
     try {
-      const wf = await create.mutateAsync({
-        data: {
-          title,
-          departmentId: Number(departmentId),
-          priority,
-          description: description || null,
-          category: category || null,
-          estimatedAmount: null,
-          currency: null,
-          neededBy: commissioningDate || null,
-          investmentForm: buildInvestmentForm(),
-          asDraft: true,
-        },
-      });
+      if (draftId != null) {
+        // Resuming an existing draft — PATCH the same row instead of
+        // creating a new workflow each time the user re-saves.
+        await update.mutateAsync({
+          id: draftId,
+          data: {
+            title,
+            priority,
+            description: description || null,
+            category: category || null,
+            neededBy: commissioningDate || null,
+            investmentForm: buildInvestmentForm(),
+          },
+        });
+      } else {
+        await create.mutateAsync({
+          data: {
+            title,
+            departmentId: Number(departmentId),
+            priority,
+            description: description || null,
+            category: category || null,
+            estimatedAmount: null,
+            currency: null,
+            neededBy: commissioningDate || null,
+            investmentForm: buildInvestmentForm(),
+            asDraft: true,
+          },
+        });
+      }
       localStorage.removeItem(DRAFT_KEY);
       qc.invalidateQueries();
-      setLocation(`/workflows/${wf.id}`);
+      toast({ description: "Brouillon enregistré." });
+      // Send the user back to the Demandes list — drafts are picked
+      // back up from there, not from the workflow detail page (which
+      // would jump straight to the Offre de prix step).
+      setLocation("/workflows");
     } catch (err) {
       toast({
         variant: "destructive",
@@ -725,19 +788,39 @@ export function NewWorkflowPage() {
     }
     setSubmitting(true);
     try {
-      const wf: Workflow = await create.mutateAsync({
-        data: {
-          title,
-          departmentId: Number(departmentId),
-          priority,
-          description: description || null,
-          category: category || null,
-          estimatedAmount: null,
-          currency: null,
-          neededBy: commissioningDate || null,
-          investmentForm: buildInvestmentForm(),
-        },
-      });
+      let wf: Workflow;
+      if (draftId != null) {
+        // Resuming a server-side draft: PATCH the existing row, then
+        // advance it from DRAFT to QUOTATION so the rest of the flow
+        // (document upload + quote materialisation) proceeds the same
+        // way as for a fresh creation.
+        wf = await update.mutateAsync({
+          id: draftId,
+          data: {
+            title,
+            priority,
+            description: description || null,
+            category: category || null,
+            neededBy: commissioningDate || null,
+            investmentForm: buildInvestmentForm(),
+          },
+        });
+        wf = await advance.mutateAsync({ id: draftId, data: {} });
+      } else {
+        wf = await create.mutateAsync({
+          data: {
+            title,
+            departmentId: Number(departmentId),
+            priority,
+            description: description || null,
+            category: category || null,
+            estimatedAmount: null,
+            currency: null,
+            neededBy: commissioningDate || null,
+            investmentForm: buildInvestmentForm(),
+          },
+        });
+      }
 
       // Upload every checked document. Multipart fetch directly — the
       // codegen client also exposes UploadWorkflowDocumentBodyTwo for
