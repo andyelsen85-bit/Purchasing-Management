@@ -69,11 +69,13 @@ const ACCESS_TYPES = [
   "Je ne sais pas",
 ];
 
+const NO_DATA_OPTION = "Aucunes données";
 const DATA_TYPES = [
   "Données de santé (PHI)",
   "Données personnelles (PII)",
   "Données critiques (financières, IT, etc.)",
   "Autres données du CHdN",
+  NO_DATA_OPTION,
 ];
 
 const CE_CERT_LABEL = "Certificat CE (obligatoire si équipement médical ou hardware)";
@@ -1623,9 +1625,21 @@ export function NewWorkflowPage() {
                   <CheckboxList
                     options={DATA_TYPES}
                     values={dataTypes}
-                    onChange={setDataTypes}
+                    onChange={(v) => {
+                      // "Aucunes données" is exclusive — picking it
+                      // clears every other choice, and picking any
+                      // other type clears "Aucunes données".
+                      const added = v.find((x) => !dataTypes.includes(x));
+                      if (added === NO_DATA_OPTION) {
+                        setDataTypes([NO_DATA_OPTION]);
+                      } else if (added && v.includes(NO_DATA_OPTION)) {
+                        setDataTypes(v.filter((x) => x !== NO_DATA_OPTION));
+                      } else {
+                        setDataTypes(v);
+                      }
+                    }}
                   />
-                  {dataTypes.length > 0 && (
+                  {dataTypes.some((x) => x !== NO_DATA_OPTION) && (
                     <p className="text-xs text-amber-600">
                       Le service juridique sera notifié.
                     </p>

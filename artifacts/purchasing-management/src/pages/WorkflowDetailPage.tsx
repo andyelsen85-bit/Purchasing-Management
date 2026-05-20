@@ -3913,11 +3913,13 @@ const IF_ACCESS_TYPES = [
   "Accès à distance",
   "Accès limité à une application spécifique",
 ];
+const IF_NO_DATA_OPTION = "Aucunes données";
 const IF_DATA_TYPES = [
   "Données de santé (PHI)",
   "Données personnelles (PII)",
   "Données critiques (financières, IT, etc.)",
   "Autres données du CHdN",
+  IF_NO_DATA_OPTION,
 ];
 const IF_REQUIRED_DOCS = [
   "Offre de prix",
@@ -4427,9 +4429,22 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
               <IFEditChecks
                 options={IF_DATA_TYPES}
                 values={draft.dataTypes ?? []}
-                onChange={(v) => patch("dataTypes", v.length ? v : undefined)}
+                onChange={(v) => {
+                  // "Aucunes données" is mutually exclusive with every
+                  // other data type — picking it clears the others,
+                  // and picking another type clears "Aucunes données".
+                  const prev = draft.dataTypes ?? [];
+                  const added = v.find((x) => !prev.includes(x));
+                  let next = v;
+                  if (added === IF_NO_DATA_OPTION) {
+                    next = [IF_NO_DATA_OPTION];
+                  } else if (added && v.includes(IF_NO_DATA_OPTION)) {
+                    next = v.filter((x) => x !== IF_NO_DATA_OPTION);
+                  }
+                  patch("dataTypes", next.length ? next : undefined);
+                }}
               />
-              {(draft.dataTypes?.length ?? 0) > 0 && (
+              {(draft.dataTypes ?? []).some((x) => x !== IF_NO_DATA_OPTION) && (
                 <p className="text-xs text-amber-600">
                   Le service juridique sera notifié.
                 </p>

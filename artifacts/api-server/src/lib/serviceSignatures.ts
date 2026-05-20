@@ -23,8 +23,10 @@ const RULE_DEFS: Array<{
     // of several.
     // - Q4.1.1 (LIVRE_I tier) triggers on "Oui" or "Je ne sais pas"
     // - Q4.1.3 (LIVRE_II tier) triggers on *any* answer (Oui / Non / JNS)
-    // - Q7.1 triggers when at least one data type is selected (PHI,
-    //   PII, données critiques ou autres données du CHdN)
+    // - Q7.1 triggers when at least one *sensitive* data type is
+    //   selected (PHI, PII, données critiques, autres données du CHdN).
+    //   The "Aucunes données" choice is mutually exclusive with the
+    //   others and does NOT trigger legal.
     // - Q7.3 triggers on "Oui" (hasAI === true)
     key: "q_legal",
     label: "Service juridique (4.1.1 / 4.1.3 / 7.1 / 7.3)",
@@ -36,7 +38,14 @@ const RULE_DEFS: Array<{
         return true;
       if (f.hasAI === true) return true;
       const dataTypes = f.dataTypes;
-      if (Array.isArray(dataTypes) && dataTypes.length > 0) return true;
+      if (
+        Array.isArray(dataTypes) &&
+        dataTypes.some(
+          (d) => typeof d === "string" && d !== "Aucunes données",
+        )
+      ) {
+        return true;
+      }
       // Backward compat with workflows created before the raw-answer
       // fields were introduced: fall back to the stored procedure tier.
       if (f.exceptionProcedure === "LIVRE_I") return true;
