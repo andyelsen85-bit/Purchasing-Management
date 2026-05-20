@@ -1296,7 +1296,7 @@ export function NewWorkflowPage() {
                     <YesNoSelect value={architecturalWorks} onChange={setArchitecturalWorks} />
                     {architecturalWorks === "true" && (
                       <p className="text-xs text-amber-600">
-                        Contacter le service technique.
+                        Le service Technique sera notifié.
                       </p>
                     )}
                   </div>
@@ -1321,7 +1321,7 @@ export function NewWorkflowPage() {
                     />
                     {accessTypes.length > 0 && (
                       <p className="text-xs text-amber-600 font-medium">
-                        Le service informatique et Sécurité informatique seront notifiés.
+                        Le Service Informatique et Sécurité informatique seront notifiés.
                       </p>
                     )}
                   </div>
