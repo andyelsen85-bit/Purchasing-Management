@@ -4429,6 +4429,11 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
                 values={draft.dataTypes ?? []}
                 onChange={(v) => patch("dataTypes", v.length ? v : undefined)}
               />
+              {(draft.dataTypes?.length ?? 0) > 0 && (
+                <p className="text-xs text-amber-600">
+                  Le service juridique sera notifié.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>7.2 Impact potentiel en cas d'indisponibilité du système</Label>

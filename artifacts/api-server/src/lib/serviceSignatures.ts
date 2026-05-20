@@ -17,14 +17,17 @@ const RULE_DEFS: Array<{
   triggered: (f: Record<string, unknown>) => boolean;
 }> = [
   {
-    // Merged legal rule — Q4.1.1, Q4.1.3 and Q7.3 (AI) all route to the
-    // same Service juridique. We fire on any of these signals so legal
-    // sees a single attestation to sign instead of three.
+    // Merged legal rule — Q4.1.1, Q4.1.3, Q7.1 (data types) and Q7.3
+    // (AI) all route to the same Service juridique. We fire on any of
+    // these signals so legal sees a single attestation to sign instead
+    // of several.
     // - Q4.1.1 (LIVRE_I tier) triggers on "Oui" or "Je ne sais pas"
     // - Q4.1.3 (LIVRE_II tier) triggers on *any* answer (Oui / Non / JNS)
+    // - Q7.1 triggers when at least one data type is selected (PHI,
+    //   PII, données critiques ou autres données du CHdN)
     // - Q7.3 triggers on "Oui" (hasAI === true)
     key: "q_legal",
-    label: "Service juridique (4.1.1 / 4.1.3 / 7.3)",
+    label: "Service juridique (4.1.1 / 4.1.3 / 7.1 / 7.3)",
     triggered: (f) => {
       const livreI = f.livreIAnswer;
       if (livreI === "true" || livreI === "unknown") return true;
@@ -32,6 +35,8 @@ const RULE_DEFS: Array<{
       if (livreII === "true" || livreII === "false" || livreII === "unknown")
         return true;
       if (f.hasAI === true) return true;
+      const dataTypes = f.dataTypes;
+      if (Array.isArray(dataTypes) && dataTypes.length > 0) return true;
       // Backward compat with workflows created before the raw-answer
       // fields were introduced: fall back to the stored procedure tier.
       if (f.exceptionProcedure === "LIVRE_I") return true;

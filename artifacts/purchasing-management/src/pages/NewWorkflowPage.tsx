@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ArrowRight, Loader2, ClipboardList, Upload, FileText, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, ClipboardList, Upload, FileText, X, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -27,6 +27,7 @@ import {
   useUpdateWorkflow,
   useGetWorkflow,
   useAdvanceWorkflow,
+  useDeleteWorkflow,
   useListWorkflowDocuments,
   Priority,
   type InvestmentForm,
@@ -564,6 +565,47 @@ export function NewWorkflowPage() {
 
   const create = useCreateWorkflow();
   const update = useUpdateWorkflow();
+  const del = useDeleteWorkflow();
+
+  const DRAFT_KEY = "purchasing-workflow-draft";
+
+  // Discard the in-progress draft. When the user is resuming a
+  // server-side draft (?draftId=N) we soft-delete it via the standard
+  // DELETE /api/workflows/:id route — the server only allows this for
+  // an admin or the draft's creator, which matches the visible flow
+  // here. Either way we also clear the localStorage scratchpad so a
+  // fresh visit starts from an empty form, then navigate home.
+  async function handleDeleteDraft() {
+    if (
+      !window.confirm(
+        draftId != null
+          ? "Supprimer définitivement ce brouillon ? Cette action est irréversible."
+          : "Abandonner ce brouillon ? Toutes les informations saisies seront perdues.",
+      )
+    ) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (draftId != null) {
+        await del.mutateAsync({ id: draftId });
+      }
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {
+        /* localStorage may be unavailable (private mode) — ignore */
+      }
+      toast({ description: "Brouillon supprimé." });
+      setLocation("/");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        description: extractApiError(err, "Échec de la suppression du brouillon."),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   function boolVal(v: string): boolean | null {
     if (v === "true") return true;
@@ -776,7 +818,6 @@ export function NewWorkflowPage() {
     setStep((s) => s + 1);
   }
 
-  const DRAFT_KEY = "purchasing-workflow-draft";
   // Server-side draft: same payload as a real submission but with
   // asDraft=true, which parks the workflow in the DRAFT step. The
   // browser-local draft (below) is kept as a separate convenience —
@@ -1584,6 +1625,11 @@ export function NewWorkflowPage() {
                     values={dataTypes}
                     onChange={setDataTypes}
                   />
+                  {dataTypes.length > 0 && (
+                    <p className="text-xs text-amber-600">
+                      Le service juridique sera notifié.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>7.2 Impact potentiel en cas d'indisponibilité du système<Req /></Label>
@@ -1877,6 +1923,21 @@ export function NewWorkflowPage() {
           >
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Enregistrer en tant que brouillon
+          </Button>
+
+          <Button
+            variant="destructive"
+            onClick={handleDeleteDraft}
+            disabled={submitting}
+            data-testid="button-delete-draft"
+            title={
+              draftId != null
+                ? "Supprimer ce brouillon"
+                : "Abandonner le brouillon en cours"
+            }
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Supprimer le brouillon
           </Button>
 
           {step < TOTAL_STEPS ? (
