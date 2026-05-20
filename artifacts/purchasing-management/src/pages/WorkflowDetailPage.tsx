@@ -219,13 +219,13 @@ export function WorkflowDetailPage({ id, user }: Props) {
           <TabsTrigger value="docs" data-testid="tab-documents">
             <FileText className="mr-1 h-3.5 w-3.5" /> Documents
           </TabsTrigger>
-          {/* The Validations tab is only meaningful once the workflow
-              has been routed through the VALIDATING_SERVICES gate (or
-              had one or more per-service signature rows seeded). The
-              hook short-circuits on undefined data, and we hide the
-              tab entirely when the list is empty so unrelated steps
-              don't show an empty pane. */}
-          <ValidationsTabTrigger wfId={wf.id} />
+          {/* Validations tab is always visible between Documents and
+              Notes. When the workflow has not yet been routed through
+              VALIDATING_SERVICES, the panel shows a friendly empty
+              state instead of hiding the tab. */}
+          <TabsTrigger value="validations" data-testid="tab-validations">
+            <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Validations
+          </TabsTrigger>
           <TabsTrigger value="notes" data-testid="tab-notes">
             <MessageSquare className="mr-1 h-3.5 w-3.5" /> Notes
           </TabsTrigger>
@@ -2623,19 +2623,9 @@ function InvoicePanel({
 // Read-only "Validations" tab — shows, for every per-service
 // signature row attached to the workflow, the rule label (i.e. the
 // "position" / service), its current status, and who signed or
-// overrode it. The trigger is rendered only when the workflow has at
-// least one signature row to display, so it stays out of the way for
-// workflows that never went through VALIDATING_SERVICES.
-function ValidationsTabTrigger({ wfId }: { wfId: number }) {
-  const { data: sigs } = useListServiceSignatures(wfId);
-  if (!sigs || sigs.length === 0) return null;
-  return (
-    <TabsTrigger value="validations" data-testid="tab-validations">
-      <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Validations
-    </TabsTrigger>
-  );
-}
-
+// overrode it. The tab is always visible between Documents and Notes;
+// when no signature rows exist yet (workflow hasn't reached
+// VALIDATING_SERVICES), the panel renders a friendly empty state.
 function ValidationsPanel({ wf }: { wf: Workflow }) {
   const { data: sigs } = useListServiceSignatures(wf.id);
   if (!sigs || sigs.length === 0) {
