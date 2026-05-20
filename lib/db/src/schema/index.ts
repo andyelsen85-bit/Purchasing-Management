@@ -288,6 +288,26 @@ export const gtInvestResultsTable = pgTable("gt_invest_results", {
 });
 export type DbGtInvestResult = typeof gtInvestResultsTable.$inferSelect;
 
+// ---------------- NOTIFICATION RULES ----------------
+// One row per "if a workflow triggers question X.Y.Z, notify these people"
+// rule. `key` is a stable identifier (e.g. "q_4_1_1") shown to no one but
+// used to wire the rule to a specific question. `emails` is the override
+// recipient list, populated either manually or from the AD-group sync.
+// Used by the Settings → Notifications tab and the post-financial step
+// dispatcher.
+export const notificationRulesTable = pgTable("notification_rules", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  label: text("label").notNull(),
+  adGroup: text("ad_group"),
+  emails: jsonb("emails").$type<string[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+export type DbNotificationRule = typeof notificationRulesTable.$inferSelect;
+
 // ---------------- SESSIONS (express-session compatible) ----------------
 export const sessionsTable = pgTable("sessions", {
   sid: text("sid").primaryKey(),

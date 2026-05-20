@@ -118,7 +118,7 @@ async function main() {
       createdById: alice.id,
       priority: "NORMAL",
       currentStep: "QUOTATION",
-      previousStep: "NEW",
+      previousStep: null,
       description: "10x developer workstations for new hires",
       category: "Hardware",
       estimatedAmount: "18500.00",
@@ -130,8 +130,8 @@ async function main() {
     })
     .returning();
   await db.insert(historyTable).values([
-    { workflowId: wf1.id, action: "CREATE", toStep: "NEW", actorId: alice.id, details: "Created" },
-    { workflowId: wf1.id, action: "ADVANCE", fromStep: "NEW", toStep: "QUOTATION", actorId: alice.id },
+    // Workflows now start directly at QUOTATION — single creation row.
+    { workflowId: wf1.id, action: "CREATE", toStep: "QUOTATION", actorId: alice.id, details: "Created" },
   ]);
   await db.insert(notesTable).values({
     workflowId: wf1.id, step: "QUOTATION", body: "Waiting on second quote from Contoso.", authorId: alice.id,
@@ -163,8 +163,7 @@ async function main() {
     })
     .returning();
   await db.insert(historyTable).values([
-    { workflowId: wf2.id, action: "CREATE", toStep: "NEW", actorId: bob.id },
-    { workflowId: wf2.id, action: "ADVANCE", fromStep: "NEW", toStep: "QUOTATION", actorId: bob.id },
+    { workflowId: wf2.id, action: "CREATE", toStep: "QUOTATION", actorId: bob.id },
     { workflowId: wf2.id, action: "ADVANCE", fromStep: "QUOTATION", toStep: "VALIDATING_QUOTE_FINANCIAL", actorId: bob.id },
     { workflowId: wf2.id, action: "ADVANCE", fromStep: "VALIDATING_QUOTE_FINANCIAL", toStep: "VALIDATING_BY_FINANCIAL", actorId: alice.id },
     { workflowId: wf2.id, action: "ADVANCE", fromStep: "VALIDATING_BY_FINANCIAL", toStep: "GT_INVEST", actorId: admin.id, details: "branch=GT_INVEST" },

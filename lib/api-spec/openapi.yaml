@@ -966,6 +966,69 @@ paths:
       responses:
         "204": { description: Deleted }
 
+  /settings/notification-rules:
+    get:
+      operationId: listNotificationRules
+      tags: [settings]
+      summary: List per-question notification recipients
+      description: |
+        Returns the catalogue of "notify-on-trigger" rules used after the
+        Validation Financière step to fan out signature requests to
+        impacted services. On first call the server seeds the canonical
+        rules (one per question hint that says "Le service X sera
+        notifié") with empty email lists; admins fill them in here or via
+        the AD-group sync button.
+      responses:
+        "200":
+          description: Notification rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotificationRule" }
+  /settings/notification-rules/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      operationId: updateNotificationRule
+      tags: [settings]
+      summary: Update a notification rule (AD group + recipient emails)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotificationRuleInput" }
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationRule" }
+  /settings/notification-rules/sync-ad:
+    post:
+      operationId: syncNotificationRulesFromAd
+      tags: [settings]
+      summary: Sync recipient emails from the configured AD groups
+      description: |
+        Pulls each rule's `adGroup` membership from Active Directory and
+        replaces its `emails` list with the resolved member addresses.
+        Returns a per-rule summary. Currently a stub when LDAP is not
+        configured — surfaces `synced: 0` and a message.
+      responses:
+        "200":
+          description: Sync summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [synced, rules]
+                properties:
+                  synced: { type: integer }
+                  message: { type: string }
+                  rules:
+                    type: array
+                    items: { $ref: "#/components/schemas/NotificationRule" }
+
   # ---------------- ADMIN / TRASH ----------------
   /admin/deleted-workflows:
     get:
@@ -2101,6 +2164,27 @@ components:
       properties:
         label: { type: string }
       required: [label]
+
+    NotificationRule:
+      type: object
+      properties:
+        id: { type: integer }
+        key: { type: string }
+        label: { type: string }
+        adGroup: { type: ["string", "null"] }
+        emails:
+          type: array
+          items: { type: string }
+        updatedAt: { type: string, format: date-time }
+      required: [id, key, label, adGroup, emails, updatedAt]
+
+    UpdateNotificationRuleInput:
+      type: object
+      properties:
+        adGroup: { type: ["string", "null"] }
+        emails:
+          type: array
+          items: { type: string, format: email }
 
     CsrRequest:
       type: object

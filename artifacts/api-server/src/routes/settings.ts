@@ -6,6 +6,7 @@ import {
   db,
   gtInvestDatesTable,
   gtInvestResultsTable,
+  notificationRulesTable,
   usersTable,
 } from "@workspace/db";
 import {
@@ -15,6 +16,8 @@ import {
   DeleteGtInvestDateParams,
   DeleteGtInvestResultParams,
   TestSmtpBody,
+  UpdateNotificationRuleBody,
+  UpdateNotificationRuleParams,
 } from "@workspace/api-zod";
 import nodemailer from "nodemailer";
 import { requireAuth, requireRole, getUser } from "../middlewares/auth";
@@ -201,6 +204,114 @@ router.delete(
     await db.delete(gtInvestResultsTable).where(eq(gtInvestResultsTable.id, params.data.id));
     await audit(getUser(req).id, "GT_RESULT_DELETE", "gt-result", params.data.id);
     res.sendStatus(204);
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────
+// Notification rules
+// ──────────────────────────────────────────────────────────────────────
+// One row per "if question X.Y.Z triggers, notify these people" rule.
+// The canonical catalogue is seeded on first GET so the Settings panel
+// always shows the same list of triggers in the same order — admins
+// just fill in the AD group / emails.
+const NOTIFICATION_RULE_SEED: ReadonlyArray<{
+  key: string;
+  label: string;
+}> = [
+  { key: "q_4_1_1", label: "Q4.1.1 — Cadre légal · Service juridique" },
+  { key: "q_4_1_3", label: "Q4.1.3 — Conformité · Service juridique" },
+  { key: "q_6_1", label: "Q6.1 — Aménagements · Service Technique" },
+  { key: "q_6_3_1_it", label: "Q6.3.1 — Accès systèmes · Service Informatique" },
+  { key: "q_6_3_1_security", label: "Q6.3.1 — Accès systèmes · Sécurité Informatique" },
+  { key: "q_8_3", label: "Q8.3 — Gaz/produits chimiques · Service Protection et Prévention" },
+  { key: "q_9_4", label: "Q9.4 — Hygiène/Nettoyage · Service SPCI" },
+  { key: "q_9_5", label: "Q9.5 — Stérilisation · Service Stérilisation" },
+];
+
+async function seedNotificationRulesIfEmpty(): Promise<void> {
+  const existing = await db.select({ key: notificationRulesTable.key }).from(notificationRulesTable);
+  const have = new Set(existing.map((r) => r.key));
+  const toInsert = NOTIFICATION_RULE_SEED.filter((r) => !have.has(r.key));
+  if (toInsert.length === 0) return;
+  await db.insert(notificationRulesTable).values(
+    toInsert.map((r) => ({ key: r.key, label: r.label, emails: [] as string[] })),
+  );
+}
+
+router.get(
+  "/settings/notification-rules",
+  requireAuth,
+  async (_req, res): Promise<void> => {
+    await seedNotificationRulesIfEmpty();
+    const rows = await db
+      .select()
+      .from(notificationRulesTable)
+      .orderBy(notificationRulesTable.id);
+    res.json(rows);
+  },
+);
+
+router.put(
+  "/settings/notification-rules/:id",
+  requireAuth,
+  requireRole("ADMIN", "FINANCIAL_ALL"),
+  async (req, res): Promise<void> => {
+    const params = UpdateNotificationRuleParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = UpdateNotificationRuleBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const patch: Record<string, unknown> = {};
+    if ("adGroup" in body.data) patch.adGroup = body.data.adGroup ?? null;
+    if (body.data.emails) {
+      // De-dup + trim while preserving order. Empty strings dropped.
+      const seen = new Set<string>();
+      const cleaned: string[] = [];
+      for (const raw of body.data.emails) {
+        const e = raw.trim();
+        if (!e || seen.has(e.toLowerCase())) continue;
+        seen.add(e.toLowerCase());
+        cleaned.push(e);
+      }
+      patch.emails = cleaned;
+    }
+    const [updated] = await db
+      .update(notificationRulesTable)
+      .set(patch)
+      .where(eq(notificationRulesTable.id, params.data.id))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Rule not found" });
+      return;
+    }
+    await audit(getUser(req).id, "NOTIFICATION_RULE_UPDATE", "notification-rule", updated.id);
+    res.json(updated);
+  },
+);
+
+router.post(
+  "/settings/notification-rules/sync-ad",
+  requireAuth,
+  requireRole("ADMIN", "FINANCIAL_ALL"),
+  async (_req, res): Promise<void> => {
+    // Stub — until LDAP/AD wiring is in place the sync is a no-op. We
+    // still return the current rules so the UI can refresh consistently.
+    await seedNotificationRulesIfEmpty();
+    const rows = await db
+      .select()
+      .from(notificationRulesTable)
+      .orderBy(notificationRulesTable.id);
+    res.json({
+      synced: 0,
+      message:
+        "Synchronisation Active Directory non configurée. Les emails actuels sont préservés.",
+      rules: rows,
+    });
   },
 );
 

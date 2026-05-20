@@ -1102,6 +1102,22 @@ export interface CreateGtInvestResultInput {
   label: string;
 }
 
+export interface NotificationRule {
+  id: number;
+  key: string;
+  label: string;
+  /** @nullable */
+  adGroup: string | null;
+  emails: string[];
+  updatedAt: string;
+}
+
+export interface UpdateNotificationRuleInput {
+  /** @nullable */
+  adGroup?: string | null;
+  emails?: string[];
+}
+
 export interface CsrRequest {
   commonName: string;
   /** @nullable */
@@ -1319,6 +1335,12 @@ export const ListNotificationsStatus = {
 
 export type ListAuditLogParams = {
   limit?: number;
+};
+
+export type SyncNotificationRulesFromAd200 = {
+  synced: number;
+  message?: string;
+  rules: NotificationRule[];
 };
 
 export type EmptyTrash200 = {

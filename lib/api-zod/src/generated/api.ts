@@ -2541,6 +2541,72 @@ export const DeleteGtInvestResultParams = zod.object({
 });
 
 /**
+ * Returns the catalogue of "notify-on-trigger" rules used after the
+Validation Financière step to fan out signature requests to
+impacted services. On first call the server seeds the canonical
+rules (one per question hint that says "Le service X sera
+notifié") with empty email lists; admins fill them in here or via
+the AD-group sync button.
+
+ * @summary List per-question notification recipients
+ */
+export const ListNotificationRulesResponseItem = zod.object({
+  id: zod.number(),
+  key: zod.string(),
+  label: zod.string(),
+  adGroup: zod.string().nullable(),
+  emails: zod.array(zod.string()),
+  updatedAt: zod.coerce.date(),
+});
+export const ListNotificationRulesResponse = zod.array(
+  ListNotificationRulesResponseItem,
+);
+
+/**
+ * @summary Update a notification rule (AD group + recipient emails)
+ */
+export const UpdateNotificationRuleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateNotificationRuleBody = zod.object({
+  adGroup: zod.string().nullish(),
+  emails: zod.array(zod.string().email()).optional(),
+});
+
+export const UpdateNotificationRuleResponse = zod.object({
+  id: zod.number(),
+  key: zod.string(),
+  label: zod.string(),
+  adGroup: zod.string().nullable(),
+  emails: zod.array(zod.string()),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * Pulls each rule's `adGroup` membership from Active Directory and
+replaces its `emails` list with the resolved member addresses.
+Returns a per-rule summary. Currently a stub when LDAP is not
+configured — surfaces `synced: 0` and a message.
+
+ * @summary Sync recipient emails from the configured AD groups
+ */
+export const SyncNotificationRulesFromAdResponse = zod.object({
+  synced: zod.number(),
+  message: zod.string().optional(),
+  rules: zod.array(
+    zod.object({
+      id: zod.number(),
+      key: zod.string(),
+      label: zod.string(),
+      adGroup: zod.string().nullable(),
+      emails: zod.array(zod.string()),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
  * @summary List soft-deleted workflows (admin only)
  */
 export const ListDeletedWorkflowsResponseItem = zod.object({

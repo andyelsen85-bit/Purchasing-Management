@@ -68,6 +68,7 @@ import type {
   NotificationBatchStatus,
   NotificationEntry,
   NotificationFlushResult,
+  NotificationRule,
   NotifyGtInvestMeetingResult,
   PendingSignature,
   PrepareWorkflowSign200,
@@ -76,6 +77,8 @@ import type {
   SessionUser,
   SmtpTestInput,
   SmtpTestResult,
+  SyncNotificationRulesFromAd200,
+  UpdateNotificationRuleInput,
   UpdateSettingsInput,
   UpdateUserInput,
   UpdateWorkflowInput,
@@ -4974,6 +4977,265 @@ export const useDeleteGtInvestResult = <
   TContext
 > => {
   return useMutation(getDeleteGtInvestResultMutationOptions(options));
+};
+
+/**
+ * Returns the catalogue of "notify-on-trigger" rules used after the
+Validation Financière step to fan out signature requests to
+impacted services. On first call the server seeds the canonical
+rules (one per question hint that says "Le service X sera
+notifié") with empty email lists; admins fill them in here or via
+the AD-group sync button.
+
+ * @summary List per-question notification recipients
+ */
+export const getListNotificationRulesUrl = () => {
+  return `/api/settings/notification-rules`;
+};
+
+export const listNotificationRules = async (
+  options?: RequestInit,
+): Promise<NotificationRule[]> => {
+  return customFetch<NotificationRule[]>(getListNotificationRulesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListNotificationRulesQueryKey = () => {
+  return [`/api/settings/notification-rules`] as const;
+};
+
+export const getListNotificationRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listNotificationRules>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listNotificationRules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListNotificationRulesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listNotificationRules>>
+  > = ({ signal }) => listNotificationRules({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listNotificationRules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListNotificationRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listNotificationRules>>
+>;
+export type ListNotificationRulesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List per-question notification recipients
+ */
+
+export function useListNotificationRules<
+  TData = Awaited<ReturnType<typeof listNotificationRules>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listNotificationRules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListNotificationRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a notification rule (AD group + recipient emails)
+ */
+export const getUpdateNotificationRuleUrl = (id: number) => {
+  return `/api/settings/notification-rules/${id}`;
+};
+
+export const updateNotificationRule = async (
+  id: number,
+  updateNotificationRuleInput: UpdateNotificationRuleInput,
+  options?: RequestInit,
+): Promise<NotificationRule> => {
+  return customFetch<NotificationRule>(getUpdateNotificationRuleUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateNotificationRuleInput),
+  });
+};
+
+export const getUpdateNotificationRuleMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateNotificationRule>>,
+    TError,
+    { id: number; data: BodyType<UpdateNotificationRuleInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateNotificationRule>>,
+  TError,
+  { id: number; data: BodyType<UpdateNotificationRuleInput> },
+  TContext
+> => {
+  const mutationKey = ["updateNotificationRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateNotificationRule>>,
+    { id: number; data: BodyType<UpdateNotificationRuleInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateNotificationRule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateNotificationRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateNotificationRule>>
+>;
+export type UpdateNotificationRuleMutationBody =
+  BodyType<UpdateNotificationRuleInput>;
+export type UpdateNotificationRuleMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a notification rule (AD group + recipient emails)
+ */
+export const useUpdateNotificationRule = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateNotificationRule>>,
+    TError,
+    { id: number; data: BodyType<UpdateNotificationRuleInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateNotificationRule>>,
+  TError,
+  { id: number; data: BodyType<UpdateNotificationRuleInput> },
+  TContext
+> => {
+  return useMutation(getUpdateNotificationRuleMutationOptions(options));
+};
+
+/**
+ * Pulls each rule's `adGroup` membership from Active Directory and
+replaces its `emails` list with the resolved member addresses.
+Returns a per-rule summary. Currently a stub when LDAP is not
+configured — surfaces `synced: 0` and a message.
+
+ * @summary Sync recipient emails from the configured AD groups
+ */
+export const getSyncNotificationRulesFromAdUrl = () => {
+  return `/api/settings/notification-rules/sync-ad`;
+};
+
+export const syncNotificationRulesFromAd = async (
+  options?: RequestInit,
+): Promise<SyncNotificationRulesFromAd200> => {
+  return customFetch<SyncNotificationRulesFromAd200>(
+    getSyncNotificationRulesFromAdUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSyncNotificationRulesFromAdMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncNotificationRulesFromAd>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof syncNotificationRulesFromAd>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["syncNotificationRulesFromAd"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof syncNotificationRulesFromAd>>,
+    void
+  > = () => {
+    return syncNotificationRulesFromAd(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SyncNotificationRulesFromAdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof syncNotificationRulesFromAd>>
+>;
+
+export type SyncNotificationRulesFromAdMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Sync recipient emails from the configured AD groups
+ */
+export const useSyncNotificationRulesFromAd = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncNotificationRulesFromAd>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof syncNotificationRulesFromAd>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getSyncNotificationRulesFromAdMutationOptions(options));
 };
 
 /**
