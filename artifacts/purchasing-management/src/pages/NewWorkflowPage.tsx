@@ -666,16 +666,15 @@ export function NewWorkflowPage() {
   // it preserves the unsaved form state across navigations even
   // before the user has picked a department/title.
   async function handleSaveAsServerDraft() {
-    // Enregistrer comme brouillon: the form must be COMPLETE — saving
-    // a server-side draft cannot be used as a shortcut to skip
-    // mandatory fields. Run the same validation as the submit button
-    // and surface the missing-field markers if anything is missing.
-    if (!canAdvance) {
-      setShowErrors(true);
+    // A draft is intentionally allowed to be incomplete — the user
+    // can come back later to finish it. We only require the bare
+    // minimum the server demands (title + department + priority) so
+    // the workflow row can actually be persisted.
+    if (!title.trim() || !departmentId) {
       toast({
         variant: "destructive",
         description:
-          "Complétez tous les champs obligatoires avant d'enregistrer le brouillon.",
+          "Renseignez au moins un titre et un département pour enregistrer le brouillon.",
       });
       return;
     }
@@ -707,57 +706,6 @@ export function NewWorkflowPage() {
     } finally {
       setSubmitting(false);
     }
-  }
-  function handleSaveDraft() {
-    const draft = {
-      step,
-      title,
-      priority,
-      departmentId,
-      projectLeader,
-      investmentTypes,
-      investmentTypeOther,
-      description,
-      justification,
-      demoTested,
-      demoContext,
-      requestNature,
-      replacedEquipmentRef,
-      replacedEquipmentLocation,
-      replacementReason,
-      decommissioned,
-      decommissionedNote,
-      estimatedAmount5y,
-      livreIException,
-      livreIIException,
-      exceptionJustification,
-      budgetPositionKnown,
-      budgetPosition,
-      supplierCompanyId,
-      supplierContactId,
-      supplierFreeTextName,
-      supplierFreeTextContact,
-      architecturalWorks,
-      itConnection,
-      systemInterop,
-      accessTypes,
-      dataTypes,
-      availabilityImpact,
-      hasAI,
-      consumablesNeeded,
-      consumablesOfferAttached,
-      hazardousConsumables,
-      warrantyDuration,
-      maintenanceContract,
-      cleaningRequired,
-      sterilizationRequired,
-      trainingRequired,
-      trainingOfferAttached,
-      commissioningDate,
-      documentsProvided,
-    };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    toast({ description: "Brouillon enregistré localement." });
   }
 
   function handlePrev() {
@@ -1674,21 +1622,13 @@ export function NewWorkflowPage() {
 
         <div className="flex gap-2">
           <Button
-            variant="ghost"
-            onClick={handleSaveDraft}
-            disabled={submitting}
-            data-testid="button-save-draft-local"
-          >
-            Enregistrer localement
-          </Button>
-          <Button
             variant="outline"
             onClick={handleSaveAsServerDraft}
             disabled={submitting}
             data-testid="button-save-draft"
           >
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Enregistrer comme brouillon
+            Enregistrer en tant que brouillon
           </Button>
 
           {step < TOTAL_STEPS ? (
