@@ -25,7 +25,15 @@ export function AuthGate({ children }: Props) {
 
   useEffect(() => {
     if (!isLoading && (isError || !data?.user) && location !== "/login") {
-      setLocation("/login");
+      // Preserve the destination (path + query + hash) so the user
+      // lands back on the page they originally requested — typically
+      // a workflow detail page reached from a notification email.
+      const search = typeof window !== "undefined" ? window.location.search : "";
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      const dest = `${location}${search}${hash}`;
+      const next =
+        dest && dest !== "/" ? `?next=${encodeURIComponent(dest)}` : "";
+      setLocation(`/login${next}`);
     }
   }, [isLoading, isError, data, location, setLocation]);
 

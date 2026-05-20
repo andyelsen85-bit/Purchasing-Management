@@ -18,6 +18,23 @@ interface PublicConfig {
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 const LOGO_URL = `${import.meta.env.BASE_URL ?? "/"}logo-chdn.png`;
 
+// Read `?next=<path>` from the current URL and return it only when it
+// is a same-app, relative path (must start with "/" and not "//" — the
+// latter would resolve to an external host). Anything else falls back
+// to the dashboard so we cannot be tricked into an open redirect.
+function getSafeNextPath(): string {
+  if (typeof window === "undefined") return "/";
+  const raw = new URLSearchParams(window.location.search).get("next");
+  if (!raw) return "/";
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (!decoded.startsWith("/") || decoded.startsWith("//")) return "/";
+    return decoded;
+  } catch {
+    return "/";
+  }
+}
+
 export function LoginPage() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
@@ -53,7 +70,7 @@ export function LoginPage() {
     mutation: {
       onSuccess: (res) => {
         qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user: res });
-        setLocation("/");
+        setLocation(getSafeNextPath());
       },
       onError: (err) => {
         setError(extractErrorMessage(err));
@@ -98,7 +115,7 @@ export function LoginPage() {
       }
       const user = await r.json();
       qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user });
-      setLocation("/");
+      setLocation(getSafeNextPath());
     } catch (err) {
       setError((err as Error).message);
     } finally {
