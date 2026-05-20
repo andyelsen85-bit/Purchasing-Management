@@ -974,19 +974,29 @@ export function NewWorkflowPage() {
       // enters it on the QUOTATION step. With a single quote, the
       // server will treat it as the winner.
       if (offrePrixDocId != null && supplierCompanyId) {
-        const company = (companies ?? []).find(
-          (c) => String(c.id) === supplierCompanyId,
-        );
+        const isFreeText = supplierCompanyId === "NE_FIGURE_PAS";
+        const company = isFreeText
+          ? null
+          : (companies ?? []).find(
+              (c) => String(c.id) === supplierCompanyId,
+            ) ?? null;
+        // Free-text supplier: no FK to companies/contacts, but we still
+        // record the typed-in name on the quote line so the workflow
+        // detail (which reads supplier from `quotes[].companyName`)
+        // displays it instead of "—".
         await update.mutateAsync({
           id: wf.id,
           data: {
             quotes: [
               {
-                companyId: Number(supplierCompanyId),
-                companyName: company?.name ?? null,
-                contactId: supplierContactId
-                  ? Number(supplierContactId)
-                  : null,
+                companyId: isFreeText ? null : Number(supplierCompanyId),
+                companyName: isFreeText
+                  ? supplierFreeTextName.trim() || null
+                  : company?.name ?? null,
+                contactId:
+                  !isFreeText && supplierContactId
+                    ? Number(supplierContactId)
+                    : null,
                 amount: null,
                 currency: null,
                 notes: null,
