@@ -250,6 +250,10 @@ export interface InvestmentForm {
   /** @nullable */
   exceptionProcedure?: string | null;
   /** @nullable */
+  livreIAnswer?: string | null;
+  /** @nullable */
+  livreIIAnswer?: string | null;
+  /** @nullable */
   exceptionJustification?: string | null;
   /** @nullable */
   budgetPositionKnown?: string | null;

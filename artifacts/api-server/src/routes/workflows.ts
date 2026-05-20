@@ -47,7 +47,7 @@ import {
   derivePublicationTier,
   isNotificationEventEnabled,
 } from "../lib/settings";
-import { queueNotification, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
+import { queueNotification, sendNotificationNow, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
 import {
   seedServiceSignatures,
   serviceSignaturesStatus,
@@ -542,7 +542,7 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
   if (wf.currentStep === "VALIDATING_SERVICES") {
     const st = await serviceSignaturesStatus(wf.id);
     if (st.pendingLabels.length > 0) {
-      const msg = `Signatures en attente : ${st.pendingLabels.join(" ; ")}`;
+      const msg = `Toutes les Validations Services doivent être signées avant de passer à l'étape suivante (GT Invest). Signatures en attente : ${st.pendingLabels.join(" ; ")}`;
       res.status(400).json({ error: msg, message: msg });
       return;
     }
@@ -623,15 +623,76 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
       investmentForm: wf.investmentForm,
     });
     if (await isNotificationEventEnabled("validatingServices")) {
+      // Pull every current workflow document so they can be attached
+      // to the legal/services notification email. The reviewer should
+      // be able to make a decision without logging in.
+      const wfDocs = await db
+        .select({
+          filename: documentsTable.filename,
+          mimeType: documentsTable.mimeType,
+          contentBase64: documentsTable.contentBase64,
+        })
+        .from(documentsTable)
+        .where(
+          and(
+            eq(documentsTable.workflowId, wf.id),
+            eq(documentsTable.isCurrent, true),
+          ),
+        );
+      const attachments = wfDocs.map((d) => ({
+        filename: d.filename,
+        content: Buffer.from(d.contentBase64, "base64"),
+        contentType: d.mimeType,
+      }));
+
+      // Build a short readable summary of the investment form so
+      // reviewers see the request at a glance in the email body.
+      const inv = (wf.investmentForm ?? {}) as Record<string, unknown>;
+      const summaryLines: string[] = [];
+      const add = (label: string, value: unknown): void => {
+        if (value === null || value === undefined || value === "") return;
+        if (typeof value === "boolean")
+          value = value ? "Oui" : "Non";
+        if (Array.isArray(value)) value = value.join(", ");
+        summaryLines.push(`${label}: ${String(value)}`);
+      };
+      add("Référence", wf.reference);
+      add("Titre", wf.title);
+      add("Description", wf.description);
+      add("Leader projet", inv.projectLeader);
+      add("Type(s) d'investissement", inv.investmentTypes);
+      add("Justification", inv.justification);
+      add("Coût estimé 5 ans (€)", inv.estimatedAmount5y);
+      add(
+        "Procédure exception",
+        inv.exceptionProcedure && inv.exceptionProcedure !== "NONE"
+          ? inv.exceptionProcedure
+          : null,
+      );
+      add("Q4.1.1 Livre I", inv.livreIAnswer);
+      add("Q4.1.3 Livre II", inv.livreIIAnswer);
+      add("Justification exception", inv.exceptionJustification);
+      add("Q7.3 Intelligence artificielle", inv.hasAI);
+      add("Fournisseur", inv.supplierName);
+      add("Contact fournisseur", inv.supplierContact);
+
+      const smtpCfg = (await getSettings()).smtp;
       for (const s of sigs) {
-        if (s.emails.length > 0) {
-          void queueNotification(
-            s.emails,
-            `${wf.reference} : ${s.label} - validation requise`,
-            `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\nConnectez-vous à Purchasing Management pour signer.`,
-            { workflowId: wf.id, step: "VALIDATING_SERVICES" },
-          );
-        }
+        if (s.emails.length === 0) continue;
+        const body =
+          `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\n` +
+          `Votre validation est requise pour que le dossier puisse passer à l'étape Invest.\n\n` +
+          `── Détails du dossier ─────────────────────────────\n` +
+          summaryLines.join("\n") +
+          `\n\nLes pièces jointes au dossier sont attachées à ce message. Vous pouvez aussi vous connecter à Purchasing Management pour signer électroniquement.`;
+        void sendNotificationNow(
+          smtpCfg,
+          s.emails,
+          `${wf.reference} : ${s.label} - validation requise`,
+          body,
+          { workflowId: wf.id, step: "VALIDATING_SERVICES" },
+          attachments,
+        );
       }
     }
   }

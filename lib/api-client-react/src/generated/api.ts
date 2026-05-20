@@ -5428,6 +5428,102 @@ export const useFinalizeServiceSignature = <
 };
 
 /**
+ * @summary Mark a service signature as SIGNED without a certificate.
+Used when the admin has disabled the Windows certificate signing
+agent — the row is stamped with the logged-in user's identity
+and the current date, with no embedded PKCS#7.
+
+ */
+export const getSignServiceSignatureNoCertUrl = (id: number, sigId: number) => {
+  return `/api/workflows/${id}/service-signatures/${sigId}/sign-no-cert`;
+};
+
+export const signServiceSignatureNoCert = async (
+  id: number,
+  sigId: number,
+  options?: RequestInit,
+): Promise<ServiceSignature> => {
+  return customFetch<ServiceSignature>(
+    getSignServiceSignatureNoCertUrl(id, sigId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSignServiceSignatureNoCertMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof signServiceSignatureNoCert>>,
+    TError,
+    { id: number; sigId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof signServiceSignatureNoCert>>,
+  TError,
+  { id: number; sigId: number },
+  TContext
+> => {
+  const mutationKey = ["signServiceSignatureNoCert"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof signServiceSignatureNoCert>>,
+    { id: number; sigId: number }
+  > = (props) => {
+    const { id, sigId } = props ?? {};
+
+    return signServiceSignatureNoCert(id, sigId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SignServiceSignatureNoCertMutationResult = NonNullable<
+  Awaited<ReturnType<typeof signServiceSignatureNoCert>>
+>;
+
+export type SignServiceSignatureNoCertMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Mark a service signature as SIGNED without a certificate.
+Used when the admin has disabled the Windows certificate signing
+agent — the row is stamped with the logged-in user's identity
+and the current date, with no embedded PKCS#7.
+
+ */
+export const useSignServiceSignatureNoCert = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof signServiceSignatureNoCert>>,
+    TError,
+    { id: number; sigId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof signServiceSignatureNoCert>>,
+  TError,
+  { id: number; sigId: number },
+  TContext
+> => {
+  return useMutation(getSignServiceSignatureNoCertMutationOptions(options));
+};
+
+/**
  * @summary Admin override — mark a pending signature as OVERRIDDEN
  */
 export const getOverrideServiceSignatureUrl = (id: number, sigId: number) => {

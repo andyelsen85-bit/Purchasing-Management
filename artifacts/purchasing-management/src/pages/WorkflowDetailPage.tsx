@@ -71,6 +71,7 @@ import {
   usePrepareServiceSignature,
   useFinalizeServiceSignature,
   useOverrideServiceSignature,
+  useSignServiceSignatureNoCert,
   getListServiceSignaturesQueryKey,
   type ServiceSignature,
   AdvanceWorkflowInputBranch,
@@ -1017,11 +1018,41 @@ function QuotationPanel({
   const upload = useUploadWorkflowDocument();
   const del = useDeleteDocument();
   const qc = useQueryClient();
-  const [quotes, setQuotes] = useState<QuoteEntry[]>(
-    wf.quotes && wf.quotes.length > 0
-      ? wf.quotes
-      : [{ winning: false, currency: wf.currency || "EUR", documentIds: [] }],
-  );
+  const { toast } = useToast();
+  // Auto-advance helper for the Save-and-go path on this panel.
+  const advance = useAdvanceWorkflow({
+    mutation: {
+      onSuccess: () => onChange(),
+      onError: (err) => {
+        const msg =
+          (err as { data?: { message?: string } }).data?.message ??
+          (err as Error).message;
+        toast({ variant: "destructive", description: msg });
+      },
+    },
+  });
+  const [quotes, setQuotes] = useState<QuoteEntry[]>(() => {
+    if (wf.quotes && wf.quotes.length > 0) return wf.quotes;
+    // Pre-fill the first quote row from the supplier picked in Q5 of
+    // the investment form (either a master Reseller record or the
+    // free-text fallback). The user can still change it.
+    const inv = wf.investmentForm as
+      | {
+          supplierCompanyId?: number | null;
+          supplierName?: string | null;
+        }
+      | null
+      | undefined;
+    return [
+      {
+        winning: false,
+        currency: wf.currency || "EUR",
+        documentIds: [],
+        companyId: inv?.supplierCompanyId ?? null,
+        companyName: inv?.supplierName ?? null,
+      },
+    ];
+  });
   const save = useSaveWorkflow(wf, onChange);
   const { setBeforeAdvance } = useMissingFields();
   // Track which row is currently uploading so we can show a spinner
@@ -1396,16 +1427,38 @@ function QuotationPanel({
             <Plus className="mr-2 h-4 w-4" /> Ajouter une offre
           </Button>
           <Button
-            onClick={() =>
-              save.mutate({
-                id: wf.id,
-                data: { quotes: normalizeForSave(quotes) },
-              })
-            }
-            disabled={save.isPending}
+            onClick={() => {
+              const normalized = normalizeForSave(quotes);
+              save.mutate(
+                { id: wf.id, data: { quotes: normalized } },
+                {
+                  onSuccess: () => {
+                    // Auto-advance when every prereq is satisfied:
+                    //  · QUOTE document attached
+                    //  · enough rows filled (1 or 3 depending on tier)
+                    //  · a winning row picked when 3 quotes are required
+                    const hasQuoteDoc = (allDocs ?? []).some(
+                      (d) => d.kind === "QUOTE",
+                    );
+                    const filled = normalized.filter(
+                      (q) =>
+                        q.amount != null && (q.companyId || q.companyName),
+                    );
+                    const ready = threeQuotesRequired
+                      ? filled.length >= 3 &&
+                        normalized.some((q) => q.winning)
+                      : filled.length >= 1;
+                    if (hasQuoteDoc && ready) {
+                      advance.mutate({ id: wf.id, data: { branch: null } });
+                    }
+                  },
+                },
+              );
+            }}
+            disabled={save.isPending || advance.isPending}
             data-testid="button-save-quotes"
           >
-            {save.isPending && (
+            {(save.isPending || advance.isPending) && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             <Save className="mr-2 h-4 w-4" />
@@ -2571,6 +2624,7 @@ function ServiceSignaturesPanel({
   const prepare = usePrepareServiceSignature();
   const finalize = useFinalizeServiceSignature();
   const override = useOverrideServiceSignature();
+  const signNoCert = useSignServiceSignatureNoCert();
   const advance = useAdvanceWorkflow({
     mutation: {
       onSuccess: () => onChange(),
@@ -2764,7 +2818,7 @@ function ServiceSignaturesPanel({
                       <div className="font-medium text-sm">{sig.ruleLabel}</div>
                       {sig.status === "SIGNED" && (
                         <div className="text-xs text-muted-foreground">
-                          Signé par{" "}
+                          Signé électroniquement par{" "}
                           <strong>
                             {sig.signedByName ?? "—"}
                           </strong>{" "}
@@ -2802,17 +2856,46 @@ function ServiceSignaturesPanel({
                       )}
                       {sig.status === "PENDING" && (
                         <>
-                          <Button
-                            size="sm"
-                            disabled={!eligible || isBusy}
-                            onClick={() => void signOne(sig)}
-                            data-testid={`button-sign-${sig.ruleKey}`}
-                          >
-                            {isBusy ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : null}
-                            Signer
-                          </Button>
+                          {settings?.certSigningEnabled ? (
+                            <Button
+                              size="sm"
+                              disabled={!eligible || isBusy}
+                              onClick={() => void signOne(sig)}
+                              data-testid={`button-sign-${sig.ruleKey}`}
+                            >
+                              {isBusy ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : null}
+                              Signer
+                            </Button>
+                          ) : (
+                            // No-cert path — admin has disabled the
+                            // Windows certificate signing agent. We
+                            // record a "soft" e-signature with the
+                            // logged-in user's identity and timestamp.
+                            <Button
+                              size="sm"
+                              disabled={!eligible || signNoCert.isPending}
+                              onClick={async () => {
+                                await signNoCert.mutateAsync({
+                                  id: wf.id,
+                                  sigId: sig.id,
+                                });
+                                await queryClient.invalidateQueries({
+                                  queryKey: getListServiceSignaturesQueryKey(
+                                    wf.id,
+                                  ),
+                                });
+                                await refetch();
+                              }}
+                              data-testid={`button-validate-${sig.ruleKey}`}
+                            >
+                              {signNoCert.isPending ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : null}
+                              Valider
+                            </Button>
+                          )}
                           {isPrivileged && (
                             <Button
                               size="sm"

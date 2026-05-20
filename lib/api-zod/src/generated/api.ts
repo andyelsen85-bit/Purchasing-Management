@@ -459,6 +459,8 @@ export const CreateWorkflowBody = zod.object({
       decommissionedNote: zod.string().nullish(),
       estimatedAmount5y: zod.number().nullish(),
       exceptionProcedure: zod.string().nullish(),
+      livreIAnswer: zod.string().nullish(),
+      livreIIAnswer: zod.string().nullish(),
       exceptionJustification: zod.string().nullish(),
       budgetPositionKnown: zod.string().nullish(),
       budgetPosition: zod.string().nullish(),
@@ -628,6 +630,8 @@ export const GetWorkflowResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -766,6 +770,8 @@ export const UpdateWorkflowBody = zod.object({
       decommissionedNote: zod.string().nullish(),
       estimatedAmount5y: zod.number().nullish(),
       exceptionProcedure: zod.string().nullish(),
+      livreIAnswer: zod.string().nullish(),
+      livreIIAnswer: zod.string().nullish(),
       exceptionJustification: zod.string().nullish(),
       budgetPositionKnown: zod.string().nullish(),
       budgetPosition: zod.string().nullish(),
@@ -887,6 +893,8 @@ export const UpdateWorkflowResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -1073,6 +1081,8 @@ export const RestoreWorkflowResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -1254,6 +1264,8 @@ export const AdvanceWorkflowResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -1429,6 +1441,8 @@ export const RejectWorkflowResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -1600,6 +1614,8 @@ export const UndoWorkflowResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -1789,6 +1805,8 @@ export const SetGtInvestDecisionResponse = zod.object({
           decommissionedNote: zod.string().nullish(),
           estimatedAmount5y: zod.number().nullish(),
           exceptionProcedure: zod.string().nullish(),
+          livreIAnswer: zod.string().nullish(),
+          livreIIAnswer: zod.string().nullish(),
           exceptionJustification: zod.string().nullish(),
           budgetPositionKnown: zod.string().nullish(),
           budgetPosition: zod.string().nullish(),
@@ -2710,6 +2728,35 @@ export const FinalizeServiceSignatureBody = zod.object({
 });
 
 export const FinalizeServiceSignatureResponse = zod.object({
+  id: zod.number(),
+  workflowId: zod.number(),
+  ruleKey: zod.string(),
+  ruleLabel: zod.string(),
+  status: zod.enum(["PENDING", "SIGNED", "OVERRIDDEN"]),
+  signedByUserId: zod.number().nullish(),
+  signedByName: zod.string().nullish(),
+  signedAt: zod.coerce.date().nullish(),
+  certThumbprint: zod.string().nullish(),
+  certSubject: zod.string().nullish(),
+  overrideByUserId: zod.number().nullish(),
+  overrideReason: zod.string().nullish(),
+  notifiedEmails: zod.array(zod.string()),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Mark a service signature as SIGNED without a certificate.
+Used when the admin has disabled the Windows certificate signing
+agent — the row is stamped with the logged-in user's identity
+and the current date, with no embedded PKCS#7.
+
+ */
+export const SignServiceSignatureNoCertParams = zod.object({
+  id: zod.coerce.number(),
+  sigId: zod.coerce.number(),
+});
+
+export const SignServiceSignatureNoCertResponse = zod.object({
   id: zod.number(),
   workflowId: zod.number(),
   ruleKey: zod.string(),

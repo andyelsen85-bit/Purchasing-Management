@@ -1070,6 +1070,24 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ServiceSignature" }
+  /workflows/{id}/service-signatures/{sigId}/sign-no-cert:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: sigId, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: signServiceSignatureNoCert
+      tags: [workflows]
+      summary: |
+        Mark a service signature as SIGNED without a certificate.
+        Used when the admin has disabled the Windows certificate signing
+        agent — the row is stamped with the logged-in user's identity
+        and the current date, with no embedded PKCS#7.
+      responses:
+        "200":
+          description: Signed row
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceSignature" }
   /workflows/{id}/service-signatures/{sigId}/override:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -2501,6 +2519,11 @@ components:
         # 4 – Aspects financiers
         estimatedAmount5y: { type: ["number", "null"] }
         exceptionProcedure: { type: ["string", "null"] }
+        # Raw answers (yes / no / unknown / null) for Q4.1.1 and Q4.1.3.
+        # Kept alongside `exceptionProcedure` so the legal notification
+        # rule can fire on JNS / Non answers as well.
+        livreIAnswer: { type: ["string", "null"] }
+        livreIIAnswer: { type: ["string", "null"] }
         exceptionJustification: { type: ["string", "null"] }
         budgetPositionKnown: { type: ["string", "null"] }
         budgetPosition: { type: ["string", "null"] }

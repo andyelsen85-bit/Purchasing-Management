@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, getUser } from "../middlewares/auth";
 import { canSeeWorkflow, hasRole } from "../lib/permissions";
+import { getSettings } from "../lib/settings";
 import {
   buildServiceAttestationPdf,
   listServiceSignatures,
@@ -210,6 +211,83 @@ router.post(
       `service signature ${sigId} signed (${signed.length} bytes)`,
     );
 
+    const [row] = await db
+      .select()
+      .from(serviceSignaturesTable)
+      .where(eq(serviceSignaturesTable.id, sigId));
+    res.json(row);
+  },
+);
+
+// ─── Sign without certificate (cert signing disabled in settings) ─────────────
+//
+// When the admin disables the Windows certificate signing agent in
+// Paramètres, the cert-based flow is replaced by a simple "Valider"
+// click. We still record who validated and when, so the audit trail
+// looks identical to a cert-signed row (minus the PKCS#7 PDF).
+router.post(
+  "/workflows/:id/service-signatures/:sigId/sign-no-cert",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const wfId = Number(req.params.id);
+    const sigId = Number(req.params.sigId);
+    const user = getUser(req);
+    // Refuse if the admin has not actually disabled the cert flow —
+    // otherwise users could skip the Windows agent signature at will.
+    const settings = await getSettings();
+    if (settings.certSigningEnabled) {
+      res.status(400).json({
+        error:
+          "La signature par certificat est activée — utilisez l'agent de signature Windows.",
+      });
+      return;
+    }
+    const [sig] = await db
+      .select()
+      .from(serviceSignaturesTable)
+      .where(
+        and(
+          eq(serviceSignaturesTable.id, sigId),
+          eq(serviceSignaturesTable.workflowId, wfId),
+        ),
+      );
+    if (!sig) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (sig.status !== "PENDING") {
+      res.status(400).json({ error: "Deja traitee" });
+      return;
+    }
+    // Eligibility mirrors the client `canSign` rule: either the user is
+    // ADMIN / FINANCIAL_ALL, or their email is in the notifiedEmails list
+    // for this signature.
+    const privileged =
+      hasRole(user, "ADMIN", "FINANCIAL_ALL") ||
+      sig.notifiedEmails
+        .map((e) => e.toLowerCase())
+        .includes((user.email ?? "").toLowerCase());
+    if (!privileged) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    await db
+      .update(serviceSignaturesTable)
+      .set({
+        status: "SIGNED",
+        signedByUserId: user.id,
+        signedByName: user.displayName ?? user.email ?? "—",
+        signedAt: new Date(),
+        certSubject: null,
+      })
+      .where(eq(serviceSignaturesTable.id, sigId));
+    await audit(
+      user.id,
+      "SERVICE_SIGNATURE_SIGN_NO_CERT",
+      "workflow",
+      wfId,
+      `sig ${sigId}`,
+    );
     const [row] = await db
       .select()
       .from(serviceSignaturesTable)

@@ -160,30 +160,47 @@ function CheckboxList({
   values,
   onChange,
   optionLabels,
+  disabledOptions,
 }: {
   options: string[];
   values: string[];
   onChange: (v: string[]) => void;
   optionLabels?: Record<string, React.ReactNode>;
+  // Options that must stay checked (mandatory) — the checkbox is
+  // rendered disabled so the user cannot uncheck the row.
+  disabledOptions?: string[];
 }) {
   function toggle(opt: string) {
+    if (disabledOptions?.includes(opt)) return;
     if (values.includes(opt)) onChange(values.filter((v) => v !== opt));
     else onChange([...values, opt]);
   }
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      {options.map((opt) => (
-        <div key={opt} className="flex items-start space-x-2">
-          <Checkbox
-            id={`cb-${opt}`}
-            checked={values.includes(opt)}
-            onCheckedChange={() => toggle(opt)}
-          />
-          <Label htmlFor={`cb-${opt}`} className="cursor-pointer font-normal leading-snug">
-            {optionLabels?.[opt] ?? opt}
-          </Label>
-        </div>
-      ))}
+      {options.map((opt) => {
+        const isDisabled = disabledOptions?.includes(opt) ?? false;
+        return (
+          <div key={opt} className="flex items-start space-x-2">
+            <Checkbox
+              id={`cb-${opt}`}
+              checked={values.includes(opt)}
+              disabled={isDisabled}
+              onCheckedChange={() => toggle(opt)}
+            />
+            <Label
+              htmlFor={`cb-${opt}`}
+              className={`font-normal leading-snug ${isDisabled ? "cursor-not-allowed opacity-90" : "cursor-pointer"}`}
+            >
+              {optionLabels?.[opt] ?? opt}
+              {isDisabled && (
+                <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">
+                  · obligatoire
+                </span>
+              )}
+            </Label>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -291,7 +308,12 @@ export function NewWorkflowPage() {
   const [commissioningDate, setCommissioningDate] = useState("");
 
   // ── Section 11 – Documentation à fournir (just the checked list)
-  const [documentsProvided, setDocumentsProvided] = useState<string[]>([]);
+  // "Offre de prix" is permanently included — it is always mandatory
+  // (it doubles as the first quote of the workflow). The CheckboxList
+  // below disables this row so the user cannot uncheck it.
+  const [documentsProvided, setDocumentsProvided] = useState<string[]>([
+    "Offre de prix",
+  ]);
 
   // ── Step 7 – uploads, one per checked item in section 11 ──────
   const [files, setFiles] = useState<Record<string, File | null>>({});
@@ -492,6 +514,11 @@ export function NewWorkflowPage() {
           : tier === "ABOVE_Y" && livreIIException === "true"
             ? "LIVRE_II"
             : "NONE",
+      // Raw answers (true / false / unknown / null) for Q4.1.1 and
+      // Q4.1.3 — kept alongside `exceptionProcedure` so the legal
+      // notification rule can fire on JNS / Non as well.
+      livreIAnswer: tier === "BAND_XY" ? (livreIException || null) : null,
+      livreIIAnswer: tier === "ABOVE_Y" ? (livreIIException || null) : null,
       exceptionJustification: exceptionJustification || null,
       budgetPositionKnown: budgetPositionKnown || null,
       budgetPosition: budgetPosition || null,
@@ -1403,7 +1430,9 @@ export function NewWorkflowPage() {
                   <Label>7.3 L'offre inclut-elle de l'intelligence artificielle ?<Req /></Label>
                   <YesNoSelect value={hasAI} onChange={setHasAI} />
                   {hasAI === "true" && (
-                    <p className="text-xs text-amber-600">Validation DPO requise.</p>
+                    <p className="text-xs text-amber-600">
+                      Validation DPO requise. Le service juridique sera notifié.
+                    </p>
                   )}
                 </div>
               </div>
@@ -1501,17 +1530,23 @@ export function NewWorkflowPage() {
               <SectionTitle number="11" label="Documentation obligatoire à fournir" />
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Cocher les documents qui seront joints. Vous pourrez les téléverser à l'étape suivante.<Req />
+                  Cocher les documents qui seront joints. Vous pourrez les déposer à l'étape suivante. L'« Offre de prix » est toujours obligatoire.<Req />
                 </p>
                 <CheckboxList
                   options={REQUIRED_DOCS}
                   values={documentsProvided}
+                  disabledOptions={["Offre de prix"]}
                   onChange={(v) => {
-                    setDocumentsProvided(v);
+                    // Force "Offre de prix" to stay in the list even if
+                    // the CheckboxList ever lets it through.
+                    const forced = v.includes("Offre de prix")
+                      ? v
+                      : ["Offre de prix", ...v];
+                    setDocumentsProvided(forced);
                     // Drop any file selection for items that were just unchecked.
                     setFiles((f) => {
                       const next: Record<string, File | null> = {};
-                      for (const k of v) next[k] = f[k] ?? null;
+                      for (const k of forced) next[k] = f[k] ?? null;
                       return next;
                     });
                   }}
