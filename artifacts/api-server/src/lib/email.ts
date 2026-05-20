@@ -139,9 +139,16 @@ interface NotifGroup {
   notifications: DbNotification[];
 }
 
-function buildHtmlEmail(groups: NotifGroup[], appName: string): string {
+function buildHtmlEmail(
+  groups: NotifGroup[],
+  appName: string,
+  appBaseUrl: string | null,
+  wfIdByRef: Map<string, number>,
+): string {
   const dateStr = formatDateFr(new Date());
   const totalCount = groups.reduce((s, g) => s + g.notifications.length, 0);
+  // Strip trailing slash so we can always join with `/workflows/<id>`.
+  const base = (appBaseUrl ?? "").trim().replace(/\/+$/, "");
 
   const groupsHtml = groups
     .map((g) => {
@@ -170,6 +177,18 @@ function buildHtmlEmail(groups: NotifGroup[], appName: string): string {
         ? `<span style="color:#C4A882;font-size:13px;margin-left:10px;font-weight:400;">${escapeHtml(g.workflowTitle)}</span>`
         : "";
 
+      const wfId = wfIdByRef.get(g.workflowRef);
+      const linkHtml =
+        base && wfId
+          ? `
+          <div style="background:#FFFFFF;padding:14px 18px 16px;text-align:center;border-top:1px solid #E0D5C8;">
+            <a href="${escapeHtml(base)}/workflows/${wfId}"
+               style="display:inline-block;background:#7A4F2D;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:9px 22px;border-radius:4px;letter-spacing:0.3px;">
+              Ouvrir la demande →
+            </a>
+          </div>`
+          : "";
+
       return `
         <div style="margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #D4C4A8;">
           <div style="background:#7A4F2D;padding:12px 18px;display:flex;align-items:baseline;gap:8px;">
@@ -177,6 +196,7 @@ function buildHtmlEmail(groups: NotifGroup[], appName: string): string {
             ${titlePart}
           </div>
           ${eventsHtml}
+          ${linkHtml}
         </div>`;
     })
     .join("\n");
@@ -374,14 +394,22 @@ export async function flushNotificationQueue(): Promise<{
       totalNotifs === 1
         ? notifs[0].subject
         : `${totalNotifs} nouvelle${totalNotifs > 1 ? "s" : ""} notification${totalNotifs > 1 ? "s" : ""} — ${settings.appName}`;
-    const html = buildHtmlEmail(groups, settings.appName);
+    // Map workflowRef -> workflow id so the HTML builder can mint links.
+    const wfIdByRef = new Map<string, number>();
+    for (const w of wfRows) {
+      wfIdByRef.set(w.reference ?? `#${w.id}`, w.id);
+    }
+    const baseUrl = (settings.appBaseUrl ?? "").trim().replace(/\/+$/, "");
+    const html = buildHtmlEmail(groups, settings.appName, baseUrl || null, wfIdByRef);
     const text = groups
       .map((g) => {
         const header = `=== ${g.workflowRef}${g.workflowTitle ? ` — ${g.workflowTitle}` : ""} ===`;
         const events = g.notifications
           .map((n) => `[${STEP_LABEL_FR[n.step] ?? n.step}] ${n.body}`)
           .join("\n\n");
-        return `${header}\n\n${events}`;
+        const wfId = wfIdByRef.get(g.workflowRef);
+        const link = baseUrl && wfId ? `\n\nOuvrir : ${baseUrl}/workflows/${wfId}` : "";
+        return `${header}\n\n${events}${link}`;
       })
       .join("\n\n" + "─".repeat(60) + "\n\n");
 

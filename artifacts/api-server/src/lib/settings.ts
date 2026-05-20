@@ -122,6 +122,14 @@ export interface AppSettings {
   appName: string;
   logoDataUrl?: string | null;
   /**
+   * Public base URL of the web app (e.g. `https://purchasing.chdn.lu`).
+   * Used to build clickable workflow links in notification emails so
+   * recipients can open the right page in one click. Optional — when
+   * blank, notification emails omit links. Trailing slashes are
+   * tolerated; the email builder normalises them.
+   */
+  appBaseUrl?: string | null;
+  /**
    * Legacy alias of `quoteThresholdStandard`. Kept in the type so existing
    * code paths (workflows.ts, the AppSettingsPanel form) continue to
    * compile; `getSettings()` keeps both fields in sync.
@@ -187,6 +195,7 @@ export interface AppSettings {
 const DEFAULT: AppSettings = {
   appName: "Purchasing Management",
   logoDataUrl: null,
+  appBaseUrl: null,
   limitX: 10000,
   quoteThresholdStandard: 10000,
   quoteThresholdLivreI: 50000,

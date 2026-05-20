@@ -13,6 +13,8 @@ export interface AppSettings {
   appName: string;
   /** @nullable */
   logoDataUrl?: string | null;
+  /** @nullable */
+  appBaseUrl?: string | null;
   limitX: number;
   quoteThresholdStandard?: number;
   quoteThresholdLivreI?: number;

@@ -919,6 +919,8 @@ export interface AppSettings {
   appName: string;
   /** @nullable */
   logoDataUrl?: string | null;
+  /** @nullable */
+  appBaseUrl?: string | null;
   limitX: number;
   quoteThresholdStandard?: number;
   quoteThresholdLivreI?: number;
@@ -1073,6 +1075,8 @@ export interface UpdateSettingsInput {
   appName?: string | null;
   /** @nullable */
   logoDataUrl?: string | null;
+  /** @nullable */
+  appBaseUrl?: string | null;
   /** @nullable */
   limitX?: number | null;
   /** @nullable */

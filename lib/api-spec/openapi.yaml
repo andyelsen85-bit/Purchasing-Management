@@ -2196,6 +2196,11 @@ components:
       properties:
         appName: { type: string }
         logoDataUrl: { type: ["string", "null"] }
+        # Public base URL of the web app (e.g. https://purchasing.chdn.lu).
+        # Used to build clickable workflow links in notification emails so
+        # recipients can jump straight to the right page. Optional — when
+        # null, emails are sent without links.
+        appBaseUrl: { type: ["string", "null"] }
         limitX: { type: number }
         quoteThresholdStandard: { type: number }
         quoteThresholdLivreI: { type: number }
@@ -2272,6 +2277,7 @@ components:
       properties:
         appName: { type: ["string", "null"] }
         logoDataUrl: { type: ["string", "null"] }
+        appBaseUrl: { type: ["string", "null"] }
         limitX: { type: ["number", "null"] }
         quoteThresholdStandard: { type: ["number", "null"] }
         quoteThresholdLivreI: { type: ["number", "null"] }

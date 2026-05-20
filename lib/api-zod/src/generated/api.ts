@@ -2366,6 +2366,7 @@ export const ListAuditLogResponse = zod.array(ListAuditLogResponseItem);
 export const GetSettingsResponse = zod.object({
   appName: zod.string(),
   logoDataUrl: zod.string().nullish(),
+  appBaseUrl: zod.string().nullish(),
   limitX: zod.number(),
   quoteThresholdStandard: zod.number().optional(),
   quoteThresholdLivreI: zod.number().optional(),
@@ -2447,6 +2448,7 @@ export const GetSettingsResponse = zod.object({
 export const UpdateSettingsBody = zod.object({
   appName: zod.string().nullish(),
   logoDataUrl: zod.string().nullish(),
+  appBaseUrl: zod.string().nullish(),
   limitX: zod.number().nullish(),
   quoteThresholdStandard: zod.number().nullish(),
   quoteThresholdLivreI: zod.number().nullish(),
@@ -2527,6 +2529,7 @@ export const UpdateSettingsBody = zod.object({
 export const UpdateSettingsResponse = zod.object({
   appName: zod.string(),
   logoDataUrl: zod.string().nullish(),
+  appBaseUrl: zod.string().nullish(),
   limitX: zod.number(),
   quoteThresholdStandard: zod.number().optional(),
   quoteThresholdLivreI: zod.number().optional(),

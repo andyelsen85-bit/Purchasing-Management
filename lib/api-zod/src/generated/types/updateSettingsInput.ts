@@ -15,6 +15,8 @@ export interface UpdateSettingsInput {
   /** @nullable */
   logoDataUrl?: string | null;
   /** @nullable */
+  appBaseUrl?: string | null;
+  /** @nullable */
   limitX?: number | null;
   /** @nullable */
   quoteThresholdStandard?: number | null;

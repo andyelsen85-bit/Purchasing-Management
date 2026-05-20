@@ -962,6 +962,7 @@ function AppSettingsPanel() {
   const { data: s } = useGetSettings();
   const save = useSaveSettings();
   const [appName, setAppName] = useState("");
+  const [appBaseUrl, setAppBaseUrl] = useState("");
   const [limitX, setLimitX] = useState<number>(10000);
   const [limitY, setLimitY] = useState<number>(50000);
   const [limitZ, setLimitZ] = useState<number>(200000);
@@ -973,6 +974,7 @@ function AppSettingsPanel() {
   useEffect(() => {
     if (!s) return;
     setAppName(s.appName);
+    setAppBaseUrl(((s as { appBaseUrl?: string | null }).appBaseUrl ?? "") || "");
     setLimitX(
       (s as { quoteThresholdStandard?: number }).quoteThresholdStandard ??
         s.limitX,
@@ -1013,6 +1015,22 @@ function AppSettingsPanel() {
               maxLength={3}
               data-testid="input-currency"
             />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label>URL publique de l'application</Label>
+            <Input
+              value={appBaseUrl}
+              onChange={(e) => setAppBaseUrl(e.target.value)}
+              placeholder="https://achats.chdn.lu"
+              data-testid="input-app-base-url"
+            />
+            <p className="text-xs text-muted-foreground">
+              Adresse à laquelle les utilisateurs accèdent à l'application
+              depuis leur navigateur. Si renseignée, les e-mails de
+              notification contiennent un bouton « Ouvrir la demande » qui
+              pointe directement sur la fiche concernée. Laissez vide pour
+              désactiver les liens dans les e-mails.
+            </p>
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label>Quote threshold — Standard (X)</Label>
@@ -1112,6 +1130,7 @@ function AppSettingsPanel() {
               save.mutate({
                 data: {
                   appName,
+                  appBaseUrl: appBaseUrl.trim() || null,
                   limitX,
                   quoteThresholdStandard: limitX,
                   quoteThresholdLivreI: limitY,
