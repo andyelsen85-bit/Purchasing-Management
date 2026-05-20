@@ -416,6 +416,18 @@ export const notificationsTable = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Optional file attachments persisted with the queued notification.
+    // Stored as JSON so the batch flush can rehydrate them and attach
+    // them to the combined e-mail. Each entry is base64-encoded so the
+    // payload survives JSON round-tripping. Used today for the
+    // Validations Services per-rule notifications which ship the
+    // workflow documents to the reviewer.
+    attachments: jsonb("attachments")
+      .$type<
+        Array<{ filename: string; contentType?: string; contentBase64: string }>
+      >()
+      .notNull()
+      .default([]),
   },
   (t) => [
     index("notif_workflow_idx").on(t.workflowId),

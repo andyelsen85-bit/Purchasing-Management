@@ -685,8 +685,10 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
           `── Détails du dossier ─────────────────────────────\n` +
           summaryLines.join("\n") +
           `\n\nLes pièces jointes au dossier sont attachées à ce message. Vous pouvez aussi vous connecter à Purchasing Management pour signer électroniquement.`;
-        void sendNotificationNow(
-          smtpCfg,
+        // Queue the per-rule notification alongside the other workflow
+        // notifications so it gets folded into the next batch e-mail
+        // (with documents attached) instead of going out immediately.
+        void queueNotification(
           s.emails,
           `${wf.reference} : ${s.label} - validation requise`,
           body,

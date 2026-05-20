@@ -273,6 +273,7 @@ export async function queueNotification(
   subject: string,
   body: string,
   ctx: { workflowId: number; step: string },
+  attachments?: NotificationAttachment[],
 ): Promise<void> {
   if (to.length === 0) return;
   try {
@@ -284,6 +285,14 @@ export async function queueNotification(
       subject,
       body,
       status: "QUEUED",
+      attachments:
+        attachments && attachments.length > 0
+          ? attachments.map((a) => ({
+              filename: a.filename,
+              contentType: a.contentType,
+              contentBase64: a.content.toString("base64"),
+            }))
+          : [],
     });
   } catch (err) {
     logger.warn({ err: String(err) }, "Failed to queue notification");
@@ -413,8 +422,55 @@ export async function flushNotificationQueue(): Promise<{
       })
       .join("\n\n" + "─".repeat(60) + "\n\n");
 
+    // Collect attachments across all of this recipient's notifications.
+    // Dedupe key is `${workflowId}:${filename}` so identical documents
+    // enqueued by sibling rule notifications on the same workflow are
+    // attached once, but two different workflows that each carry their
+    // own (e.g. distinct) `invoice.pdf` both reach the reviewer. When
+    // multiple workflows share a filename, the second copy is renamed
+    // with its workflow reference as a prefix so neither file is lost.
+    const seen = new Set<string>();
+    const filenameSeen = new Set<string>();
+    const mailAttachments: {
+      filename: string;
+      content: Buffer;
+      contentType?: string;
+    }[] = [];
+    for (const n of notifs) {
+      const atts = (n.attachments ?? []) as Array<{
+        filename: string;
+        contentType?: string;
+        contentBase64: string;
+      }>;
+      const wfRef = wfMap.get(n.workflowId)?.reference ?? `#${n.workflowId}`;
+      for (const a of atts) {
+        const key = `${n.workflowId}:${a.filename}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // If this filename is already attached from a different workflow,
+        // prefix this one with its workflow reference to keep both.
+        const outName = filenameSeen.has(a.filename)
+          ? `${wfRef}-${a.filename}`
+          : a.filename;
+        filenameSeen.add(a.filename);
+        filenameSeen.add(outName);
+        mailAttachments.push({
+          filename: outName,
+          content: Buffer.from(a.contentBase64, "base64"),
+          contentType: a.contentType,
+        });
+      }
+    }
+
     try {
-      await transport.sendMail({ from: fromAddr, to: recipient, subject, text, html });
+      await transport.sendMail({
+        from: fromAddr,
+        to: recipient,
+        subject,
+        text,
+        html,
+        ...(mailAttachments.length > 0 ? { attachments: mailAttachments } : {}),
+      });
       for (const n of notifs) successIds.add(n.id);
       sent++;
     } catch (err) {
