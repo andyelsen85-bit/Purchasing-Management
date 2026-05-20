@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
-import { Plus, Search, Filter } from "lucide-react";
+import { Plus, Search, Filter, FileEdit, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +38,30 @@ export function WorkflowsPage() {
   };
   const { data: workflowsRaw, isLoading } = useListWorkflows(params);
   const { data: departments } = useListDepartments();
+
+  // Locally-saved draft from the New Workflow page ("Enregistrer comme
+  // brouillon" button). Surfaced here so the user can find and resume it —
+  // drafts are not persisted server-side, only in this browser.
+  const [draft, setDraft] = useState<{ title: string; savedAt?: number } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("purchasing-workflow-draft");
+      if (!raw) {
+        setDraft(null);
+        return;
+      }
+      const d = JSON.parse(raw);
+      setDraft({ title: typeof d.title === "string" ? d.title : "" });
+    } catch {
+      setDraft(null);
+    }
+  }, []);
+  function handleDeleteDraft(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    localStorage.removeItem("purchasing-workflow-draft");
+    setDraft(null);
+  }
   const workflows = (workflowsRaw ?? []).filter((w) => {
     if (status === "ALL") return true;
     if (status === "DONE") return w.currentStep === "DONE";
@@ -144,7 +168,7 @@ export function WorkflowsPage() {
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
-          ) : workflows.length === 0 ? (
+          ) : workflows.length === 0 && !draft ? (
             <div
               className="p-12 text-center text-sm text-muted-foreground"
               data-testid="status-no-workflows"
@@ -161,6 +185,39 @@ export function WorkflowsPage() {
                 <div className="col-span-1">Priorité</div>
                 <div className="col-span-1 text-right">Âge</div>
               </div>
+              {draft && (
+                <Link href="/workflows/new?resume=1">
+                  <a
+                    className="grid grid-cols-12 items-center gap-3 px-5 py-3 text-sm hover-elevate bg-amber-50/60 dark:bg-amber-950/20"
+                    data-testid="row-draft"
+                  >
+                    <div className="col-span-2 font-mono text-xs flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+                      <FileEdit className="h-3.5 w-3.5" /> Brouillon
+                    </div>
+                    <div className="col-span-4 font-medium truncate">
+                      {draft.title || <span className="italic text-muted-foreground">(sans titre)</span>}
+                    </div>
+                    <div className="col-span-2 text-muted-foreground truncate">—</div>
+                    <div className="col-span-2">
+                      <Badge variant="outline" className="text-[11px] border-amber-400 text-amber-700 dark:text-amber-400">
+                        Brouillon local
+                      </Badge>
+                    </div>
+                    <div className="col-span-1">—</div>
+                    <div className="col-span-1 text-right">
+                      <button
+                        type="button"
+                        onClick={handleDeleteDraft}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="Supprimer le brouillon"
+                        data-testid="button-delete-draft"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </a>
+                </Link>
+              )}
               {workflows.map((w: WorkflowSummary) => (
                 <Link key={w.id} href={`/workflows/${w.id}`}>
                   <a

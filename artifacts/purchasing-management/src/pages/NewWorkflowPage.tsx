@@ -304,6 +304,68 @@ export function NewWorkflowPage() {
     }
   }, [departments, departmentId]);
 
+  // If the user navigated here with ?resume=1 (from the "Brouillon" row in
+  // the workflows list), hydrate every field from the localStorage draft.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("resume") !== "1") return;
+    const raw = localStorage.getItem("purchasing-workflow-draft");
+    if (!raw) return;
+    try {
+      const d = JSON.parse(raw);
+      if (typeof d.step === "number") setStep(d.step);
+      if (typeof d.title === "string") setTitle(d.title);
+      if (d.priority) setPriority(d.priority);
+      if (d.departmentId) setDepartmentId(d.departmentId);
+      if (typeof d.projectLeader === "string") setProjectLeader(d.projectLeader);
+      if (Array.isArray(d.investmentTypes)) setInvestmentTypes(d.investmentTypes);
+      if (typeof d.investmentTypeOther === "string") setInvestmentTypeOther(d.investmentTypeOther);
+      if (typeof d.description === "string") setDescription(d.description);
+      if (typeof d.justification === "string") setJustification(d.justification);
+      if (typeof d.demoTested === "string") setDemoTested(d.demoTested);
+      if (typeof d.demoContext === "string") setDemoContext(d.demoContext);
+      if (typeof d.requestNature === "string") setRequestNature(d.requestNature);
+      if (typeof d.replacedEquipmentRef === "string") setReplacedEquipmentRef(d.replacedEquipmentRef);
+      if (typeof d.replacedEquipmentLocation === "string") setReplacedEquipmentLocation(d.replacedEquipmentLocation);
+      if (typeof d.replacementReason === "string") setReplacementReason(d.replacementReason);
+      if (typeof d.decommissioned === "string") setDecommissioned(d.decommissioned);
+      if (typeof d.decommissionedNote === "string") setDecommissionedNote(d.decommissionedNote);
+      if (typeof d.estimatedAmount5y === "string") setEstimatedAmount5y(d.estimatedAmount5y);
+      if (typeof d.livreIException === "string") setLivreIException(d.livreIException);
+      if (typeof d.livreIIException === "string") setLivreIIException(d.livreIIException);
+      if (typeof d.exceptionJustification === "string") setExceptionJustification(d.exceptionJustification);
+      if (typeof d.budgetPositionKnown === "string") setBudgetPositionKnown(d.budgetPositionKnown);
+      if (typeof d.budgetPosition === "string") setBudgetPosition(d.budgetPosition);
+      if (typeof d.supplierCompanyId === "string") setSupplierCompanyId(d.supplierCompanyId);
+      if (typeof d.supplierContactId === "string") setSupplierContactId(d.supplierContactId);
+      if (typeof d.supplierFreeTextName === "string") setSupplierFreeTextName(d.supplierFreeTextName);
+      if (typeof d.supplierFreeTextContact === "string") setSupplierFreeTextContact(d.supplierFreeTextContact);
+      if (typeof d.architecturalWorks === "string") setArchitecturalWorks(d.architecturalWorks);
+      if (typeof d.itConnection === "string") setItConnection(d.itConnection);
+      if (typeof d.systemInterop === "string") setSystemInterop(d.systemInterop);
+      if (Array.isArray(d.accessTypes)) setAccessTypes(d.accessTypes);
+      if (Array.isArray(d.dataTypes)) setDataTypes(d.dataTypes);
+      if (typeof d.availabilityImpact === "string") setAvailabilityImpact(d.availabilityImpact);
+      if (typeof d.hasAI === "string") setHasAI(d.hasAI);
+      if (typeof d.consumablesNeeded === "string") setConsumablesNeeded(d.consumablesNeeded);
+      if (typeof d.consumablesOfferAttached === "string") setConsumablesOfferAttached(d.consumablesOfferAttached);
+      if (typeof d.hazardousConsumables === "string") setHazardousConsumables(d.hazardousConsumables);
+      if (typeof d.warrantyDuration === "string") setWarrantyDuration(d.warrantyDuration);
+      if (typeof d.maintenanceContract === "string") setMaintenanceContract(d.maintenanceContract);
+      if (typeof d.cleaningRequired === "string") setCleaningRequired(d.cleaningRequired);
+      if (typeof d.sterilizationRequired === "string") setSterilizationRequired(d.sterilizationRequired);
+      if (typeof d.trainingRequired === "string") setTrainingRequired(d.trainingRequired);
+      if (typeof d.trainingOfferAttached === "string") setTrainingOfferAttached(d.trainingOfferAttached);
+      if (typeof d.commissioningDate === "string") setCommissioningDate(d.commissioningDate);
+      if (Array.isArray(d.documentsProvided)) setDocumentsProvided(d.documentsProvided);
+      toast({ description: "Brouillon repris." });
+    } catch {
+      // Corrupted draft — ignore.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Selected company → contacts list filtered for the 5.2 dropdown.
   // The list endpoint does not embed contacts, so we re-query the
   // single-company endpoint (CompanyWithContacts) once a supplier is
@@ -709,6 +771,7 @@ export function NewWorkflowPage() {
         });
       }
 
+      localStorage.removeItem("purchasing-workflow-draft");
       qc.invalidateQueries();
       setLocation(`/workflows/${wf.id}`);
     } catch (err) {
