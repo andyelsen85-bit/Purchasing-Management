@@ -666,11 +666,16 @@ export function NewWorkflowPage() {
   // it preserves the unsaved form state across navigations even
   // before the user has picked a department/title.
   async function handleSaveAsServerDraft() {
-    if (!title.trim() || !departmentId) {
+    // Enregistrer comme brouillon: the form must be COMPLETE — saving
+    // a server-side draft cannot be used as a shortcut to skip
+    // mandatory fields. Run the same validation as the submit button
+    // and surface the missing-field markers if anything is missing.
+    if (!canAdvance) {
+      setShowErrors(true);
       toast({
         variant: "destructive",
         description:
-          "Renseignez au moins un titre et un département pour enregistrer un brouillon.",
+          "Complétez tous les champs obligatoires avant d'enregistrer le brouillon.",
       });
       return;
     }
