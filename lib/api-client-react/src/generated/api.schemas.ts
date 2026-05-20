@@ -168,6 +168,44 @@ export interface CreateContactInput {
   role?: string | null;
 }
 
+/**
+ * One row of the import CSV. Company columns are required (only `name` is mandatory). Contact columns may all be empty to declare a company with no contact.
+ */
+export interface ImportCompanyRow {
+  name: string;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  taxId?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  contactName?: string | null;
+  /** @nullable */
+  contactRole?: string | null;
+  /** @nullable */
+  contactEmail?: string | null;
+  /** @nullable */
+  contactPhone?: string | null;
+}
+
+export interface ImportCompaniesInput {
+  rows: ImportCompanyRow[];
+}
+
+export type ImportCompaniesResultErrorsItem = {
+  row: number;
+  message: string;
+};
+
+export interface ImportCompaniesResult {
+  companiesCreated: number;
+  companiesMatched: number;
+  contactsCreated: number;
+  contactsSkipped: number;
+  errors: ImportCompaniesResultErrorsItem[];
+}
+
 export interface QuoteEntry {
   /** @nullable */
   companyId?: number | null;

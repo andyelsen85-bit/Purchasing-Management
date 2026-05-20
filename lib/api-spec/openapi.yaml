@@ -265,6 +265,41 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Company" }
+  /companies/export.csv:
+    get:
+      operationId: exportCompaniesCsv
+      tags: [companies]
+      description: >-
+        Download all companies and their contacts as a CSV file. One row per
+        contact; companies without contacts still get one row with empty
+        contact columns. Encoded as UTF-8 with a BOM so Excel opens it
+        correctly with accented characters.
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema: { type: string }
+  /companies/import:
+    post:
+      operationId: importCompanies
+      tags: [companies]
+      description: >-
+        Bulk import companies and contacts. Companies are matched by
+        case-insensitive name — existing ones are reused, missing ones are
+        created. Contacts are added; duplicates (same email, or same name
+        when no email) are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportCompaniesInput" }
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportCompaniesResult" }
   /companies/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1598,6 +1633,49 @@ components:
         phone: { type: ["string", "null"] }
         role: { type: ["string", "null"] }
       required: [name]
+
+    ImportCompanyRow:
+      type: object
+      description: >-
+        One row of the import CSV. Company columns are required (only `name`
+        is mandatory). Contact columns may all be empty to declare a company
+        with no contact.
+      properties:
+        name: { type: string }
+        address: { type: ["string", "null"] }
+        taxId: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        contactName: { type: ["string", "null"] }
+        contactRole: { type: ["string", "null"] }
+        contactEmail: { type: ["string", "null"] }
+        contactPhone: { type: ["string", "null"] }
+      required: [name]
+
+    ImportCompaniesInput:
+      type: object
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ImportCompanyRow" }
+      required: [rows]
+
+    ImportCompaniesResult:
+      type: object
+      properties:
+        companiesCreated: { type: integer }
+        companiesMatched: { type: integer }
+        contactsCreated: { type: integer }
+        contactsSkipped: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              row: { type: integer }
+              message: { type: string }
+            required: [row, message]
+      required:
+        [companiesCreated, companiesMatched, contactsCreated, contactsSkipped, errors]
 
     QuoteEntry:
       type: object

@@ -283,6 +283,41 @@ export const CreateCompanyBody = zod.object({
   notes: zod.string().nullish(),
 });
 
+/**
+ * Bulk import companies and contacts. Companies are matched by case-insensitive name — existing ones are reused, missing ones are created. Contacts are added; duplicates (same email, or same name when no email) are skipped.
+ */
+export const ImportCompaniesBody = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        name: zod.string(),
+        address: zod.string().nullish(),
+        taxId: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        contactName: zod.string().nullish(),
+        contactRole: zod.string().nullish(),
+        contactEmail: zod.string().nullish(),
+        contactPhone: zod.string().nullish(),
+      })
+      .describe(
+        "One row of the import CSV. Company columns are required (only `name` is mandatory). Contact columns may all be empty to declare a company with no contact.",
+      ),
+  ),
+});
+
+export const ImportCompaniesResponse = zod.object({
+  companiesCreated: zod.number(),
+  companiesMatched: zod.number(),
+  contactsCreated: zod.number(),
+  contactsSkipped: zod.number(),
+  errors: zod.array(
+    zod.object({
+      row: zod.number(),
+      message: zod.string(),
+    }),
+  ),
+});
+
 export const GetCompanyParams = zod.object({
   id: zod.coerce.number(),
 });

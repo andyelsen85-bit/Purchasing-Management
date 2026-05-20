@@ -57,6 +57,8 @@ import type {
   ImportBudgetPositionsBody,
   ImportCertInput,
   ImportCertWithKeyInput,
+  ImportCompaniesInput,
+  ImportCompaniesResult,
   LdapSyncRolesResult,
   LdapTestInput,
   LdapTestResult,
@@ -1338,6 +1340,160 @@ export const useCreateCompany = <
   TContext
 > => {
   return useMutation(getCreateCompanyMutationOptions(options));
+};
+
+/**
+ * Download all companies and their contacts as a CSV file. One row per contact; companies without contacts still get one row with empty contact columns. Encoded as UTF-8 with a BOM so Excel opens it correctly with accented characters.
+ */
+export const getExportCompaniesCsvUrl = () => {
+  return `/api/companies/export.csv`;
+};
+
+export const exportCompaniesCsv = async (
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportCompaniesCsvUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportCompaniesCsvQueryKey = () => {
+  return [`/api/companies/export.csv`] as const;
+};
+
+export const getExportCompaniesCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportCompaniesCsv>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportCompaniesCsv>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportCompaniesCsvQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportCompaniesCsv>>
+  > = ({ signal }) => exportCompaniesCsv({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportCompaniesCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportCompaniesCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportCompaniesCsv>>
+>;
+export type ExportCompaniesCsvQueryError = ErrorType<unknown>;
+
+export function useExportCompaniesCsv<
+  TData = Awaited<ReturnType<typeof exportCompaniesCsv>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportCompaniesCsv>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportCompaniesCsvQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Bulk import companies and contacts. Companies are matched by case-insensitive name — existing ones are reused, missing ones are created. Contacts are added; duplicates (same email, or same name when no email) are skipped.
+ */
+export const getImportCompaniesUrl = () => {
+  return `/api/companies/import`;
+};
+
+export const importCompanies = async (
+  importCompaniesInput: ImportCompaniesInput,
+  options?: RequestInit,
+): Promise<ImportCompaniesResult> => {
+  return customFetch<ImportCompaniesResult>(getImportCompaniesUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(importCompaniesInput),
+  });
+};
+
+export const getImportCompaniesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importCompanies>>,
+    TError,
+    { data: BodyType<ImportCompaniesInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importCompanies>>,
+  TError,
+  { data: BodyType<ImportCompaniesInput> },
+  TContext
+> => {
+  const mutationKey = ["importCompanies"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importCompanies>>,
+    { data: BodyType<ImportCompaniesInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return importCompanies(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportCompaniesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importCompanies>>
+>;
+export type ImportCompaniesMutationBody = BodyType<ImportCompaniesInput>;
+export type ImportCompaniesMutationError = ErrorType<unknown>;
+
+export const useImportCompanies = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importCompanies>>,
+    TError,
+    { data: BodyType<ImportCompaniesInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof importCompanies>>,
+  TError,
+  { data: BodyType<ImportCompaniesInput> },
+  TContext
+> => {
+  return useMutation(getImportCompaniesMutationOptions(options));
 };
 
 export const getGetCompanyUrl = (id: number) => {

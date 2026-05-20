@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Plus,
   Building2,
@@ -9,6 +9,9 @@ import {
   Pencil,
   Save,
   X,
+  Download,
+  Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -35,9 +38,13 @@ import {
   useDeleteContact,
   useDeleteCompany,
   useGetSession,
+  useImportCompanies,
   type Company,
   type Contact,
+  type ImportCompanyRow,
+  type ImportCompaniesResult,
 } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * Permission helpers — mirror the server-side rules in
@@ -105,7 +112,10 @@ export function CompaniesPage() {
             Suppliers and their contacts
           </p>
         </div>
-        {canAdd && <NewCompanyDialog />}
+        <div className="flex items-center gap-2">
+          {canAdd && <ImportExportButtons />}
+          {canAdd && <NewCompanyDialog />}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -153,6 +163,299 @@ export function CompaniesPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * CSV import/export controls for the supplier directory.
+ *
+ * - Export downloads the current list as a UTF-8 CSV (`;` separator, BOM)
+ *   suitable for direct opening in Excel — one row per contact.
+ * - Template downloads an empty CSV with just the header row, so users
+ *   know the column order to fill in.
+ * - Import accepts a CSV file (either `;` or `,` separated), parses it
+ *   in the browser, and POSTs the rows to /api/companies/import which
+ *   upserts companies by name and appends new contacts.
+ */
+function ImportExportButtons() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [result, setResult] = useState<ImportCompaniesResult | null>(null);
+  const importMut = useImportCompanies({
+    mutation: {
+      onSuccess: (data) => {
+        setResult(data);
+        qc.invalidateQueries();
+        toast({
+          title: "Import terminé",
+          description: `${data.companiesCreated} société(s) créée(s), ${data.contactsCreated} contact(s) ajouté(s).`,
+        });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Échec de l'import",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  async function downloadExport() {
+    const res = await fetch("/api/companies/export.csv", {
+      credentials: "include",
+    });
+    if (!res.ok) {
+      toast({
+        title: "Échec de l'export",
+        description: `HTTP ${res.status}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const blob = await res.blob();
+    triggerDownload(blob, "companies.csv");
+  }
+
+  function downloadTemplate() {
+    const header =
+      "Company;Address;TaxID;Notes;ContactName;ContactRole;ContactEmail;ContactPhone";
+    const example =
+      '"Acme SA";"1 rue Exemple, L-1234 Luxembourg";"LU12345678";"";"Jean Dupont";"Sales";"jean@acme.lu";"+352 12 34 56"';
+    const csv = "\ufeff" + header + "\r\n" + example + "\r\n";
+    triggerDownload(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+      "companies-template.csv",
+    );
+  }
+
+  function pickFile() {
+    setResult(null);
+    fileRef.current?.click();
+  }
+
+  async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const rows = parseCompaniesCsv(text);
+      if (rows.length === 0) {
+        toast({
+          title: "Fichier vide",
+          description: "Aucune ligne de société trouvée dans le CSV.",
+          variant: "destructive",
+        });
+        return;
+      }
+      importMut.mutate({ data: { rows } });
+    } catch (err) {
+      toast({
+        title: "CSV illisible",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={onFileChosen}
+        data-testid="input-import-companies"
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={downloadTemplate}
+        data-testid="button-template-companies"
+      >
+        <FileSpreadsheet className="mr-2 h-4 w-4" /> Modèle CSV
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={downloadExport}
+        data-testid="button-export-companies"
+      >
+        <Download className="mr-2 h-4 w-4" /> Exporter
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={pickFile}
+        disabled={importMut.isPending}
+        data-testid="button-import-companies"
+      >
+        {importMut.isPending ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Upload className="mr-2 h-4 w-4" />
+        )}
+        Importer
+      </Button>
+      <Dialog
+        open={result !== null}
+        onOpenChange={(o) => !o && setResult(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Résultat de l'import</DialogTitle>
+          </DialogHeader>
+          {result && (
+            <div className="space-y-2 text-sm">
+              <div>
+                <strong>{result.companiesCreated}</strong> nouvelle(s)
+                société(s) créée(s).
+              </div>
+              <div>
+                <strong>{result.companiesMatched}</strong> société(s) déjà
+                existante(s) (réutilisées).
+              </div>
+              <div>
+                <strong>{result.contactsCreated}</strong> contact(s) ajouté(s).
+              </div>
+              <div>
+                <strong>{result.contactsSkipped}</strong> contact(s) ignoré(s)
+                (doublon).
+              </div>
+              {result.errors.length > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1 font-medium text-destructive">
+                    {result.errors.length} erreur(s) :
+                  </div>
+                  <ul className="max-h-40 overflow-auto rounded bg-muted/30 p-2 text-xs">
+                    {result.errors.map((e, i) => (
+                      <li key={i}>
+                        Ligne {e.row} : {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setResult(null)}>Fermer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Minimal RFC4180-ish CSV parser. Auto-detects `;` vs `,` separator
+ * from the header line (Excel exports use `;` on French/Belgian/Luxembourg
+ * locales). Handles quoted fields with embedded separators, quotes
+ * (escaped as `""`) and newlines. Headers are matched case-insensitively
+ * against the known column names — order doesn't matter, missing columns
+ * become null.
+ */
+function parseCompaniesCsv(text: string): ImportCompanyRow[] {
+  // Strip BOM
+  let src = text.replace(/^\ufeff/, "");
+  // Detect separator from the first line (count outside quotes).
+  const firstLineEnd = src.search(/\r?\n/);
+  const firstLine = firstLineEnd === -1 ? src : src.slice(0, firstLineEnd);
+  const sep = (firstLine.match(/;/g) ?? []).length >=
+    (firstLine.match(/,/g) ?? []).length
+    ? ";"
+    : ",";
+
+  const records: string[][] = [];
+  let field = "";
+  let row: string[] = [];
+  let inQuotes = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === sep) {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && src[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.some((c) => c.length > 0)) records.push(row);
+      row = [];
+    } else {
+      field += ch;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    if (row.some((c) => c.length > 0)) records.push(row);
+  }
+
+  if (records.length === 0) return [];
+  const headers = records[0]!.map((h) => h.trim().toLowerCase());
+  const idx = (name: string) => headers.indexOf(name.toLowerCase());
+  const iName = idx("company");
+  const iAddr = idx("address");
+  const iTax = idx("taxid");
+  const iNotes = idx("notes");
+  const iCName = idx("contactname");
+  const iCRole = idx("contactrole");
+  const iCEmail = idx("contactemail");
+  const iCPhone = idx("contactphone");
+  if (iName === -1) {
+    throw new Error(
+      "Colonne « Company » introuvable. Téléchargez le modèle CSV pour le format attendu.",
+    );
+  }
+
+  const pick = (cells: string[], i: number): string | null => {
+    if (i === -1) return null;
+    const v = (cells[i] ?? "").trim();
+    return v.length === 0 ? null : v;
+  };
+
+  const out: ImportCompanyRow[] = [];
+  for (let r = 1; r < records.length; r++) {
+    const cells = records[r]!;
+    const name = (cells[iName] ?? "").trim();
+    if (!name) continue;
+    out.push({
+      name,
+      address: pick(cells, iAddr),
+      taxId: pick(cells, iTax),
+      notes: pick(cells, iNotes),
+      contactName: pick(cells, iCName),
+      contactRole: pick(cells, iCRole),
+      contactEmail: pick(cells, iCEmail),
+      contactPhone: pick(cells, iCPhone),
+    });
+  }
+  return out;
 }
 
 function NewCompanyDialog() {
