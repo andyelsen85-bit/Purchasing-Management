@@ -1586,6 +1586,33 @@ function WinningQuoteCard({
             <div className="whitespace-pre-wrap">{winning.notes}</div>
           </div>
         )}
+        {(() => {
+          // N° d'immobilisation saisis à l'étape IMMO — affichés ici
+          // pour que la personne qui passe la commande (et toutes les
+          // étapes suivantes) les voie sans avoir à revenir en arrière.
+          const immo = (wf.amortissementNumbers ?? "")
+            .split(/[,\n;]/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          if (immo.length === 0) return null;
+          return (
+            <div data-testid="winning-immo-list">
+              <div className="mb-1 text-xs text-muted-foreground">
+                N° d&apos;immobilisation (IMMO)
+              </div>
+              <ul className="flex flex-wrap gap-1.5">
+                {immo.map((n, i) => (
+                  <li
+                    key={`${n}-${i}`}
+                    className="rounded border bg-background px-2 py-0.5 font-mono text-xs"
+                  >
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
         <div>
           <div className="mb-1 text-xs text-muted-foreground">
             Documents de l'offre
