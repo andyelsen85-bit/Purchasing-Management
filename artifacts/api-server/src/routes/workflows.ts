@@ -47,7 +47,7 @@ import {
   derivePublicationTier,
   isNotificationEventEnabled,
 } from "../lib/settings";
-import { queueNotification, sendNotificationNow, recipientsForStep, STEP_LABEL_FR } from "../lib/email";
+import { queueNotification, sendNotificationNow, recipientsForStep, STEP_LABEL_FR, buildWorkflowSummary, type NotificationAttachment } from "../lib/email";
 import {
   seedServiceSignatures,
   serviceSignaturesStatus,
@@ -70,6 +70,34 @@ function computeAge(d: Date): number {
     0,
     Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000),
   );
+}
+
+/**
+ * Pull every current document attached to a workflow as raw email
+ * attachments. Used to ship the full case file with every step-change
+ * notification so reviewers can act without logging in.
+ */
+async function loadWorkflowAttachments(
+  workflowId: number,
+): Promise<NotificationAttachment[]> {
+  const rows = await db
+    .select({
+      filename: documentsTable.filename,
+      mimeType: documentsTable.mimeType,
+      contentBase64: documentsTable.contentBase64,
+    })
+    .from(documentsTable)
+    .where(
+      and(
+        eq(documentsTable.workflowId, workflowId),
+        eq(documentsTable.isCurrent, true),
+      ),
+    );
+  return rows.map((d) => ({
+    filename: d.filename,
+    content: Buffer.from(d.contentBase64, "base64"),
+    contentType: d.mimeType,
+  }));
 }
 
 async function generateReference(): Promise<string> {
@@ -625,11 +653,19 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
       next,
     );
     if (recipients.length > 0) {
+      const summary = buildWorkflowSummary(wf);
+      const attachments = await loadWorkflowAttachments(wf.id);
       void queueNotification(
         recipients,
         `${wf.reference} : ${STEP_LABEL_FR[next] ?? next}`,
-        `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\nConnectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.`,
+        `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\n` +
+          `Connectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.\n\n` +
+          summary +
+          (attachments.length > 0
+            ? `\n\nLes pièces jointes du dossier sont attachées à ce message.`
+            : ""),
         { workflowId: wf.id, step: next },
+        attachments,
       );
     }
   }
@@ -645,67 +681,17 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
       investmentForm: wf.investmentForm,
     });
     if (await isNotificationEventEnabled("validatingServices")) {
-      // Pull every current workflow document so they can be attached
-      // to the legal/services notification email. The reviewer should
-      // be able to make a decision without logging in.
-      const wfDocs = await db
-        .select({
-          filename: documentsTable.filename,
-          mimeType: documentsTable.mimeType,
-          contentBase64: documentsTable.contentBase64,
-        })
-        .from(documentsTable)
-        .where(
-          and(
-            eq(documentsTable.workflowId, wf.id),
-            eq(documentsTable.isCurrent, true),
-          ),
-        );
-      const attachments = wfDocs.map((d) => ({
-        filename: d.filename,
-        content: Buffer.from(d.contentBase64, "base64"),
-        contentType: d.mimeType,
-      }));
+      // Attach every current workflow document so the reviewer can
+      // make a decision straight from the email.
+      const attachments = await loadWorkflowAttachments(wf.id);
+      const summary = buildWorkflowSummary(wf);
 
-      // Build a short readable summary of the investment form so
-      // reviewers see the request at a glance in the email body.
-      const inv = (wf.investmentForm ?? {}) as Record<string, unknown>;
-      const summaryLines: string[] = [];
-      const add = (label: string, value: unknown): void => {
-        if (value === null || value === undefined || value === "") return;
-        if (typeof value === "boolean")
-          value = value ? "Oui" : "Non";
-        if (Array.isArray(value)) value = value.join(", ");
-        summaryLines.push(`${label}: ${String(value)}`);
-      };
-      add("Référence", wf.reference);
-      add("Titre", wf.title);
-      add("Description", wf.description);
-      add("Leader projet", inv.projectLeader);
-      add("Type(s) d'investissement", inv.investmentTypes);
-      add("Justification", inv.justification);
-      add("Coût estimé 5 ans (€)", inv.estimatedAmount5y);
-      add(
-        "Procédure exception",
-        inv.exceptionProcedure && inv.exceptionProcedure !== "NONE"
-          ? inv.exceptionProcedure
-          : null,
-      );
-      add("Q4.1.1 Livre I", inv.livreIAnswer);
-      add("Q4.1.3 Livre II", inv.livreIIAnswer);
-      add("Justification exception", inv.exceptionJustification);
-      add("Q7.3 Intelligence artificielle", inv.hasAI);
-      add("Fournisseur", inv.supplierName);
-      add("Contact fournisseur", inv.supplierContact);
-
-      const smtpCfg = (await getSettings()).smtp;
       for (const s of sigs) {
         if (s.emails.length === 0) continue;
         const body =
           `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\n` +
           `Votre validation est requise pour que le dossier puisse passer à l'étape Commande.\n\n` +
-          `── Détails du dossier ─────────────────────────────\n` +
-          summaryLines.join("\n") +
+          summary +
           `\n\nLes pièces jointes au dossier sont attachées à ce message. Vous pouvez aussi vous connecter à Purchasing Management pour signer électroniquement.`;
         // Queue the per-rule notification alongside the other workflow
         // notifications so it gets folded into the next batch e-mail
@@ -811,11 +797,18 @@ router.post("/workflows/:id/reject", requireAuth, async (req, res): Promise<void
       "REJECTED",
     );
     if (recipients.length > 0) {
+      const summary = buildWorkflowSummary(wf);
+      const attachments = await loadWorkflowAttachments(wf.id);
       void queueNotification(
         recipients,
         `${wf.reference} : rejeté et clôturé`,
-        `Ce dossier a été rejeté à l'étape « ${STEP_LABEL_FR[wf.currentStep] ?? wf.currentStep} » par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}`,
+        `Ce dossier a été rejeté à l'étape « ${STEP_LABEL_FR[wf.currentStep] ?? wf.currentStep} » par ${user.displayName} et est désormais clôturé.${comment ? `\n\nMotif : ${comment}` : ""}\n\n` +
+          summary +
+          (attachments.length > 0
+            ? `\n\nLes pièces jointes du dossier sont attachées à ce message.`
+            : ""),
         { workflowId: wf.id, step: "REJECTED" },
+        attachments,
       );
     }
   }
@@ -1004,11 +997,18 @@ router.post(
           nextStepValue === "REJECTED"
             ? "rejeté et clôturé"
             : `${STEP_LABEL_FR[nextStepValue] ?? nextStepValue}`;
+        const summary = buildWorkflowSummary(wf);
+        const attachments = await loadWorkflowAttachments(wf.id);
         void queueNotification(
           recipients,
           `${wf.reference} : ${subjVerb}`,
-          `Décision GT Invest : ${decision}. Ce dossier${nextStepValue === "REJECTED" ? " est désormais clôturé." : ` passe à l'étape « ${STEP_LABEL_FR[nextStepValue] ?? nextStepValue} ».`}`,
+          `Décision GT Invest : ${decision}. Ce dossier${nextStepValue === "REJECTED" ? " est désormais clôturé." : ` passe à l'étape « ${STEP_LABEL_FR[nextStepValue] ?? nextStepValue} ».`}\n\n` +
+            summary +
+            (attachments.length > 0
+              ? `\n\nLes pièces jointes du dossier sont attachées à ce message.`
+              : ""),
           { workflowId: wf.id, step: nextStepValue },
+          attachments,
         );
       }
     }

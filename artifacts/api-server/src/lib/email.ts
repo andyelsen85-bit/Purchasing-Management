@@ -261,6 +261,165 @@ function buildHtmlEmail(
 </html>`;
 }
 
+// ─── Workflow form summary (shared by every step-change notification) ────────
+
+/**
+ * Build a long, human-readable summary of the workflow's full investment
+ * form + headline data. Included in every notification body so reviewers
+ * can act on the email without logging in. Empty / null fields are
+ * skipped so the summary length scales with how much the requester
+ * filled in.
+ */
+type WorkflowSummaryInput = {
+  reference: string | null;
+  title: string | null;
+  description: string | null;
+  priority?: string | null;
+  currentStep?: string | null;
+  deptName?: string | null;
+  creatorName?: string | null;
+  orderNumber?: string | null;
+  orderDate?: string | Date | null;
+  invoiceNumber?: string | null;
+  invoiceAmount?: number | null;
+  invoiceDate?: string | Date | null;
+  paymentDate?: string | Date | null;
+  deliveryDate?: string | Date | null;
+  threeQuoteRequired?: boolean | null;
+  publicationTier?: string | null;
+  investmentForm?: unknown;
+  quotes?: unknown;
+};
+
+type QuoteRow = {
+  companyId?: number | null;
+  companyName?: string | null;
+  amount?: number | null;
+  winning?: boolean | null;
+  notes?: string | null;
+};
+
+const FORM_FIELD_LABELS: Array<[string, string]> = [
+  ["projectLeader", "Leader projet"],
+  ["investmentTypes", "Type(s) d'investissement"],
+  ["justification", "Justification"],
+  ["demoTested", "Démo testée"],
+  ["demoContext", "Contexte de la démo"],
+  ["requestNature", "Nature de la demande"],
+  ["replacedEquipmentRef", "Équipement remplacé (réf.)"],
+  ["replacedEquipmentLocation", "Localisation équipement remplacé"],
+  ["replacementReason", "Motif du remplacement"],
+  ["decommissioned", "Mis hors service"],
+  ["decommissionedNote", "Note mise hors service"],
+  ["estimatedAmount5y", "Coût estimé 5 ans (€)"],
+  ["valueTier", "Palier de valeur"],
+  ["tier2Choice", "Choix Q4.1 (palier 2)"],
+  ["livreIExceptionItem", "Exception Livre I"],
+  ["livreIIExceptionItem", "Exception Livre II"],
+  ["exceptionProcedure", "Procédure exception"],
+  ["livreIAnswer", "Q4.1.1 Livre I"],
+  ["livreIIAnswer", "Q4.1.3 Livre II"],
+  ["exceptionJustification", "Justification exception"],
+  ["budgetPositionKnown", "Position budgétaire connue"],
+  ["budgetPosition", "Position budgétaire"],
+  ["supplierName", "Fournisseur"],
+  ["supplierContact", "Contact fournisseur"],
+  ["architecturalWorks", "Travaux architecturaux"],
+  ["itConnection", "Connexion informatique"],
+  ["systemInterop", "Interopérabilité systèmes"],
+  ["accessTypes", "Types d'accès"],
+  ["dataTypes", "Types de données"],
+  ["availabilityImpact", "Impact disponibilité"],
+  ["hasAI", "Q7.3 Intelligence artificielle"],
+  ["consumablesNeeded", "Consommables requis"],
+  ["consumablesOfferAttached", "Offre consommables jointe"],
+  ["hazardousConsumables", "Consommables dangereux"],
+  ["warrantyDuration", "Durée garantie"],
+  ["maintenanceContract", "Contrat de maintenance"],
+  ["cleaningRequired", "Nettoyage requis"],
+  ["sterilizationRequired", "Stérilisation requise"],
+  ["trainingRequired", "Formation requise"],
+  ["trainingOfferAttached", "Offre de formation jointe"],
+  ["commissioningDate", "Date de mise en service"],
+  ["documentsProvided", "Documents fournis"],
+];
+
+function formatVal(v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "boolean") return v ? "Oui" : "Non";
+  if (Array.isArray(v)) {
+    if (v.length === 0) return null;
+    return v.join(", ");
+  }
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+
+export function buildWorkflowSummary(wf: WorkflowSummaryInput): string {
+  const out: string[] = [];
+  const add = (label: string, value: unknown): void => {
+    const f = formatVal(value);
+    if (f != null) out.push(`${label}: ${f}`);
+  };
+
+  out.push("── Dossier ─────────────────────────────────────────");
+  add("Référence", wf.reference);
+  add("Titre", wf.title);
+  add("Description", wf.description);
+  add("Service / Département", wf.deptName);
+  add("Demandeur", wf.creatorName);
+  add("Priorité", wf.priority);
+  add("Étape actuelle", wf.currentStep ? (STEP_LABEL_FR[wf.currentStep] ?? wf.currentStep) : null);
+  add("Palier de publication", wf.publicationTier);
+  add("Trois offres requises", wf.threeQuoteRequired);
+
+  const inv = (wf.investmentForm && typeof wf.investmentForm === "object"
+    ? (wf.investmentForm as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+  const formLines: string[] = [];
+  for (const [key, label] of FORM_FIELD_LABELS) {
+    const f = formatVal((inv as Record<string, unknown>)[key]);
+    if (f != null) formLines.push(`${label}: ${f}`);
+  }
+  if (formLines.length > 0) {
+    out.push("");
+    out.push("── Formulaire d'investissement ─────────────────────");
+    out.push(...formLines);
+  }
+
+  const quotes: QuoteRow[] = Array.isArray(wf.quotes)
+    ? (wf.quotes as QuoteRow[])
+    : [];
+  if (quotes.length > 0) {
+    out.push("");
+    out.push("── Offres de prix ──────────────────────────────────");
+    quotes.forEach((q, i) => {
+      const name = q.companyName ?? `Fournisseur #${q.companyId ?? "?"}`;
+      const amt = q.amount != null ? `${q.amount} €` : "—";
+      const win = q.winning ? " [RETENUE]" : "";
+      out.push(`${i + 1}. ${name} — ${amt}${win}`);
+      if (q.notes) out.push(`   Notes : ${q.notes}`);
+    });
+  }
+
+  const hasOrder =
+    wf.orderNumber || wf.orderDate || wf.invoiceNumber || wf.invoiceAmount != null ||
+    wf.invoiceDate || wf.paymentDate || wf.deliveryDate;
+  if (hasOrder) {
+    out.push("");
+    out.push("── Commande / Livraison / Facture / Paiement ───────");
+    add("N° de commande", wf.orderNumber);
+    add("Date commande", wf.orderDate);
+    add("Date livraison", wf.deliveryDate);
+    add("N° de facture", wf.invoiceNumber);
+    add("Montant facture (€)", wf.invoiceAmount);
+    add("Date facture", wf.invoiceDate);
+    add("Date paiement", wf.paymentDate);
+  }
+
+  return out.join("\n");
+}
+
 // ─── Queue a notification (no immediate send) ─────────────────────────────────
 
 /**
