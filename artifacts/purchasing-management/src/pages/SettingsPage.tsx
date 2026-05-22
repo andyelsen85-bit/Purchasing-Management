@@ -155,6 +155,7 @@ const TAB_VALUES = [
   "ldap",
   "smtp",
   "gt",
+  "aa",
   "https",
   "backup",
   "notifications",
@@ -247,6 +248,9 @@ export function SettingsPage() {
           <TabsTrigger value="gt" data-testid="tab-gt">
             GT Invest
           </TabsTrigger>
+          <TabsTrigger value="aa" data-testid="tab-aa">
+            N° AA
+          </TabsTrigger>
           <TabsTrigger value="https" data-testid="tab-https">
             HTTPS / TLS
           </TabsTrigger>
@@ -303,6 +307,32 @@ export function SettingsPage() {
               description="Liste déroulante affichée à la question 4.1.4 du formulaire de demande d'investissement (tranche 144 986,80 € – 215 999 € HTVA)."
               placeholder="ex. Procédure négociée sans publication"
               testIdPrefix="livre-ii-exception"
+            />
+          </div>
+        </TabsContent>
+        <TabsContent value="aa">
+          <div className="space-y-4">
+            <KostenstellePanel />
+            <SimpleStringListPanel
+              field="siteList"
+              title="Sites"
+              description="Liste des sites disponibles dans le formulaire N° AA (ex. Ettelbruck, Wiltz)."
+              placeholder="ex. Ettelbruck"
+              testIdPrefix="site"
+            />
+            <SimpleNumberListPanel
+              field="tauxTvaList"
+              title="Taux de TVA (%)"
+              description="Liste des taux de TVA proposés dans le formulaire N° AA."
+              placeholder="ex. 17"
+              testIdPrefix="taux-tva"
+            />
+            <SimpleNumberListPanel
+              field="tauxAmortissementList"
+              title="Taux d'amortissement (%)"
+              description="Liste des taux d'amortissement proposés dans le formulaire N° AA."
+              placeholder="ex. 20"
+              testIdPrefix="taux-amort"
             />
           </div>
         </TabsContent>
@@ -2891,6 +2921,353 @@ function BudgetPositionsPanel() {
             }
             disabled={save.isPending}
             data-testid="button-save-budget-positions"
+          >
+            {save.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// N° AA — list editors used in the N° AA step (Kostenstelle, sites,
+// TVA / amortissement rate dropdowns). KostenstellePanel mirrors the
+// BudgetPositions Excel import/export flow; the others are simple
+// add/remove lists.
+// ─────────────────────────────────────────────────────────────────────────────
+function KostenstellePanel() {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const qc = useQueryClient();
+  const [items, setItems] = useState<string[]>([]);
+  const [next, setNext] = useState("");
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!s) return;
+    setItems(
+      (s.kostenstelleList ?? []).slice().sort((a, b) => a.localeCompare(b, "fr")),
+    );
+  }, [s]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Kostenstelle (Centres de coûts)</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Liste utilisée par la liste déroulante « Kostenstelle » du formulaire
+          N° AA. Vous pouvez importer la liste complète depuis un fichier
+          Excel (première colonne, première ligne = en-tête).
+        </p>
+        <div className="flex gap-2">
+          <Input
+            placeholder="ex. 4711000"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            data-testid="input-kostenstelle"
+          />
+          <Button
+            onClick={() => {
+              const v = next.trim();
+              if (!v) return;
+              setItems((r) =>
+                Array.from(new Set([...r, v])).sort((a, b) =>
+                  a.localeCompare(b, "fr"),
+                ),
+              );
+              setNext("");
+            }}
+            data-testid="button-add-kostenstelle"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <div className="max-h-72 space-y-1 overflow-y-auto rounded border p-1">
+          {items.length === 0 ? (
+            <p className="py-3 text-center text-sm text-muted-foreground">
+              Aucune Kostenstelle configurée.
+            </p>
+          ) : (
+            items.map((p) => (
+              <div
+                key={p}
+                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                data-testid={`kostenstelle-${p}`}
+              >
+                <span>{p}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setItems((rs) => rs.filter((x) => x !== p))}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              data-testid="button-export-kostenstelle"
+            >
+              <a href="/api/settings/kostenstelle/export" download>
+                <Download className="mr-2 h-4 w-4" /> Exporter Excel
+              </a>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={importing}
+              onClick={() => importInputRef.current?.click()}
+              data-testid="button-import-kostenstelle"
+            >
+              {importing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Importer Excel
+            </Button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                e.target.value = "";
+                setImporting(true);
+                try {
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  const resp = await fetch("/api/settings/kostenstelle/import", {
+                    method: "POST",
+                    body: fd,
+                    credentials: "include",
+                  });
+                  if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(
+                      (err as { error?: string }).error ?? "Erreur import",
+                    );
+                  }
+                  await qc.invalidateQueries();
+                } catch (err) {
+                  alert(String(err instanceof Error ? err.message : err));
+                } finally {
+                  setImporting(false);
+                }
+              }}
+            />
+          </div>
+          <Button
+            onClick={() => save.mutate({ data: { kostenstelleList: items } })}
+            disabled={save.isPending}
+            data-testid="button-save-kostenstelle"
+          >
+            {save.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SimpleStringListPanel({
+  field,
+  title,
+  description,
+  placeholder,
+  testIdPrefix,
+}: {
+  field: "siteList";
+  title: string;
+  description: string;
+  placeholder: string;
+  testIdPrefix: string;
+}) {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const [items, setItems] = useState<string[]>([]);
+  const [next, setNext] = useState("");
+
+  useEffect(() => {
+    if (!s) return;
+    const list =
+      (s as unknown as Record<string, string[] | undefined>)[field] ?? [];
+    setItems(list.slice().sort((a, b) => a.localeCompare(b, "fr")));
+  }, [s, field]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{description}</p>
+        <div className="flex gap-2">
+          <Input
+            placeholder={placeholder}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            data-testid={`input-${testIdPrefix}`}
+          />
+          <Button
+            onClick={() => {
+              const v = next.trim();
+              if (!v) return;
+              setItems((r) =>
+                Array.from(new Set([...r, v])).sort((a, b) =>
+                  a.localeCompare(b, "fr"),
+                ),
+              );
+              setNext("");
+            }}
+            data-testid={`button-add-${testIdPrefix}`}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <div className="space-y-1">
+          {items.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              Aucune valeur configurée.
+            </p>
+          ) : (
+            items.map((p) => (
+              <div
+                key={p}
+                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                data-testid={`${testIdPrefix}-${p}`}
+              >
+                <span>{p}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setItems((rs) => rs.filter((x) => x !== p))}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => save.mutate({ data: { [field]: items } })}
+            disabled={save.isPending}
+            data-testid={`button-save-${testIdPrefix}`}
+          >
+            {save.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SimpleNumberListPanel({
+  field,
+  title,
+  description,
+  placeholder,
+  testIdPrefix,
+}: {
+  field: "tauxTvaList" | "tauxAmortissementList";
+  title: string;
+  description: string;
+  placeholder: string;
+  testIdPrefix: string;
+}) {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const [items, setItems] = useState<number[]>([]);
+  const [next, setNext] = useState("");
+
+  useEffect(() => {
+    if (!s) return;
+    const list =
+      (s as unknown as Record<string, number[] | undefined>)[field] ?? [];
+    setItems(list.slice().sort((a, b) => a - b));
+  }, [s, field]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{description}</p>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            step="0.01"
+            placeholder={placeholder}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            data-testid={`input-${testIdPrefix}`}
+          />
+          <Button
+            onClick={() => {
+              const v = Number(next.replace(",", "."));
+              if (!Number.isFinite(v)) return;
+              setItems((r) =>
+                Array.from(new Set([...r, v])).sort((a, b) => a - b),
+              );
+              setNext("");
+            }}
+            data-testid={`button-add-${testIdPrefix}`}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <div className="space-y-1">
+          {items.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              Aucun taux configuré.
+            </p>
+          ) : (
+            items.map((p) => (
+              <div
+                key={p}
+                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                data-testid={`${testIdPrefix}-${p}`}
+              >
+                <span>{p} %</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setItems((rs) => rs.filter((x) => x !== p))}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => save.mutate({ data: { [field]: items } })}
+            disabled={save.isPending}
+            data-testid={`button-save-${testIdPrefix}`}
           >
             {save.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

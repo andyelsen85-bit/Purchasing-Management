@@ -183,6 +183,23 @@ export interface AppSettings {
    * falls into tier 3.
    */
   livreIIExceptions: string[];
+  /**
+   * Cost centres for the N° AA step. Pre-importable from Excel
+   * (Settings → N° AA → Import).
+   */
+  kostenstelleList: string[];
+  /**
+   * Site list for the N° AA step (e.g. Ettelbruck, Wiltz).
+   */
+  siteList: string[];
+  /**
+   * Amortisation rate (%) values selectable in the N° AA entry form.
+   */
+  tauxAmortissementList: number[];
+  /**
+   * VAT rate (%) values selectable in the N° AA entry form.
+   */
+  tauxTvaList: number[];
   ldap: LdapConfigStored;
   smtp: SmtpConfigStored;
   /**
@@ -231,6 +248,10 @@ const DEFAULT: AppSettings = {
     "Prix soustraits à la concurrence ou services à tarif officiel",
     "Je ne sais pas",
   ],
+  kostenstelleList: [],
+  siteList: ["Ettelbruck", "Wiltz"],
+  tauxAmortissementList: [10, 20, 25, 33.33, 50],
+  tauxTvaList: [0, 3, 8, 14, 17],
   livreIIExceptions: [
     "Aucune offre / aucune offre appropriée / aucune demande appropriée après procédure ouverte ou restreinte",
     "Œuvre d’art ou performance artistique unique",
@@ -358,6 +379,10 @@ export function toPublicSettings(s: AppSettings) {
     budgetPositions: s.budgetPositions ?? [],
     livreIExceptions: s.livreIExceptions ?? [],
     livreIIExceptions: s.livreIIExceptions ?? [],
+    kostenstelleList: s.kostenstelleList ?? [],
+    siteList: s.siteList ?? [],
+    tauxAmortissementList: s.tauxAmortissementList ?? [],
+    tauxTvaList: s.tauxTvaList ?? [],
     ldap: {
       enabled: !!s.ldap?.enabled,
       host: s.ldap?.host ?? null,

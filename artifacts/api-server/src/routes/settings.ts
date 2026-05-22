@@ -62,6 +62,10 @@ router.patch(
       budgetPositions,
       livreIExceptions,
       livreIIExceptions,
+      kostenstelleList,
+      siteList,
+      tauxAmortissementList,
+      tauxTvaList,
       ...top
     } = parsed.data;
     const patch: Parameters<typeof updateSettingsRecord>[0] = {
@@ -84,6 +88,10 @@ router.patch(
       ...(budgetPositions ? { budgetPositions } : {}),
       ...(livreIExceptions ? { livreIExceptions } : {}),
       ...(livreIIExceptions ? { livreIIExceptions } : {}),
+      ...(kostenstelleList ? { kostenstelleList } : {}),
+      ...(siteList ? { siteList } : {}),
+      ...(tauxAmortissementList ? { tauxAmortissementList } : {}),
+      ...(tauxTvaList ? { tauxTvaList } : {}),
       ...(ldap ? { ldap: dropNulls(ldap) } : {}),
       ...(smtp
         ? {
@@ -543,6 +551,64 @@ router.post(
     await updateSettingsRecord({ budgetPositions: positions });
     await audit(getUser(req).id, "SETTINGS_UPDATE", "settings", undefined, "budget-positions-import");
     res.json({ imported: positions.length, positions });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Kostenstelle (N° AA step) — Excel export/import. Mirrors the
+// budget-positions import pattern: first row treated as a header, subsequent
+// rows' first column become list values. Replaces the existing list on import.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+  "/settings/kostenstelle/export",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (_req, res): Promise<void> => {
+    const s = await getSettings();
+    const list = s.kostenstelleList ?? [];
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Kostenstelle");
+    ws.getColumn(1).header = "Kostenstelle";
+    ws.getColumn(1).width = 40;
+    for (const p of list) ws.addRow([p]);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", 'attachment; filename="kostenstelle.xlsx"');
+    await wb.xlsx.write(res as import("stream").Writable);
+    res.end();
+  },
+);
+
+router.post(
+  "/settings/kostenstelle/import",
+  requireAuth,
+  requireRole("ADMIN"),
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    if (!req.file) {
+      res.status(400).json({ error: "Fichier manquant." });
+      return;
+    }
+    const wb = new ExcelJS.Workbook();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await wb.xlsx.load(req.file.buffer as unknown as any);
+    const ws = wb.worksheets[0];
+    if (!ws) {
+      res.status(400).json({ error: "Aucune feuille trouvée dans le fichier." });
+      return;
+    }
+    const list: string[] = [];
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const cell = row.getCell(1);
+      const val = String(cell.value ?? "").trim();
+      if (val) list.push(val);
+    });
+    await updateSettingsRecord({ kostenstelleList: list });
+    await audit(getUser(req).id, "SETTINGS_UPDATE", "settings", undefined, "kostenstelle-import");
+    res.json({ imported: list.length, kostenstelleList: list });
   },
 );
 

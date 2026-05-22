@@ -764,6 +764,25 @@ export const GetWorkflowResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -885,6 +904,25 @@ export const UpdateWorkflowBody = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -1040,6 +1078,25 @@ export const UpdateWorkflowResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -1236,6 +1293,25 @@ export const RestoreWorkflowResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -1428,6 +1504,25 @@ export const AdvanceWorkflowResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -1613,6 +1708,25 @@ export const RejectWorkflowResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -1794,6 +1908,25 @@ export const UndoWorkflowResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -1993,6 +2126,25 @@ export const SetGtInvestDecisionResponse = zod.object({
   orderNumber: zod.string().nullish(),
   orderDate: zod.coerce.date().nullish(),
   amortissementNumbers: zod.string().nullish(),
+  aaEntries: zod
+    .array(
+      zod
+        .object({
+          aaNumber: zod.string().nullish(),
+          libelle: zod.string().nullish(),
+          prixUnitaireHTVA: zod.number().nullish(),
+          tauxTva: zod.number().nullish(),
+          tauxAmortissement: zod.number().nullish(),
+          kontoSAP: zod.string().nullish(),
+          referenceOffre: zod.string().nullish(),
+          site: zod.string().nullish(),
+          kostenstelle: zod.string().nullish(),
+        })
+        .describe(
+          "One immobilisation entry captured at the N° AA step. Every field\nis optional so the form can be saved as a draft; full validation\nis performed by the UI before completing the step.\n",
+        ),
+    )
+    .optional(),
   deliveredOn: zod.coerce.date().nullish(),
   deliveryNotes: zod.string().nullish(),
   invoiceNumber: zod.string().nullish(),
@@ -2460,6 +2612,10 @@ export const GetSettingsResponse = zod.object({
   budgetPositions: zod.array(zod.string()),
   livreIExceptions: zod.array(zod.string()).optional(),
   livreIIExceptions: zod.array(zod.string()).optional(),
+  kostenstelleList: zod.array(zod.string()),
+  siteList: zod.array(zod.string()),
+  tauxAmortissementList: zod.array(zod.number()),
+  tauxTvaList: zod.array(zod.number()),
   ldap: zod.object({
     enabled: zod.boolean(),
     host: zod.string().nullish(),
@@ -2558,6 +2714,10 @@ export const UpdateSettingsBody = zod.object({
   budgetPositions: zod.array(zod.string()).optional(),
   livreIExceptions: zod.array(zod.string()).optional(),
   livreIIExceptions: zod.array(zod.string()).optional(),
+  kostenstelleList: zod.array(zod.string()).optional(),
+  siteList: zod.array(zod.string()).optional(),
+  tauxAmortissementList: zod.array(zod.number()).optional(),
+  tauxTvaList: zod.array(zod.number()).optional(),
   ldap: zod
     .object({
       enabled: zod.boolean().nullish(),
@@ -2627,6 +2787,10 @@ export const UpdateSettingsResponse = zod.object({
   budgetPositions: zod.array(zod.string()),
   livreIExceptions: zod.array(zod.string()).optional(),
   livreIIExceptions: zod.array(zod.string()).optional(),
+  kostenstelleList: zod.array(zod.string()),
+  siteList: zod.array(zod.string()),
+  tauxAmortissementList: zod.array(zod.number()),
+  tauxTvaList: zod.array(zod.number()),
   ldap: zod.object({
     enabled: zod.boolean(),
     host: zod.string().nullish(),
@@ -3073,6 +3237,18 @@ export const ImportBudgetPositionsBody = zod.object({
 export const ImportBudgetPositionsResponse = zod.object({
   imported: zod.number(),
   positions: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Import Kostenstelle list from an Excel file (replaces existing list)
+ */
+export const ImportKostenstelleBody = zod.object({
+  file: zod.instanceof(File).optional(),
+});
+
+export const ImportKostenstelleResponse = zod.object({
+  imported: zod.number(),
+  kostenstelleList: zod.array(zod.string()).optional(),
 });
 
 /**

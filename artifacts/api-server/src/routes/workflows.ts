@@ -410,6 +410,7 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   if (b.orderDate !== undefined)
     update.orderDate = b.orderDate ? new Date(b.orderDate).toISOString().slice(0, 10) : null;
   if (b.amortissementNumbers !== undefined) update.amortissementNumbers = b.amortissementNumbers;
+  if (b.aaEntries !== undefined) update.aaEntries = b.aaEntries ?? [];
   if (b.deliveredOn !== undefined)
     update.deliveredOn = b.deliveredOn ? new Date(b.deliveredOn).toISOString().slice(0, 10) : null;
   if (b.deliveryNotes !== undefined) update.deliveryNotes = b.deliveryNotes;

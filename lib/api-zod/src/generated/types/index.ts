@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./aaEntry";
 export * from "./advanceWorkflowInput";
 export * from "./advanceWorkflowInputBranch";
 export * from "./apiError";
@@ -58,6 +59,8 @@ export * from "./importCompaniesInput";
 export * from "./importCompaniesResult";
 export * from "./importCompaniesResultErrorsItem";
 export * from "./importCompanyRow";
+export * from "./importKostenstelle200";
+// [barrel-fix] removed conflicting type re-export: export * from "./importKostenstelleBody";
 export * from "./investmentForm";
 export * from "./investmentFormDocumentDocIds";
 export * from "./ldapDiagnosticStep";

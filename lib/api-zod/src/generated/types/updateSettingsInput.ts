@@ -41,6 +41,10 @@ export interface UpdateSettingsInput {
   budgetPositions?: string[];
   livreIExceptions?: string[];
   livreIIExceptions?: string[];
+  kostenstelleList?: string[];
+  siteList?: string[];
+  tauxAmortissementList?: number[];
+  tauxTvaList?: number[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;
 }

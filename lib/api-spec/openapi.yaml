@@ -1304,6 +1304,47 @@ paths:
                     type: array
                     items: { type: string }
 
+  /settings/kostenstelle/export:
+    get:
+      operationId: exportKostenstelle
+      tags: [admin]
+      summary: Export Kostenstelle list as Excel (.xlsx)
+      responses:
+        "200":
+          description: Excel workbook with one Kostenstelle per row
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /settings/kostenstelle/import:
+    post:
+      operationId: importKostenstelle
+      tags: [admin]
+      summary: Import Kostenstelle list from an Excel file (replaces existing list)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Imported Kostenstelle entries and count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [imported]
+                properties:
+                  imported: { type: integer }
+                  kostenstelleList:
+                    type: array
+                    items: { type: string }
+
   # ---------------- ADMIN / LDAP TEST ----------------
   /admin/ldap-test:
     post:
@@ -1752,6 +1793,9 @@ components:
         orderNumber: { type: ["string", "null"] }
         orderDate: { type: ["string", "null"], format: date }
         amortissementNumbers: { type: ["string", "null"] }
+        aaEntries:
+          type: array
+          items: { $ref: "#/components/schemas/AaEntry" }
         # Step 6 - Delivery
         deliveredOn: { type: ["string", "null"], format: date }
         deliveryNotes: { type: ["string", "null"] }
@@ -1785,6 +1829,23 @@ components:
         - threeQuoteRequired
         - createdAt
         - updatedAt
+
+    AaEntry:
+      type: object
+      description: |
+        One immobilisation entry captured at the N° AA step. Every field
+        is optional so the form can be saved as a draft; full validation
+        is performed by the UI before completing the step.
+      properties:
+        aaNumber: { type: ["string", "null"] }
+        libelle: { type: ["string", "null"] }
+        prixUnitaireHTVA: { type: ["number", "null"] }
+        tauxTva: { type: ["number", "null"] }
+        tauxAmortissement: { type: ["number", "null"] }
+        kontoSAP: { type: ["string", "null"] }
+        referenceOffre: { type: ["string", "null"] }
+        site: { type: ["string", "null"] }
+        kostenstelle: { type: ["string", "null"] }
 
     WorkflowSummary:
       type: object
@@ -1895,6 +1956,9 @@ components:
         orderNumber: { type: ["string", "null"] }
         orderDate: { type: ["string", "null"], format: date }
         amortissementNumbers: { type: ["string", "null"] }
+        aaEntries:
+          type: array
+          items: { $ref: "#/components/schemas/AaEntry" }
         deliveredOn: { type: ["string", "null"], format: date }
         deliveryNotes: { type: ["string", "null"] }
         invoiceNumber: { type: ["string", "null"] }
@@ -2235,6 +2299,23 @@ components:
         livreIIExceptions:
           type: array
           items: { type: string }
+        # Kostenstelle list (cost centres) — picked in the N° AA step.
+        # Managed in Settings → N° AA, with Excel import support.
+        kostenstelleList:
+          type: array
+          items: { type: string }
+        # Site list — picked in the N° AA step (e.g. Ettelbruck, Wiltz).
+        siteList:
+          type: array
+          items: { type: string }
+        # Available amortisation rate (%) values for the N° AA step.
+        tauxAmortissementList:
+          type: array
+          items: { type: number }
+        # Available VAT rate (%) values for the N° AA step.
+        tauxTvaList:
+          type: array
+          items: { type: number }
         ldap: { $ref: "#/components/schemas/LdapsSettings" }
         smtp: { $ref: "#/components/schemas/SmtpSettings" }
         notificationIntervalMinutes: { type: integer, description: "Minutes between automated notification batch sends" }
@@ -2262,6 +2343,10 @@ components:
         - certSigningEnabled
         - gtInvestRecipients
         - budgetPositions
+        - kostenstelleList
+        - siteList
+        - tauxAmortissementList
+        - tauxTvaList
         - ldap
         - smtp
         - notificationIntervalMinutes
@@ -2327,6 +2412,18 @@ components:
         livreIIExceptions:
           type: array
           items: { type: string }
+        kostenstelleList:
+          type: array
+          items: { type: string }
+        siteList:
+          type: array
+          items: { type: string }
+        tauxAmortissementList:
+          type: array
+          items: { type: number }
+        tauxTvaList:
+          type: array
+          items: { type: number }
         ldap:
           type: object
           properties:

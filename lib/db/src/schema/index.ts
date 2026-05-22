@@ -144,6 +144,10 @@ export const workflowsTable = pgTable(
     orderNumber: text("order_number"),
     orderDate: date("order_date"),
     amortissementNumbers: text("amortissement_numbers"),
+    // Structured list of N° AA entries (replaces the legacy comma-separated
+    // amortissementNumbers text column). Each row carries the full
+    // immobilisation breakdown — see openapi `AaEntry`.
+    aaEntries: jsonb("aa_entries").$type<unknown[]>().notNull().default([]),
 
     // Step 6 - delivery
     deliveredOn: date("delivered_on"),

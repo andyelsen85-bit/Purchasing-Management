@@ -59,6 +59,8 @@ import type {
   ImportCertWithKeyInput,
   ImportCompaniesInput,
   ImportCompaniesResult,
+  ImportKostenstelle200,
+  ImportKostenstelleBody,
   LdapSyncRolesResult,
   LdapTestInput,
   LdapTestResult,
@@ -6275,6 +6277,171 @@ export const useImportBudgetPositions = <
   TContext
 > => {
   return useMutation(getImportBudgetPositionsMutationOptions(options));
+};
+
+/**
+ * @summary Export Kostenstelle list as Excel (.xlsx)
+ */
+export const getExportKostenstelleUrl = () => {
+  return `/api/settings/kostenstelle/export`;
+};
+
+export const exportKostenstelle = async (
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getExportKostenstelleUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportKostenstelleQueryKey = () => {
+  return [`/api/settings/kostenstelle/export`] as const;
+};
+
+export const getExportKostenstelleQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportKostenstelle>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportKostenstelle>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportKostenstelleQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportKostenstelle>>
+  > = ({ signal }) => exportKostenstelle({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportKostenstelle>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportKostenstelleQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportKostenstelle>>
+>;
+export type ExportKostenstelleQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export Kostenstelle list as Excel (.xlsx)
+ */
+
+export function useExportKostenstelle<
+  TData = Awaited<ReturnType<typeof exportKostenstelle>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof exportKostenstelle>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportKostenstelleQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Import Kostenstelle list from an Excel file (replaces existing list)
+ */
+export const getImportKostenstelleUrl = () => {
+  return `/api/settings/kostenstelle/import`;
+};
+
+export const importKostenstelle = async (
+  importKostenstelleBody: ImportKostenstelleBody,
+  options?: RequestInit,
+): Promise<ImportKostenstelle200> => {
+  const formData = new FormData();
+  if (importKostenstelleBody.file !== undefined) {
+    formData.append(`file`, importKostenstelleBody.file);
+  }
+
+  return customFetch<ImportKostenstelle200>(getImportKostenstelleUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getImportKostenstelleMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importKostenstelle>>,
+    TError,
+    { data: BodyType<ImportKostenstelleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importKostenstelle>>,
+  TError,
+  { data: BodyType<ImportKostenstelleBody> },
+  TContext
+> => {
+  const mutationKey = ["importKostenstelle"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importKostenstelle>>,
+    { data: BodyType<ImportKostenstelleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return importKostenstelle(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportKostenstelleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importKostenstelle>>
+>;
+export type ImportKostenstelleMutationBody = BodyType<ImportKostenstelleBody>;
+export type ImportKostenstelleMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Import Kostenstelle list from an Excel file (replaces existing list)
+ */
+export const useImportKostenstelle = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importKostenstelle>>,
+    TError,
+    { data: BodyType<ImportKostenstelleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof importKostenstelle>>,
+  TError,
+  { data: BodyType<ImportKostenstelleBody> },
+  TContext
+> => {
+  return useMutation(getImportKostenstelleMutationOptions(options));
 };
 
 /**

@@ -373,6 +373,33 @@ export const GtInvestDecision = {
   ACCORD_PRINCIPE: "ACCORD_PRINCIPE",
 } as const;
 
+/**
+ * One immobilisation entry captured at the N° AA step. Every field
+is optional so the form can be saved as a draft; full validation
+is performed by the UI before completing the step.
+
+ */
+export interface AaEntry {
+  /** @nullable */
+  aaNumber?: string | null;
+  /** @nullable */
+  libelle?: string | null;
+  /** @nullable */
+  prixUnitaireHTVA?: number | null;
+  /** @nullable */
+  tauxTva?: number | null;
+  /** @nullable */
+  tauxAmortissement?: number | null;
+  /** @nullable */
+  kontoSAP?: string | null;
+  /** @nullable */
+  referenceOffre?: string | null;
+  /** @nullable */
+  site?: string | null;
+  /** @nullable */
+  kostenstelle?: string | null;
+}
+
 export interface Workflow {
   id: number;
   reference: string;
@@ -431,6 +458,7 @@ for "Livre I" / "Livre II" publication.
   orderDate?: string | null;
   /** @nullable */
   amortissementNumbers?: string | null;
+  aaEntries?: AaEntry[];
   /** @nullable */
   deliveredOn?: string | null;
   /** @nullable */
@@ -569,6 +597,7 @@ export interface UpdateWorkflowInput {
   orderDate?: string | null;
   /** @nullable */
   amortissementNumbers?: string | null;
+  aaEntries?: AaEntry[];
   /** @nullable */
   deliveredOn?: string | null;
   /** @nullable */
@@ -953,6 +982,10 @@ export interface AppSettings {
   budgetPositions: string[];
   livreIExceptions?: string[];
   livreIIExceptions?: string[];
+  kostenstelleList: string[];
+  siteList: string[];
+  tauxAmortissementList: number[];
+  tauxTvaList: number[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
   /** Minutes between automated notification batch sends */
@@ -1120,6 +1153,10 @@ export interface UpdateSettingsInput {
   budgetPositions?: string[];
   livreIExceptions?: string[];
   livreIIExceptions?: string[];
+  kostenstelleList?: string[];
+  siteList?: string[];
+  tauxAmortissementList?: number[];
+  tauxTvaList?: number[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;
 }
@@ -1542,4 +1579,13 @@ export type ImportBudgetPositionsBody = {
 export type ImportBudgetPositions200 = {
   imported: number;
   positions?: string[];
+};
+
+export type ImportKostenstelleBody = {
+  file?: Blob;
+};
+
+export type ImportKostenstelle200 = {
+  imported: number;
+  kostenstelleList?: string[];
 };

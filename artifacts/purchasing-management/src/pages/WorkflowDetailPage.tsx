@@ -59,6 +59,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { ChevronsUpDown, Check } from "lucide-react";
 import {
   useGetWorkflow,
   useListWorkflowDocuments,
@@ -90,6 +100,7 @@ import {
   type Workflow,
   type QuoteEntry,
   type InvestmentForm,
+  type AaEntry,
 } from "@/lib/api";
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
@@ -1587,29 +1598,73 @@ function WinningQuoteCard({
           </div>
         )}
         {(() => {
-          // N° d'immobilisation saisis à l'étape IMMO — affichés ici
-          // pour que la personne qui passe la commande (et toutes les
-          // étapes suivantes) les voie sans avoir à revenir en arrière.
-          const immo = (wf.amortissementNumbers ?? "")
-            .split(/[,\n;]/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-          if (immo.length === 0) return null;
+          // Détail des immobilisations saisies à l'étape N° AA —
+          // affiché ici pour que la personne qui passe la commande
+          // (et toutes les étapes suivantes) ait l'information sans
+          // revenir à l'étape précédente.
+          const entries = wf.aaEntries ?? [];
+          if (entries.length === 0) return null;
+          const fmtNum = (n: number | null | undefined, suffix = "") =>
+            n == null ? "—" : `${n}${suffix}`;
           return (
-            <div data-testid="winning-immo-list">
+            <div data-testid="winning-aa-list">
               <div className="mb-1 text-xs text-muted-foreground">
-                N° d&apos;immobilisation (IMMO)
+                N° AA — Immobilisations
               </div>
-              <ul className="flex flex-wrap gap-1.5">
-                {immo.map((n, i) => (
-                  <li
-                    key={`${n}-${i}`}
-                    className="rounded border bg-background px-2 py-0.5 font-mono text-xs"
-                  >
-                    {n}
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto rounded border bg-background">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-muted/40">
+                    <tr className="text-left">
+                      <th className="px-2 py-1">N° AA</th>
+                      <th className="px-2 py-1">Libellé</th>
+                      <th className="px-2 py-1 text-right">HTVA €</th>
+                      <th className="px-2 py-1 text-right">TVA %</th>
+                      <th className="px-2 py-1 text-right">TTC €</th>
+                      <th className="px-2 py-1 text-right">Amort. %</th>
+                      <th className="px-2 py-1">Konto SAP</th>
+                      <th className="px-2 py-1">Réf. offre</th>
+                      <th className="px-2 py-1">Site</th>
+                      <th className="px-2 py-1">Kostenstelle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((e, i) => {
+                      const ttc = computeTtc(
+                        e.prixUnitaireHTVA ?? null,
+                        e.tauxTva ?? null,
+                      );
+                      return (
+                        <tr
+                          key={i}
+                          className="border-t"
+                          data-testid={`winning-aa-row-${i}`}
+                        >
+                          <td className="px-2 py-1 font-mono">
+                            {e.aaNumber || "—"}
+                          </td>
+                          <td className="px-2 py-1">{e.libelle || "—"}</td>
+                          <td className="px-2 py-1 text-right">
+                            {fmtNum(e.prixUnitaireHTVA ?? null)}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {fmtNum(e.tauxTva ?? null)}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {ttc != null ? ttc.toFixed(2) : "—"}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {fmtNum(e.tauxAmortissement ?? null)}
+                          </td>
+                          <td className="px-2 py-1">{e.kontoSAP || "—"}</td>
+                          <td className="px-2 py-1">{e.referenceOffre || "—"}</td>
+                          <td className="px-2 py-1">{e.site || "—"}</td>
+                          <td className="px-2 py-1">{e.kostenstelle || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })()}
@@ -2372,15 +2427,108 @@ function PriorStepsRecap({
 }
 
 /**
- * Étape IMMO : saisie des numéros d'immobilisation avant la Commande.
- *
- * Stockage : `amortissementNumbers` reste un champ texte sur le
- * workflow (séparé par virgules) — la table ci-dessous parse et
- * recompose cette liste à chaque édition. Aucune migration de schéma
- * n'est nécessaire.
- *
- * Saisie : on accepte un numéro à la fois OU une liste séparée par
- * virgules (« 12345 » ou « 12345,12346 ») qui crée alors deux lignes.
+ * Searchable, scrollable, height-limited combobox. Used in the N° AA
+ * step for the Site / Kostenstelle dropdowns (which can grow to
+ * hundreds of entries after an Excel import) and for the TVA /
+ * amortissement rate pickers.
+ */
+function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  emptyText,
+  formatOption,
+  testId,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: string[];
+  placeholder: string;
+  emptyText?: string;
+  formatOption?: (v: string) => string;
+  testId?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const display = (v: string) => (formatOption ? formatOption(v) : v);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+          data-testid={testId}
+        >
+          <span className={value ? "" : "text-muted-foreground"}>
+            {value ? display(value) : placeholder}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[--radix-popover-trigger-width] p-0"
+        align="start"
+      >
+        <Command
+          filter={(v, search) =>
+            v.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+          }
+        >
+          <CommandInput placeholder="Rechercher…" />
+          <CommandList className="max-h-64">
+            <CommandEmpty>{emptyText ?? "Aucun résultat."}</CommandEmpty>
+            <CommandGroup>
+              {options.map((opt) => (
+                <CommandItem
+                  key={opt}
+                  value={opt}
+                  onSelect={() => {
+                    onChange(opt === value ? null : opt);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={
+                      "mr-2 h-4 w-4 " +
+                      (value === opt ? "opacity-100" : "opacity-0")
+                    }
+                  />
+                  {display(opt)}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const EMPTY_AA: AaEntry = {
+  aaNumber: "",
+  libelle: "",
+  prixUnitaireHTVA: null,
+  tauxTva: null,
+  tauxAmortissement: null,
+  kontoSAP: "",
+  referenceOffre: "",
+  site: "",
+  kostenstelle: "",
+};
+
+function computeTtc(ht: number | null | undefined, tva: number | null | undefined): number | null {
+  if (ht == null || tva == null) return null;
+  return Math.round(ht * (1 + tva / 100) * 100) / 100;
+}
+
+/**
+ * Étape N° AA : saisie structurée des immobilisations avant la Commande.
+ * Chaque ligne représente une immobilisation distincte (libellé, prix
+ * HTVA, TVA, amortissement, Konto SAP, réf. offre, site, Kostenstelle).
+ * Le prix TTC est calculé à partir du prix HTVA et du taux de TVA.
  */
 function ImmoPanel({
   wf,
@@ -2389,134 +2537,231 @@ function ImmoPanel({
   wf: Workflow;
   onChange: () => void;
 }) {
-  const parseList = (raw: string | null | undefined): string[] =>
-    (raw ?? "")
-      .split(/[,\n;]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  const [items, setItems] = useState<string[]>(() => parseList(wf.amortissementNumbers));
-  const [draft, setDraft] = useState("");
+  const { data: settings } = useGetSettings();
+  const [items, setItems] = useState<AaEntry[]>(() => (wf.aaEntries ?? []).slice());
   const save = useSaveWorkflow(wf, onChange);
   const { setBeforeAdvance } = useMissingFields();
-  const serialise = (xs: string[]) => xs.join(",");
-  // Persist on Next Step so the auto-save flow matches the other panels.
+  // Persist on Next Step so unsaved edits are taken into account
+  // when the user clicks the global "Next step" button.
   useEffect(() => {
     setBeforeAdvance(async () => {
-      await save.mutateAsync({
-        id: wf.id,
-        data: { amortissementNumbers: serialise(items) || null },
-      });
+      await save.mutateAsync({ id: wf.id, data: { aaEntries: items } });
     });
     return () => setBeforeAdvance(null);
   }, [setBeforeAdvance, save, wf.id, items]);
   // Resync when the server-side value changes (other tab, undo, etc.)
   useEffect(() => {
-    setItems(parseList(wf.amortissementNumbers));
-  }, [wf.amortissementNumbers]);
-  const addFromDraft = () => {
-    const toAdd = parseList(draft);
-    if (toAdd.length === 0) return;
-    setItems((prev) => [...prev, ...toAdd]);
-    setDraft("");
-  };
-  const removeAt = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
-  const updateAt = (i: number, value: string) =>
-    setItems((prev) => prev.map((v, idx) => (idx === i ? value : v)));
+    setItems((wf.aaEntries ?? []).slice());
+  }, [wf.aaEntries]);
+
+  const sites = settings?.siteList ?? [];
+  const kosten = settings?.kostenstelleList ?? [];
+  const tauxTvas = (settings?.tauxTvaList ?? []).slice().sort((a, b) => a - b);
+  const tauxAmorts = (settings?.tauxAmortissementList ?? [])
+    .slice()
+    .sort((a, b) => a - b);
+
+  const addRow = () => setItems((prev) => [...prev, { ...EMPTY_AA }]);
+  const removeAt = (i: number) =>
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const patch = (i: number, key: keyof AaEntry, val: unknown) =>
+    setItems((prev) =>
+      prev.map((row, idx) =>
+        idx === i ? { ...row, [key]: val as AaEntry[typeof key] } : row,
+      ),
+    );
+
   return (
     <div className="space-y-4">
       <WinningQuoteCard wf={wf} showOtherQuotes={false} />
       <Card>
-        <CardHeader>
-          <CardTitle>Numéros d&apos;immobilisation (IMMO N°)</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Saisissez un numéro puis cliquez sur « Ajouter », ou collez
-            plusieurs numéros séparés par des virgules pour créer
-            plusieurs lignes d&apos;un coup (ex. <code>12345,12346</code>).
-          </p>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>N° AA — Immobilisations</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Saisissez une immobilisation par ligne. Les listes Site /
+              Kostenstelle / Taux sont configurées dans Paramètres → N° AA.
+            </p>
+          </div>
+          <Button
+            type="button"
+            onClick={addRow}
+            data-testid="button-aa-add"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Ajouter une ligne
+          </Button>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addFromDraft();
-                }
-              }}
-              placeholder="Ex. 12345 ou 12345,12346"
-              data-testid="input-immo-draft"
-              className="flex-1"
-            />
+        <CardContent className="space-y-4">
+          {items.length === 0 ? (
+            <p className="rounded border border-dashed py-6 text-center text-sm text-muted-foreground">
+              Aucune immobilisation enregistrée. Cliquez sur « Ajouter une
+              ligne ».
+            </p>
+          ) : (
+            items.map((row, i) => {
+              const ttc = computeTtc(
+                row.prixUnitaireHTVA ?? null,
+                row.tauxTva ?? null,
+              );
+              return (
+                <div
+                  key={i}
+                  className="space-y-3 rounded-md border p-3"
+                  data-testid={`row-aa-${i}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Ligne {i + 1}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeAt(i)}
+                      data-testid={`button-aa-remove-${i}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label>N° AA</Label>
+                      <Input
+                        value={row.aaNumber ?? ""}
+                        onChange={(e) => patch(i, "aaNumber", e.target.value)}
+                        data-testid={`input-aa-number-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-1 lg:col-span-2">
+                      <Label>Libellé</Label>
+                      <Input
+                        value={row.libelle ?? ""}
+                        onChange={(e) => patch(i, "libelle", e.target.value)}
+                        data-testid={`input-aa-libelle-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Prix unitaire HTVA (€)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={row.prixUnitaireHTVA ?? ""}
+                        onChange={(e) =>
+                          patch(
+                            i,
+                            "prixUnitaireHTVA",
+                            e.target.value === "" ? null : Number(e.target.value),
+                          )
+                        }
+                        data-testid={`input-aa-ht-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Taux TVA (%)</Label>
+                      <SearchableSelect
+                        value={row.tauxTva != null ? String(row.tauxTva) : null}
+                        onChange={(v) =>
+                          patch(i, "tauxTva", v == null ? null : Number(v))
+                        }
+                        options={tauxTvas.map((n) => String(n))}
+                        placeholder="Sélectionner…"
+                        formatOption={(v) => `${v} %`}
+                        emptyText="Aucun taux. Ajoutez-en dans Paramètres."
+                        testId={`select-aa-tva-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Prix TTC (€)</Label>
+                      <Input
+                        readOnly
+                        value={ttc != null ? ttc.toFixed(2) : ""}
+                        placeholder="—"
+                        className="bg-muted/40"
+                        data-testid={`text-aa-ttc-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Taux d&apos;amortissement (%)</Label>
+                      <SearchableSelect
+                        value={
+                          row.tauxAmortissement != null
+                            ? String(row.tauxAmortissement)
+                            : null
+                        }
+                        onChange={(v) =>
+                          patch(
+                            i,
+                            "tauxAmortissement",
+                            v == null ? null : Number(v),
+                          )
+                        }
+                        options={tauxAmorts.map((n) => String(n))}
+                        placeholder="Sélectionner…"
+                        formatOption={(v) => `${v} %`}
+                        emptyText="Aucun taux. Ajoutez-en dans Paramètres."
+                        testId={`select-aa-amort-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Konto SAP</Label>
+                      <Input
+                        value={row.kontoSAP ?? ""}
+                        onChange={(e) => patch(i, "kontoSAP", e.target.value)}
+                        data-testid={`input-aa-konto-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Référence offre</Label>
+                      <Input
+                        value={row.referenceOffre ?? ""}
+                        onChange={(e) =>
+                          patch(i, "referenceOffre", e.target.value)
+                        }
+                        data-testid={`input-aa-ref-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Site</Label>
+                      <SearchableSelect
+                        value={row.site || null}
+                        onChange={(v) => patch(i, "site", v ?? "")}
+                        options={sites}
+                        placeholder="Sélectionner…"
+                        emptyText="Aucun site. Ajoutez-en dans Paramètres."
+                        testId={`select-aa-site-${i}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Kostenstelle</Label>
+                      <SearchableSelect
+                        value={row.kostenstelle || null}
+                        onChange={(v) => patch(i, "kostenstelle", v ?? "")}
+                        options={kosten}
+                        placeholder="Sélectionner…"
+                        emptyText="Aucune Kostenstelle. Importez ou ajoutez-en dans Paramètres."
+                        testId={`select-aa-kosten-${i}`}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          <div className="flex justify-end">
             <Button
-              type="button"
-              onClick={addFromDraft}
-              disabled={!draft.trim()}
-              data-testid="button-immo-add"
+              onClick={() =>
+                save.mutate({ id: wf.id, data: { aaEntries: items } })
+              }
+              disabled={save.isPending}
+              data-testid="button-save-aa"
             >
-              <Plus className="mr-2 h-4 w-4" /> Ajouter
+              {save.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              <Save className="mr-2 h-4 w-4" /> Enregistrer
             </Button>
           </div>
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">#</TableHead>
-                <TableHead>N° d&apos;immobilisation</TableHead>
-                <TableHead className="w-16 text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="text-center text-sm text-muted-foreground"
-                  >
-                    Aucun numéro d&apos;immobilisation enregistré.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((value, i) => (
-                  <TableRow key={i} data-testid={`row-immo-${i}`}>
-                    <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={value}
-                        onChange={(e) => updateAt(i, e.target.value)}
-                        data-testid={`input-immo-${i}`}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeAt(i)}
-                        data-testid={`button-immo-remove-${i}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-
-          <Button
-            onClick={() =>
-              save.mutate({
-                id: wf.id,
-                data: { amortissementNumbers: serialise(items) || null },
-              })
-            }
-            disabled={save.isPending}
-            data-testid="button-save-immo"
-          >
-            <Save className="mr-2 h-4 w-4" /> Enregistrer
-          </Button>
         </CardContent>
       </Card>
     </div>

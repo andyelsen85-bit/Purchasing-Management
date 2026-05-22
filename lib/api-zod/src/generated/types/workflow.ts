@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { AaEntry } from "./aaEntry";
 import type { GtInvestDecision } from "./gtInvestDecision";
 import type { InvestmentForm } from "./investmentForm";
 import type { Priority } from "./priority";
@@ -71,6 +72,7 @@ for "Livre I" / "Livre II" publication.
   orderDate?: Date | null;
   /** @nullable */
   amortissementNumbers?: string | null;
+  aaEntries?: AaEntry[];
   /** @nullable */
   deliveredOn?: Date | null;
   /** @nullable */

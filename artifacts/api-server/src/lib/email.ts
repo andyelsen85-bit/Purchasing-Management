@@ -102,7 +102,7 @@ export const STEP_LABEL_FR: Record<string, string> = {
   VALIDATING_QUOTE_FINANCIAL: "Validation devis",
   VALIDATING_BY_FINANCIAL: "Validation financière",
   GT_INVEST: "GT Invest",
-  IMMO: "IMMO N°",
+  IMMO: "N° AA",
   ORDERING: "Commande",
   DELIVERY: "Livraison",
   INVOICE: "Facture",

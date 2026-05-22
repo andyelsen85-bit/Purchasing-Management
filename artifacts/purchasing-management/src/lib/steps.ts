@@ -44,7 +44,7 @@ export const STEP_LABEL: Record<Step, string> = {
   VALIDATING_BY_FINANCIAL: "Validation Financière",
   VALIDATING_SERVICES: "Validations Services",
   GT_INVEST: "GT Invest",
-  IMMO: "IMMO N°",
+  IMMO: "N° AA",
   ORDERING: "Commande",
   DELIVERY: "Livraison",
   INVOICE: "Facture",

@@ -5,6 +5,7 @@
  * Purchasing Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { AaEntry } from "./aaEntry";
 import type { InvestmentForm } from "./investmentForm";
 import type { Priority } from "./priority";
 import type { QuoteEntry } from "./quoteEntry";
@@ -45,6 +46,7 @@ export interface UpdateWorkflowInput {
   orderDate?: Date | null;
   /** @nullable */
   amortissementNumbers?: string | null;
+  aaEntries?: AaEntry[];
   /** @nullable */
   deliveredOn?: Date | null;
   /** @nullable */

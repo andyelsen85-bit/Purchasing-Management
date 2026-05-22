@@ -31,6 +31,10 @@ export interface AppSettings {
   budgetPositions: string[];
   livreIExceptions?: string[];
   livreIIExceptions?: string[];
+  kostenstelleList: string[];
+  siteList: string[];
+  tauxAmortissementList: number[];
+  tauxTvaList: number[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
   /** Minutes between automated notification batch sends */
