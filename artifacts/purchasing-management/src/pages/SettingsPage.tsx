@@ -1018,12 +1018,27 @@ function AppSettingsPanel() {
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label>URL publique de l'application</Label>
-            <Input
-              value={appBaseUrl}
-              onChange={(e) => setAppBaseUrl(e.target.value)}
-              placeholder="https://achats.chdn.lu"
-              data-testid="input-app-base-url"
-            />
+            <div className="flex gap-2">
+              <Input
+                value={appBaseUrl}
+                onChange={(e) => setAppBaseUrl(e.target.value)}
+                placeholder="https://achats.chdn.lu"
+                data-testid="input-app-base-url"
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                onClick={() =>
+                  save.mutate({
+                    data: { appBaseUrl: appBaseUrl.trim() || null },
+                  })
+                }
+                disabled={save.isPending}
+                data-testid="button-save-app-base-url"
+              >
+                Enregistrer
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               Adresse à laquelle les utilisateurs accèdent à l'application
               depuis leur navigateur. Si renseignée, les e-mails de
