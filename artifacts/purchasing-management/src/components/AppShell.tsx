@@ -48,6 +48,10 @@ import type { SessionUser } from "@/components/AuthGate";
 import { STEP_LABEL, PRIORITY_TONE } from "@/lib/steps";
 import { useDepartmentFilter } from "@/lib/department-filter";
 
+// Version affichée dans la barre latérale. À incrémenter de 0.0.1
+// pour chaque nouvel ajout fonctionnel livré.
+const APP_VERSION = "1.0.0";
+
 interface NavItem {
   to: string;
   label: string;
@@ -362,6 +366,12 @@ export function AppShell({ user, children }: Props) {
                 >
                   <LogOut className="h-4 w-4" />
                 </Button>
+              </div>
+              <div
+                className="mt-3 text-center text-[10px] uppercase tracking-wider text-sidebar-foreground/50"
+                data-testid="text-app-version"
+              >
+                Version {APP_VERSION}
               </div>
             </div>
           </div>
