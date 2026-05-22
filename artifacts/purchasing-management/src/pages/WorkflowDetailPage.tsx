@@ -4276,7 +4276,7 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
               )}
               {editTier === "TIER_4" && (
                 <p className="text-xs text-amber-600 font-medium">
-                  Marché européen — Le service juridique sera notifié.
+                  Le service juridique sera notifié.
                 </p>
               )}
             </div>

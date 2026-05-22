@@ -1406,7 +1406,7 @@ export function NewWorkflowPage() {
                   )}
                   {valueTier === "TIER_4" && (
                     <p className="text-xs text-amber-600 font-medium">
-                      Marché européen — Le service juridique sera notifié.
+                      Le service juridique sera notifié.
                     </p>
                   )}
                 </div>
