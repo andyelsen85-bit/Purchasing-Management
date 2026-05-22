@@ -45,6 +45,14 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -677,6 +685,8 @@ function StepPanel({
       return <FinancialApprovePanel wf={wf} onChange={onChange} />;
     case "GT_INVEST":
       return <GtInvestPanel wf={wf} onChange={onChange} />;
+    case "IMMO":
+      return <ImmoPanel wf={wf} onChange={onChange} />;
     case "ORDERING":
       return <OrderingPanel wf={wf} onChange={onChange} />;
     case "DELIVERY":
@@ -2334,6 +2344,158 @@ function PriorStepsRecap({
   );
 }
 
+/**
+ * Étape IMMO : saisie des numéros d'immobilisation avant la Commande.
+ *
+ * Stockage : `amortissementNumbers` reste un champ texte sur le
+ * workflow (séparé par virgules) — la table ci-dessous parse et
+ * recompose cette liste à chaque édition. Aucune migration de schéma
+ * n'est nécessaire.
+ *
+ * Saisie : on accepte un numéro à la fois OU une liste séparée par
+ * virgules (« 12345 » ou « 12345,12346 ») qui crée alors deux lignes.
+ */
+function ImmoPanel({
+  wf,
+  onChange,
+}: {
+  wf: Workflow;
+  onChange: () => void;
+}) {
+  const parseList = (raw: string | null | undefined): string[] =>
+    (raw ?? "")
+      .split(/[,\n;]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const [items, setItems] = useState<string[]>(() => parseList(wf.amortissementNumbers));
+  const [draft, setDraft] = useState("");
+  const save = useSaveWorkflow(wf, onChange);
+  const { setBeforeAdvance } = useMissingFields();
+  const serialise = (xs: string[]) => xs.join(",");
+  // Persist on Next Step so the auto-save flow matches the other panels.
+  useEffect(() => {
+    setBeforeAdvance(async () => {
+      await save.mutateAsync({
+        id: wf.id,
+        data: { amortissementNumbers: serialise(items) || null },
+      });
+    });
+    return () => setBeforeAdvance(null);
+  }, [setBeforeAdvance, save, wf.id, items]);
+  // Resync when the server-side value changes (other tab, undo, etc.)
+  useEffect(() => {
+    setItems(parseList(wf.amortissementNumbers));
+  }, [wf.amortissementNumbers]);
+  const addFromDraft = () => {
+    const toAdd = parseList(draft);
+    if (toAdd.length === 0) return;
+    setItems((prev) => [...prev, ...toAdd]);
+    setDraft("");
+  };
+  const removeAt = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const updateAt = (i: number, value: string) =>
+    setItems((prev) => prev.map((v, idx) => (idx === i ? value : v)));
+  return (
+    <div className="space-y-4">
+      <WinningQuoteCard wf={wf} showOtherQuotes={false} />
+      <Card>
+        <CardHeader>
+          <CardTitle>Numéros d&apos;immobilisation (IMMO N°)</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Saisissez un numéro puis cliquez sur « Ajouter », ou collez
+            plusieurs numéros séparés par des virgules pour créer
+            plusieurs lignes d&apos;un coup (ex. <code>12345,12346</code>).
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-2">
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addFromDraft();
+                }
+              }}
+              placeholder="Ex. 12345 ou 12345,12346"
+              data-testid="input-immo-draft"
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              onClick={addFromDraft}
+              disabled={!draft.trim()}
+              data-testid="button-immo-add"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Ajouter
+            </Button>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12">#</TableHead>
+                <TableHead>N° d&apos;immobilisation</TableHead>
+                <TableHead className="w-16 text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={3}
+                    className="text-center text-sm text-muted-foreground"
+                  >
+                    Aucun numéro d&apos;immobilisation enregistré.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                items.map((value, i) => (
+                  <TableRow key={i} data-testid={`row-immo-${i}`}>
+                    <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                    <TableCell>
+                      <Input
+                        value={value}
+                        onChange={(e) => updateAt(i, e.target.value)}
+                        data-testid={`input-immo-${i}`}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeAt(i)}
+                        data-testid={`button-immo-remove-${i}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+
+          <Button
+            onClick={() =>
+              save.mutate({
+                id: wf.id,
+                data: { amortissementNumbers: serialise(items) || null },
+              })
+            }
+            disabled={save.isPending}
+            data-testid="button-save-immo"
+          >
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function OrderingPanel({
   wf,
   onChange,
@@ -2348,7 +2510,6 @@ function OrderingPanel({
     s ? String(s).slice(0, 10) : "";
   const [orderNumber, setOrderNumber] = useState(wf.orderNumber ?? "");
   const [orderDate, setOrderDate] = useState(toDateInput(wf.orderDate));
-  const [amortissementNumbers, setAmortissementNumbers] = useState(wf.amortissementNumbers ?? "");
   const save = useSaveWorkflow(wf, onChange);
   const { missing, clearKey, setBeforeAdvance } = useMissingFields();
   // Auto-save the form when the user clicks the global Next Step
@@ -2358,18 +2519,17 @@ function OrderingPanel({
     setBeforeAdvance(async () => {
       await save.mutateAsync({
         id: wf.id,
-        data: { orderNumber, orderDate: orderDate || null, amortissementNumbers: amortissementNumbers || null },
+        data: { orderNumber, orderDate: orderDate || null },
       });
     });
     return () => setBeforeAdvance(null);
-  }, [setBeforeAdvance, save, wf.id, orderNumber, orderDate, amortissementNumbers]);
+  }, [setBeforeAdvance, save, wf.id, orderNumber, orderDate]);
   // Keep local form state in sync with the latest server snapshot so
   // a Save → refetch (or another tab editing) is reflected here.
   useEffect(() => {
     setOrderNumber(wf.orderNumber ?? "");
     setOrderDate(toDateInput(wf.orderDate));
-    setAmortissementNumbers(wf.amortissementNumbers ?? "");
-  }, [wf.orderNumber, wf.orderDate, wf.amortissementNumbers]);
+  }, [wf.orderNumber, wf.orderDate]);
   // Defensive: clear the "missing" badge as soon as the order number
   // has a value locally — covers the case where the user filled the
   // input after a failed Advance attempt.
@@ -2412,20 +2572,11 @@ function OrderingPanel({
             />
           </div>
         </div>
-        <div className="space-y-1">
-          <Label>N° d&apos;amortissement</Label>
-          <Input
-            value={amortissementNumbers}
-            onChange={(e) => setAmortissementNumbers(e.target.value)}
-            placeholder="Ex. AMORT-2024-001, AMORT-2024-002"
-            data-testid="input-amortissement-numbers"
-          />
-        </div>
         <Button
           onClick={() =>
             save.mutate({
               id: wf.id,
-              data: { orderNumber, orderDate: orderDate || null, amortissementNumbers: amortissementNumbers || null },
+              data: { orderNumber, orderDate: orderDate || null },
             })
           }
           disabled={save.isPending}

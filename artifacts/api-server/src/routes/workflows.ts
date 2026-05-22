@@ -889,7 +889,7 @@ router.post("/workflows/:id/undo", requireAuth, async (req, res): Promise<void> 
  * Record the GT Invest committee's decision on a workflow currently
  * sitting at GT_INVEST and apply the matching transition in one shot:
  *
- *   OK              → advance to ORDERING
+ *   OK              → advance to IMMO
  *   REFUSED         → close the workflow (REJECTED)
  *   POSTPONED       → stay at GT_INVEST, re-assign meeting date
  *   ACCORD_PRINCIPE → stay at GT_INVEST, re-assign meeting date
@@ -938,7 +938,7 @@ router.post(
     }
 
     let nextStepValue: WorkflowStep = "GT_INVEST";
-    if (decision === "OK") nextStepValue = "ORDERING";
+    if (decision === "OK") nextStepValue = "IMMO";
     else if (decision === "REFUSED") nextStepValue = "REJECTED";
 
     const update: Record<string, unknown> = {

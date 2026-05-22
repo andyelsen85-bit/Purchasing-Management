@@ -13,6 +13,7 @@ export const WORKFLOW_STEPS = [
   "VALIDATING_BY_FINANCIAL",
   "VALIDATING_SERVICES",
   "GT_INVEST",
+  "IMMO",
   "ORDERING",
   "DELIVERY",
   "INVOICE",
@@ -31,6 +32,7 @@ export const ACTIVE_WORKFLOW_STEPS = [
   "VALIDATING_BY_FINANCIAL",
   "VALIDATING_SERVICES",
   "GT_INVEST",
+  "IMMO",
   "ORDERING",
   "DELIVERY",
   "INVOICE",
@@ -96,6 +98,15 @@ export function canActOnStep(
       return hasRole(user, "FINANCIAL_ALL");
     case "GT_INVEST":
       return hasRole(user, "GT_INVEST", "FINANCIAL_ALL");
+    case "IMMO":
+      // Numéros d'immobilisation : équipe financière uniquement
+      // (Admin couvert par le isAdmin shortcut au début).
+      return hasRole(
+        user,
+        "FINANCIAL_ALL",
+        "FINANCIAL_INVOICE",
+        "FINANCIAL_PAYMENT",
+      );
     case "ORDERING":
       // Step 5 — only Financial-All places the order. Department users
       // can still *view* the workflow (canSeeWorkflow) but cannot act.
@@ -215,8 +226,10 @@ export function nextStep(
     case "VALIDATING_SERVICES":
       // Both K_ORDER and GT_INVEST_ONLINE land here next; the
       // committee branch never visits this step.
-      return "ORDERING";
+      return "IMMO";
     case "GT_INVEST":
+      return "IMMO";
+    case "IMMO":
       return "ORDERING";
     case "ORDERING":
       return "DELIVERY";
