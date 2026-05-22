@@ -1,0 +1,43 @@
+Some changes to implement:
+
+
+Question6: Quelle est la valeur de votre investissement?
+Avec explication: "Prix total de l’ivestissement (HTVA) - prendre en considération la durée TOTALE de l'engagement. Veuillez indiquer le montant total estimé de votre investissement (équipement + maintenance + consommables + formation) "
+ 
+Possibilités de sélections:
+- 1: "Inférieur à 78 999€ HTVA"
+- 2: "Compris entre 79 000€ et 144.986,79 HTVA"
+- 3: "Compris entre 144.986,80 € HTVA  et 215.999 € HTVA"
+- 4: "Supérieur à 216.000 HTVA"
+ 
+Si 6 = 1 -> pas de commentaire une offre suffira, pas de juridique à notifier
+Si 6 = 2 -> question supplémentaire: 6.1 "Je dispose de trois offres, ou Je sélectionne une procédure d'exception du Livre I" avec les mêmes textes à sélectionner.
+si select: "3 offres", on procède mais le système demande par après la saisie de ces trois offres pour pouvoir poursuivre au step Offres de prix. (logique existante)
+si select: "procédure d'Exception Livre I", question supplémentaire 6.1.1 Procédure d'exception - livre I avec explication "Veuillez sélectionner si vous pensez vous trouver dans une exception et justifiez" (Liste sera fourni) + hint "Le service Juridique sera notifié" + Question 6.1.2 Justification Procédure d'exception
+Si 6 = 3 -> question supplémentaire 6.2.1 Procédure d'exception - livre II avec explication "Veuillez sélectionner si vous pensez vous trouver dans une exception et justifiez" (Liste sera fourni) + hint "Le service Juridique sera notifié" + Question 6.2.2 Justification Procédure d'exception
+Si 6 = 4 -> Show hint: "Le service Juridique sera notifié"
+
+Liste de Procédures d'Exceptions (Please let it be configurable in Settings Page, to be able to edit them afterwards, delete and add.)
+
+Livre I:
+- Offres irrégulières/inacceptables ou absence d’offres (avec urgence ou après seconde procédure)
+- Recherche, expérimentation, étude ou développement
+- Impossibilité de fixer les prix à l’avance (nature/aléas du marché)
+- Absence de concurrence (raisons techniques, artistiques, scientifiques ou droits exclusifs)
+- Urgence impérieuse imprévisible non imputable au pouvoir adjudicateur
+- Répétition de travaux ou services similaires (marché initial + max 3 ans)
+- Livraisons complémentaires du fournisseur initial (compatibilité technique)
+- Fournitures cotées en bourse des matières premières
+- Prix soustraits à la concurrence ou services à tarif officiel
+- Je ne sais pas
+
+Livre II:
+- Aucune offre / aucune offre appropriée / aucune demande appropriée après procédure ouverte ou restreinte
+- Œuvre d’art ou performance artistique unique
+- Absence de concurrence pour raisons techniques
+- Protection de droits d’exclusivité (ex : propriété intellectuelle)
+- Urgence impérieuse imprévisible non imputable au CHdN
+- Fournitures : recherche, expérimentation ou développement
+- Fournitures : livraisons complémentaires du fournisseur initial (compatibilité technique – max ± 3 ans)
+- Fournitures : cotées en bourse des matières premières
+- Fournitures : achats à conditions particulièrement avantageuses (faillite, liquidation…)
