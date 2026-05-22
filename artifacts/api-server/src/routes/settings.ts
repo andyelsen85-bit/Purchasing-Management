@@ -229,7 +229,7 @@ const NOTIFICATION_RULE_SEED: ReadonlyArray<{
   key: string;
   label: string;
 }> = [
-  { key: "q_legal", label: "Q4.1.1 / 4.1.3 / 7.3 — Cadre légal · Service juridique" },
+  { key: "q_legal", label: "Q4.1.1 / 4.1.3 / 7.1 / 7.3 — Cadre légal & Conformité · Service juridique" },
   { key: "q_6_1", label: "Q6.1 — Aménagements · Service Technique" },
   { key: "q_6_3_1_it", label: "Q6.2 / 6.3.1 — Raccordement IT & Accès systèmes · Plateau des Systèmes d'Informations" },
   { key: "q_6_3_1_security", label: "Q6.3.1 — Accès systèmes · Sécurité des Systèmes d'Informations" },

@@ -118,7 +118,7 @@ export async function runStartupMigrations(): Promise<void> {
     const legacyRows = legacyRowsRes.rows ?? [];
     if (legacyRows.length > 0) {
       const mergedLabel =
-        "Q4.1.1 / 4.1.3 / 7.1 / 7.3 — Cadre légal · Service juridique";
+        "Q4.1.1 / 4.1.3 / 7.1 / 7.3 — Cadre légal & Conformité · Service juridique";
       const mergedEmails = new Set<string>();
       let mergedAdGroup: string | null = null;
       for (const r of legacyRows) {
