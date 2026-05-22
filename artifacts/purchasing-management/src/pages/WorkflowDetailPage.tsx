@@ -1261,8 +1261,18 @@ function QuotationPanel({
             <div className="col-span-4 space-y-1">
               <Label className="text-xs">Fournisseur</Label>
               <Select
-                value={q.companyId ? String(q.companyId) : ""}
+                value={
+                  q.companyId
+                    ? String(q.companyId)
+                    : q.companyName != null
+                      ? "NE_FIGURE_PAS"
+                      : ""
+                }
                 onValueChange={(v) => {
+                  if (v === "NE_FIGURE_PAS") {
+                    update(idx, { companyId: null, companyName: "" });
+                    return;
+                  }
                   const c = companies?.find((cc) => cc.id === Number(v));
                   update(idx, {
                     companyId: Number(v),
@@ -1273,14 +1283,31 @@ function QuotationPanel({
                 <SelectTrigger data-testid={`select-supplier-${idx}`}>
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
-                <SelectContent>
-                  {(companies ?? []).map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
+                <SelectContent className="max-h-64">
+                  <SelectItem value="NE_FIGURE_PAS">
+                    — Ne figure pas dans la liste
+                  </SelectItem>
+                  {(companies ?? [])
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
+              {q.companyId == null && q.companyName != null && (
+                <Input
+                  className="mt-1"
+                  value={q.companyName ?? ""}
+                  onChange={(e) =>
+                    update(idx, { companyName: e.target.value })
+                  }
+                  placeholder="Saisir le nom du fournisseur..."
+                  data-testid={`input-supplier-freetext-${idx}`}
+                />
+              )}
             </div>
             <div className="col-span-5 space-y-1">
               <Label className="text-xs">Montant (€)</Label>
