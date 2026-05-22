@@ -221,8 +221,8 @@ const NOTIFICATION_RULE_SEED: ReadonlyArray<{
 }> = [
   { key: "q_legal", label: "Q4.1.1 / 4.1.3 / 7.3 — Cadre légal · Service juridique" },
   { key: "q_6_1", label: "Q6.1 — Aménagements · Service Technique" },
-  { key: "q_6_3_1_it", label: "Q6.2 / 6.3.1 — Raccordement IT & Accès systèmes · Service Informatique" },
-  { key: "q_6_3_1_security", label: "Q6.3.1 — Accès systèmes · Sécurité Informatique" },
+  { key: "q_6_3_1_it", label: "Q6.2 / 6.3.1 — Raccordement IT & Accès systèmes · Plateau des Systèmes d'Informations" },
+  { key: "q_6_3_1_security", label: "Q6.3.1 — Accès systèmes · Sécurité des Systèmes d'Informations" },
   { key: "q_8_3", label: "Q8.3 — Gaz/produits chimiques · Service Protection et Prévention" },
   { key: "q_9_4", label: "Q9.4 — Hygiène/Nettoyage · Service SPCI" },
   { key: "q_9_5", label: "Q9.5 — Stérilisation · Service Stérilisation" },

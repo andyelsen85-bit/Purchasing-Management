@@ -1585,7 +1585,7 @@ export function NewWorkflowPage() {
                     <YesNoSelect value={itConnection} onChange={setItConnection} />
                     {itConnection === "true" && (
                       <p className="text-xs text-amber-600 font-medium">
-                        Le Service Informatique sera notifié.
+                        Le Plateau des Systèmes d'Informations sera notifié.
                       </p>
                     )}
                   </div>
@@ -1606,7 +1606,7 @@ export function NewWorkflowPage() {
                     />
                     {accessTypes.length > 0 && (
                       <p className="text-xs text-amber-600 font-medium">
-                        Le Service Informatique et Sécurité informatique seront notifiés.
+                        Le Plateau des Systèmes d'Informations et la Sécurité des Systèmes d'Informations seront notifiés.
                       </p>
                     )}
                   </div>

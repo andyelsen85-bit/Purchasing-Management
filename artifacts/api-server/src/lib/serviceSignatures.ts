@@ -59,13 +59,14 @@ const RULE_DEFS: Array<{
     triggered: (f) => f.architecturalWorks === true,
   },
   {
-    // Merged rule — Service Informatique is notified when either
-    // Q6.2 (Connexion informatique requise) is answered "Oui", or
-    // Q6.3.1 (Type d'accès) has at least one access type selected
-    // (which only renders when Q6.3 systemInterop is "Oui"). One
-    // attestation covers both questions for the same service.
+    // Merged rule — the Plateau des Systèmes d'Informations is
+    // notified when either Q6.2 (Connexion informatique requise) is
+    // answered "Oui", or Q6.3.1 (Type d'accès) has at least one
+    // access type selected (which only renders when Q6.3
+    // systemInterop is "Oui"). One attestation covers both questions
+    // for the same service.
     key: "q_6_3_1_it",
-    label: "Service Informatique - Raccordement IT & Accès systèmes (6.2 / 6.3.1)",
+    label: "Plateau des Systemes d'Informations - Raccordement IT & Acces systemes (6.2 / 6.3.1)",
     triggered: (f) => {
       if (f.itConnection === true) return true;
       // Q6.3.1 only renders when Q6.3 systemInterop is "Oui", so guard the
@@ -85,7 +86,7 @@ const RULE_DEFS: Array<{
   },
   {
     key: "q_6_3_1_security",
-    label: "Service Securite - Interoperabilite (6.3.1)",
+    label: "Securite des Systemes d'Informations - Interoperabilite (6.3.1)",
     triggered: (f) => f.systemInterop === true,
   },
   {
