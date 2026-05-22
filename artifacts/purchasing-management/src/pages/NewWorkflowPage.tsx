@@ -279,7 +279,13 @@ export function NewWorkflowPage() {
   const [decommissionedNote, setDecommissionedNote] = useState("");
 
   // ── Section 4 – Aspects financiers ────────────────────────────
-  const [estimatedAmount5y, setEstimatedAmount5y] = useState("");
+  // Q4.1 — directly select the value tier (fixed HTVA brackets per the
+  // legal text). The legacy `estimatedAmount5y` numeric field is no
+  // longer collected; it is still stored as null on the payload to
+  // keep backward compat with older readers.
+  const [valueTierSel, setValueTierSel] = useState<
+    "" | "TIER_1" | "TIER_2" | "TIER_3" | "TIER_4"
+  >("");
   // Q4.1.1 — tier-2 choice: "3 offres" vs "Procédure d'exception Livre I"
   const [tier2Choice, setTier2Choice] = useState<
     "" | "THREE_QUOTES" | "LIVRE_I_EXCEPTION"
@@ -294,22 +300,8 @@ export function NewWorkflowPage() {
   const [budgetPositionKnown, setBudgetPositionKnown] = useState("");
   const [budgetPosition, setBudgetPosition] = useState("");
 
-  // Four-tier model — fixed breakpoints (HTVA, EUR) per spec:
-  //  TIER_1 : <  79 000
-  //  TIER_2 : ≥  79 000  &  ≤ 144 986,79
-  //  TIER_3 : ≥ 144 986,80 & ≤ 215 999
-  //  TIER_4 : ≥ 216 000
-  const amount5yNum = estimatedAmount5y ? Number(estimatedAmount5y) : null;
   const valueTier: "TIER_1" | "TIER_2" | "TIER_3" | "TIER_4" | null =
-    amount5yNum == null || isNaN(amount5yNum)
-      ? null
-      : amount5yNum >= 216000
-        ? "TIER_4"
-        : amount5yNum >= 144986.8
-          ? "TIER_3"
-          : amount5yNum >= 79000
-            ? "TIER_2"
-            : "TIER_1";
+    valueTierSel || null;
   const livreIList = settings?.livreIExceptions ?? [];
   const livreIIList = settings?.livreIIExceptions ?? [];
 
@@ -422,7 +414,27 @@ export function NewWorkflowPage() {
     if (inv.replacementReason) setReplacementReason(inv.replacementReason);
     setDecommissioned(b2s(inv.decommissioned));
     if (inv.decommissionedNote) setDecommissionedNote(inv.decommissionedNote);
-    if (inv.estimatedAmount5y != null) setEstimatedAmount5y(String(inv.estimatedAmount5y));
+    // Restore the tier — either from the explicit field or by falling
+    // back to recomputing it from a legacy `estimatedAmount5y`.
+    if (
+      inv.valueTier === "TIER_1" ||
+      inv.valueTier === "TIER_2" ||
+      inv.valueTier === "TIER_3" ||
+      inv.valueTier === "TIER_4"
+    ) {
+      setValueTierSel(inv.valueTier);
+    } else if (typeof inv.estimatedAmount5y === "number") {
+      const a = inv.estimatedAmount5y;
+      setValueTierSel(
+        a >= 216000
+          ? "TIER_4"
+          : a >= 144986.8
+            ? "TIER_3"
+            : a >= 79000
+              ? "TIER_2"
+              : "TIER_1",
+      );
+    }
     if (inv.tier2Choice === "THREE_QUOTES" || inv.tier2Choice === "LIVRE_I_EXCEPTION")
       setTier2Choice(inv.tier2Choice);
     if (inv.livreIExceptionItem) setLivreIExceptionItem(inv.livreIExceptionItem);
@@ -647,7 +659,7 @@ export function NewWorkflowPage() {
       replacementReason: replacementReason || null,
       decommissioned: boolVal(decommissioned),
       decommissionedNote: decommissionedNote || null,
-      estimatedAmount5y: estimatedAmount5y ? Number(estimatedAmount5y) : null,
+      estimatedAmount5y: null,
       valueTier,
       tier2Choice: valueTier === "TIER_2" ? (tier2Choice || null) : null,
       livreIExceptionItem:
@@ -769,7 +781,7 @@ export function NewWorkflowPage() {
         if (decommissioned === "false" && !decommissionedNote.trim())
           m.push("3.1.4 Précision sur le devenir de l'équipement");
       }
-      if (!estimatedAmount5y) m.push("4.1 Coût estimé sur 5 ans");
+      if (!valueTier) m.push("4.1 Valeur de l'investissement");
       if (valueTier === "TIER_2" && !tier2Choice)
         m.push("4.1.1 Choix entre 3 offres ou procédure d'exception Livre I");
       if (valueTier === "TIER_2" && tier2Choice === "LIVRE_I_EXCEPTION") {
@@ -1350,44 +1362,51 @@ export function NewWorkflowPage() {
               <SectionTitle number="4" label="Aspects financiers" />
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="amount5y">
-                    4.1 Coût total estimé sur 5 années (HTVA)<Req />
+                  <Label htmlFor="value-tier">
+                    4.1 Valeur de l&apos;investissement (HTVA)<Req />
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Prix total de l&apos;investissement (HTVA) — prendre en considération la durée TOTALE de l&apos;engagement (équipement + maintenance + consommables + formation).
+                    Prendre en considération la durée TOTALE de l&apos;engagement
+                    (équipement + maintenance + consommables + formation).
                   </p>
-                  <Input
-                    id="amount5y"
-                    type="number"
-                    step="0.01"
-                    value={estimatedAmount5y}
-                    onChange={(e) => {
-                      setEstimatedAmount5y(e.target.value);
+                  <Select
+                    value={valueTierSel}
+                    onValueChange={(v) => {
+                      setValueTierSel(v as typeof valueTierSel);
                       setTier2Choice("");
                       setLivreIExceptionItem("");
                       setLivreIIExceptionItem("");
                       setExceptionJustification("");
                     }}
-                    placeholder="Montant total HTVA"
-                  />
+                  >
+                    <SelectTrigger id="value-tier">
+                      <SelectValue placeholder="Sélectionner la tranche..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TIER_1">Inférieur à 78 999 € HTVA</SelectItem>
+                      <SelectItem value="TIER_2">Compris entre 79 000 € et 144 986,79 € HTVA</SelectItem>
+                      <SelectItem value="TIER_3">Compris entre 144 986,80 € et 215 999 € HTVA</SelectItem>
+                      <SelectItem value="TIER_4">Supérieur à 216 000 € HTVA</SelectItem>
+                    </SelectContent>
+                  </Select>
                   {valueTier === "TIER_1" && (
                     <p className="text-xs text-muted-foreground">
-                      Inférieur à 79 000 € HTVA — une seule offre suffira.
+                      Une seule offre suffira.
                     </p>
                   )}
                   {valueTier === "TIER_2" && (
                     <p className="text-xs text-amber-600">
-                      Entre 79 000 € et 144 986,79 € HTVA — choisir entre 3 offres ou une procédure d&apos;exception Livre I.
+                      Choisir entre 3 offres ou une procédure d&apos;exception Livre I.
                     </p>
                   )}
                   {valueTier === "TIER_3" && (
                     <p className="text-xs text-amber-600">
-                      Entre 144 986,80 € et 215 999 € HTVA — procédure d&apos;exception Livre II requise.
+                      Procédure d&apos;exception Livre II requise.
                     </p>
                   )}
                   {valueTier === "TIER_4" && (
                     <p className="text-xs text-amber-600 font-medium">
-                      Supérieur à 216 000 € HTVA — Le service juridique sera notifié.
+                      Marché européen — Le service juridique sera notifié.
                     </p>
                   )}
                 </div>

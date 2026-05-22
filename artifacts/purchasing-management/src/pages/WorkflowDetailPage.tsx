@@ -4040,11 +4040,14 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
     if (amount >= 79000) return "TIER_2";
     return "TIER_1";
   }
-  const ifTier = computeValueTier(f?.estimatedAmount5y) ?? (f?.valueTier as ReturnType<typeof computeValueTier>) ?? null;
-  const editTier = useMemo(
-    () => computeValueTier(draft.estimatedAmount5y),
-    [draft.estimatedAmount5y],
-  );
+  // Prefer the explicit field (4-tier UI); fall back to the legacy
+  // amount when reading old workflows that pre-date the redesign.
+  const ifTier =
+    (f?.valueTier as ReturnType<typeof computeValueTier>) ??
+    computeValueTier(f?.estimatedAmount5y);
+  const editTier =
+    (draft.valueTier as ReturnType<typeof computeValueTier>) ??
+    computeValueTier(draft.estimatedAmount5y);
 
   const budgetPositionsList = (ifSettings?.budgetPositions ?? [])
     .slice()
@@ -4238,45 +4241,54 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
           <SL label="4 · Aspects financiers" />
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>4.1 Coût total estimé sur 5 années (HTVA)</Label>
+              <Label>4.1 Valeur de l'investissement (HTVA)</Label>
               <p className="text-xs text-muted-foreground">
-                Inclure : achat, maintenance, consommables, formation, abonnements.
+                Prendre en considération la durée TOTALE de l'engagement
+                (équipement + maintenance + consommables + formation).
               </p>
-              <Input
-                type="number"
-                step="0.01"
-                value={draft.estimatedAmount5y ?? ""}
-                onChange={(e) => {
-                  const n = parseFloat(e.target.value);
-                  const newAmount = isNaN(n) ? null : n;
-                  patch("estimatedAmount5y", newAmount);
-                  patch("valueTier", computeValueTier(newAmount));
+              <Select
+                value={(draft.valueTier as string) ?? ""}
+                onValueChange={(v) => {
+                  patch("valueTier", v || null);
+                  patch("estimatedAmount5y", null);
                   patch("tier2Choice", null);
                   patch("livreIExceptionItem", null);
                   patch("livreIIExceptionItem", null);
-                  patch("exceptionProcedure", null);
+                  patch(
+                    "exceptionProcedure",
+                    v === "TIER_3" ? "LIVRE_II" : "NONE",
+                  );
                   patch("exceptionJustification", null);
                 }}
-                placeholder="Montant total HTVA"
-              />
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner la tranche..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TIER_1">Inférieur à 78 999 € HTVA</SelectItem>
+                  <SelectItem value="TIER_2">Compris entre 79 000 € et 144 986,79 € HTVA</SelectItem>
+                  <SelectItem value="TIER_3">Compris entre 144 986,80 € et 215 999 € HTVA</SelectItem>
+                  <SelectItem value="TIER_4">Supérieur à 216 000 € HTVA</SelectItem>
+                </SelectContent>
+              </Select>
               {editTier === "TIER_1" && (
                 <p className="text-xs text-muted-foreground">
-                  Inférieur à 79 000 € HTVA — une seule offre suffira.
+                  Une seule offre suffira.
                 </p>
               )}
               {editTier === "TIER_2" && (
                 <p className="text-xs text-amber-600">
-                  Entre 79 000 € et 144 986,79 € HTVA — choisir entre 3 offres ou une procédure d'exception Livre I.
+                  Choisir entre 3 offres ou une procédure d'exception Livre I.
                 </p>
               )}
               {editTier === "TIER_3" && (
                 <p className="text-xs text-amber-600">
-                  Entre 144 986,80 € et 215 999 € HTVA — procédure d'exception Livre II requise.
+                  Procédure d'exception Livre II requise.
                 </p>
               )}
               {editTier === "TIER_4" && (
                 <p className="text-xs text-amber-600 font-medium">
-                  Supérieur à 216 000 € HTVA — Le service juridique sera notifié.
+                  Marché européen — Le service juridique sera notifié.
                 </p>
               )}
             </div>
@@ -4714,8 +4726,20 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
 
         <IFSection title="4 · Aspects financiers">
           <IFRow
-            label="4.1 Coût estimé 5 ans (HTVA)"
-            value={f!.estimatedAmount5y != null ? `${f!.estimatedAmount5y.toLocaleString("fr-BE")} €` : null}
+            label="4.1 Valeur de l'investissement (HTVA)"
+            value={
+              ifTier === "TIER_1"
+                ? "Inférieur à 78 999 € HTVA"
+                : ifTier === "TIER_2"
+                  ? "Compris entre 79 000 € et 144 986,79 € HTVA"
+                  : ifTier === "TIER_3"
+                    ? "Compris entre 144 986,80 € et 215 999 € HTVA"
+                    : ifTier === "TIER_4"
+                      ? "Supérieur à 216 000 € HTVA"
+                      : f!.estimatedAmount5y != null
+                        ? `${f!.estimatedAmount5y.toLocaleString("fr-BE")} €`
+                        : null
+            }
           />
           {ifTier === "TIER_2" && (
             <IFRow
@@ -4745,8 +4769,8 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
           )}
           {ifTier === "TIER_4" && (
             <IFRow
-              label="4.1 Tranche"
-              value="Supérieur à 216 000 € HTVA — service juridique notifié."
+              label="Notification"
+              value="Marché européen — service juridique notifié."
             />
           )}
           <IFRow
