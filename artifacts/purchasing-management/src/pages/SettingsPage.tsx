@@ -977,9 +977,6 @@ function AppSettingsPanel() {
   const save = useSaveSettings();
   const [appName, setAppName] = useState("");
   const [appBaseUrl, setAppBaseUrl] = useState("");
-  const [limitX, setLimitX] = useState<number>(10000);
-  const [limitY, setLimitY] = useState<number>(50000);
-  const [limitZ, setLimitZ] = useState<number>(200000);
   const [currency, setCurrency] = useState("EUR");
   const [signingEnabled, setSigningEnabled] = useState(false);
   const [signingPort, setSigningPort] = useState<number>(9443);
@@ -989,17 +986,6 @@ function AppSettingsPanel() {
     if (!s) return;
     setAppName(s.appName);
     setAppBaseUrl(((s as { appBaseUrl?: string | null }).appBaseUrl ?? "") || "");
-    setLimitX(
-      (s as { quoteThresholdStandard?: number }).quoteThresholdStandard ??
-        s.limitX,
-    );
-    setLimitY(
-      (s as { quoteThresholdLivreI?: number }).quoteThresholdLivreI ?? 50000,
-    );
-    setLimitZ(
-      (s as { quoteThresholdLivreII?: number }).quoteThresholdLivreII ??
-        200000,
-    );
     setCurrency(s.currency);
     setSigningEnabled(s.certSigningEnabled);
     setSigningPort(s.signingAgentPort ?? 9443);
@@ -1044,44 +1030,6 @@ function AppSettingsPanel() {
               notification contiennent un bouton « Ouvrir la demande » qui
               pointe directement sur la fiche concernée. Laissez vide pour
               désactiver les liens dans les e-mails.
-            </p>
-          </div>
-          <div className="space-y-1 sm:col-span-2">
-            <Label>Quote threshold — Standard (X)</Label>
-            <Input
-              type="number"
-              value={limitX}
-              onChange={(e) => setLimitX(Number(e.target.value))}
-              data-testid="input-limitx"
-            />
-            <p className="text-xs text-muted-foreground">
-              When the first quote amount is greater than this value, three
-              suppliers and a winning pick are required (publication tier:
-              Three quotes).
-            </p>
-          </div>
-          <div className="space-y-1">
-            <Label>Quote threshold — Livre I (Y)</Label>
-            <Input
-              type="number"
-              value={limitY}
-              onChange={(e) => setLimitY(Number(e.target.value))}
-              data-testid="input-limity"
-            />
-            <p className="text-xs text-muted-foreground">
-              Above this value the workflow is tagged "Livre I".
-            </p>
-          </div>
-          <div className="space-y-1">
-            <Label>Quote threshold — Livre II (Z)</Label>
-            <Input
-              type="number"
-              value={limitZ}
-              onChange={(e) => setLimitZ(Number(e.target.value))}
-              data-testid="input-limitz"
-            />
-            <p className="text-xs text-muted-foreground">
-              Above this value the workflow is tagged "Livre II".
             </p>
           </div>
         </div>
@@ -1145,10 +1093,6 @@ function AppSettingsPanel() {
                 data: {
                   appName,
                   appBaseUrl: appBaseUrl.trim() || null,
-                  limitX,
-                  quoteThresholdStandard: limitX,
-                  quoteThresholdLivreI: limitY,
-                  quoteThresholdLivreII: limitZ,
                   currency,
                   certSigningEnabled: signingEnabled,
                   signingAgentPort:

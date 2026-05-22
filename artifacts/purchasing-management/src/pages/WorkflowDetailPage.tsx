@@ -1098,25 +1098,21 @@ function QuotationPanel({
     return rows.map((r, i) => ({ ...r, winning: i === 0 }));
   }
 
-  // 3 quotes required is determined by the investment form's 4.1 estimated
-  // amount (estimatedAmount5y), NOT the quote amounts entered in this step.
-  // Rule: amount must be in the X–Y band AND 4.1.1 must have been answered
-  // "Non" (i.e. exceptionProcedure !== "LIVRE_I").
-  const limitX = settings?.limitX ?? null;
-  const limitY =
-    (settings as { quoteThresholdLivreI?: number | null } | undefined)
-      ?.quoteThresholdLivreI ?? null;
+  // 3 quotes required is now driven by the investment form's Q4.1
+  // tier model (TIER_2 + "3 offres" ⇒ 3 quotes; everything else ⇒ 1).
+  // Falls back to the legacy `wf.threeQuoteRequired` boolean for
+  // workflows created before the four-tier redesign.
   const investmentFormData = wf.investmentForm as
-    | { estimatedAmount5y?: number | null; exceptionProcedure?: string | null }
+    | {
+        valueTier?: string | null;
+        tier2Choice?: string | null;
+      }
     | null
     | undefined;
-  const formAmount = investmentFormData?.estimatedAmount5y ?? null;
-  const storedException = investmentFormData?.exceptionProcedure ?? null;
   const threeQuotesRequired =
-    limitX != null && formAmount != null
-      ? formAmount > limitX &&
-        (limitY == null || formAmount <= limitY) &&
-        storedException !== "LIVRE_I"
+    investmentFormData?.valueTier
+      ? investmentFormData.valueTier === "TIER_2" &&
+        investmentFormData.tier2Choice === "THREE_QUOTES"
       : wf.threeQuoteRequired;
   // Match the server's predicate in `validateAdvancePrereqs` exactly,
   // otherwise the counter and the advance-gate disagree (off-by-one
@@ -1247,18 +1243,10 @@ function QuotationPanel({
           <Alert className="mt-2 border-amber-500/50 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-600">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              La première offre
-              {limitX != null ? (
-                <>
-                  {" "}dépasse le seuil configuré de{" "}
-                  <strong>
-                    {limitX} €
-                  </strong>
-                </>
-              ) : (
-                <> dépasse le seuil configuré</>
-              )}
-              . Veuillez collecter <strong>trois offres</strong> de fournisseurs différents avant de continuer ({filledCount}/3 saisies).
+              La tranche sélectionnée à la question 4.1 (entre 79 000 € et
+              144 986,79 € HTVA — « 3 offres ») impose la collecte de{" "}
+              <strong>trois offres</strong> de fournisseurs différents avant
+              de continuer ({filledCount}/3 saisies).
             </AlertDescription>
           </Alert>
         )}

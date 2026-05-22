@@ -232,6 +232,21 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
   // at creation time it always starts as false. Estimated amount is
   // accepted for backward compatibility but no longer drives the flag.
   const amount = parsed.data.estimatedAmount ?? null;
+  // Derive the publication tier and 3-quotes flag from Q4.1 of the
+  // investment form, when it is present at creation time. Same rules
+  // as PATCH /workflows/:id.
+  const initForm = parsed.data.investmentForm as
+    | { valueTier?: string | null; tier2Choice?: string | null }
+    | null
+    | undefined;
+  const initTier: "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" =
+    initForm?.valueTier === "TIER_2"
+      ? initForm.tier2Choice === "LIVRE_I_EXCEPTION"
+        ? "LIVRE_I"
+        : "THREE_QUOTES"
+      : initForm?.valueTier === "TIER_3" || initForm?.valueTier === "TIER_4"
+        ? "LIVRE_II"
+        : "STANDARD";
   const [created] = await db
     .insert(workflowsTable)
     .values({
@@ -248,8 +263,8 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
         ? new Date(parsed.data.neededBy).toISOString().slice(0, 10)
         : null,
       investmentForm: parsed.data.investmentForm ?? null,
-      threeQuoteRequired: false,
-      publicationTier: "STANDARD",
+      threeQuoteRequired: initTier === "THREE_QUOTES",
+      publicationTier: initTier,
       // Workflows normally skip the legacy "NEW" step and land
       // directly on Quotation. When the client passes asDraft=true,
       // the request is parked in DRAFT instead — visible to the
@@ -319,27 +334,34 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   if (b.currency !== undefined) update.currency = b.currency;
   if (b.neededBy !== undefined)
     update.neededBy = b.neededBy ? new Date(b.neededBy).toISOString().slice(0, 10) : null;
-  if (b.investmentForm !== undefined) update.investmentForm = b.investmentForm;
+  if (b.investmentForm !== undefined) {
+    update.investmentForm = b.investmentForm;
+    // Derive the publication tier and the `threeQuoteRequired` flag
+    // from the new four-tier model on the investment form (Q4.1).
+    // - TIER_2 + "3 offres"        → THREE_QUOTES (3 offres needed)
+    // - TIER_2 + Livre I exception → LIVRE_I
+    // - TIER_3                     → LIVRE_II
+    // - TIER_4                     → LIVRE_II (marché européen)
+    // - TIER_1 / unset             → STANDARD
+    const f = b.investmentForm as {
+      valueTier?: string | null;
+      tier2Choice?: string | null;
+    } | null;
+    if (f && f.valueTier) {
+      const tier: "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" =
+        f.valueTier === "TIER_2"
+          ? f.tier2Choice === "LIVRE_I_EXCEPTION"
+            ? "LIVRE_I"
+            : "THREE_QUOTES"
+          : f.valueTier === "TIER_3" || f.valueTier === "TIER_4"
+            ? "LIVRE_II"
+            : "STANDARD";
+      update.publicationTier = tier;
+      update.threeQuoteRequired = tier === "THREE_QUOTES";
+    }
+  }
   if (b.quotes !== undefined) {
     update.quotes = b.quotes;
-    // Re-evaluate the publication tier whenever quotes change. The
-    // first quote with a non-null amount drives the tier across all
-    // three configured thresholds (Standard / Livre I / Livre II).
-    // `threeQuoteRequired` is kept in sync for legacy readers — it is
-    // true for THREE_QUOTES, LIVRE_I and LIVRE_II.
-    const settings = await getSettings();
-    const firstAmount = b.quotes
-      .map((q) => q.amount)
-      .find((a): a is number => a != null);
-    const tier = derivePublicationTier(firstAmount, settings);
-    update.publicationTier = tier;
-    // Only the THREE_QUOTES tier (between Standard and Livre I
-    // thresholds) actually requires three competing supplier quotes.
-    // STANDARD is below the small-purchase limit, and LIVRE_I /
-    // LIVRE_II go through formal public publication where there is
-    // a single awarded supplier — none of those three need a 3-way
-    // comparison.
-    update.threeQuoteRequired = tier === "THREE_QUOTES";
   }
   if (b.managerApproved !== undefined) update.managerApproved = b.managerApproved;
   if (b.managerComment !== undefined) update.managerComment = b.managerComment;
