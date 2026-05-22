@@ -1591,6 +1591,31 @@ function WinningQuoteCard({
             </div>
           </div>
         </div>
+        {(() => {
+          // Position budgétaire saisie dans le formulaire d'investissement
+          // (étape 4.2.1) — affichée ici pour que la personne qui passe la
+          // commande (N° AA, Commande, etc.) ait l'information sans
+          // revenir au formulaire.
+          const inv = wf.investmentForm as
+            | { budgetPosition?: string | null }
+            | null
+            | undefined;
+          const pos = inv?.budgetPosition?.trim();
+          if (!pos) return null;
+          return (
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Position budgétaire
+              </div>
+              <div
+                className="font-medium"
+                data-testid="text-winning-budget-position"
+              >
+                {pos}
+              </div>
+            </div>
+          );
+        })()}
         {winning.notes && (
           <div>
             <div className="text-xs text-muted-foreground">Notes</div>
