@@ -290,6 +290,20 @@ export function SettingsPage() {
             <GtRecipientsPanel />
             <GtDatesPanel />
             <BudgetPositionsPanel />
+            <ExceptionListPanel
+              field="livreIExceptions"
+              title="Procédures d'exception — Livre I"
+              description="Liste déroulante affichée à la question 4.1.2 du formulaire de demande d'investissement (tranche 79 000 € – 144 986,79 € HTVA, choix « procédure d'exception Livre I »)."
+              placeholder="ex. Marché de faible montant"
+              testIdPrefix="livre-i-exception"
+            />
+            <ExceptionListPanel
+              field="livreIIExceptions"
+              title="Procédures d'exception — Livre II"
+              description="Liste déroulante affichée à la question 4.1.4 du formulaire de demande d'investissement (tranche 144 986,80 € – 215 999 € HTVA)."
+              placeholder="ex. Procédure négociée sans publication"
+              testIdPrefix="livre-ii-exception"
+            />
           </div>
         </TabsContent>
         <TabsContent value="https">
@@ -2671,6 +2685,109 @@ function GtDatesPanel() {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ExceptionListPanel — generic editor for a list of strings stored in
+// AppSettings (currently used for Livre I and Livre II exception lists
+// surfaced in Q4.1.2 / Q4.1.4 of the investment request form).
+// ─────────────────────────────────────────────────────────────────────────────
+function ExceptionListPanel({
+  field,
+  title,
+  description,
+  placeholder,
+  testIdPrefix,
+}: {
+  field: "livreIExceptions" | "livreIIExceptions";
+  title: string;
+  description: string;
+  placeholder: string;
+  testIdPrefix: string;
+}) {
+  const { data: s } = useGetSettings();
+  const save = useSaveSettings();
+  const [items, setItems] = useState<string[]>([]);
+  const [next, setNext] = useState("");
+
+  useEffect(() => {
+    if (!s) return;
+    const list =
+      (s as unknown as Record<string, string[] | undefined>)[field] ?? [];
+    setItems(list.slice().sort((a, b) => a.localeCompare(b, "fr")));
+  }, [s, field]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{description}</p>
+        <div className="flex gap-2">
+          <Input
+            placeholder={placeholder}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            data-testid={`input-${testIdPrefix}`}
+          />
+          <Button
+            onClick={() => {
+              const v = next.trim();
+              if (!v) return;
+              setItems((r) =>
+                Array.from(new Set([...r, v])).sort((a, b) =>
+                  a.localeCompare(b, "fr"),
+                ),
+              );
+              setNext("");
+            }}
+            data-testid={`button-add-${testIdPrefix}`}
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add
+          </Button>
+        </div>
+        <div className="space-y-1">
+          {items.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              Aucune procédure configurée.
+            </p>
+          ) : (
+            items.map((p) => (
+              <div
+                key={p}
+                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                data-testid={`${testIdPrefix}-${p}`}
+              >
+                <span>{p}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    setItems((rs) => rs.filter((x) => x !== p))
+                  }
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => save.mutate({ data: { [field]: items } })}
+            disabled={save.isPending}
+            data-testid={`button-save-${testIdPrefix}`}
+          >
+            {save.isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            <Save className="mr-2 h-4 w-4" /> Enregistrer
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

@@ -29,6 +29,8 @@ export interface AppSettings {
   archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
   budgetPositions: string[];
+  livreIExceptions?: string[];
+  livreIIExceptions?: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
   /** Minutes between automated notification batch sends */

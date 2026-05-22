@@ -4029,30 +4029,28 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
     );
   }
 
-  // Tier calculation for the financial section (read-only display)
-  const ifLimitX = ifSettings?.limitX ?? null;
-  const ifLimitY =
-    (ifSettings as { quoteThresholdLivreI?: number | null } | undefined)
-      ?.quoteThresholdLivreI ?? null;
-
-  function computeTier(amount: number | null | undefined): "STANDARD" | "BAND_XY" | "ABOVE_Y" {
-    if (amount == null) return "STANDARD";
-    if (ifLimitY != null && amount > ifLimitY) return "ABOVE_Y";
-    if (ifLimitX != null && amount > ifLimitX) return "BAND_XY";
-    return "STANDARD";
+  // Four-tier model — fixed breakpoints (HTVA, EUR), matching
+  // NewWorkflowPage and the server-side q_legal rule.
+  function computeValueTier(
+    amount: number | null | undefined,
+  ): "TIER_1" | "TIER_2" | "TIER_3" | "TIER_4" | null {
+    if (amount == null) return null;
+    if (amount >= 216000) return "TIER_4";
+    if (amount >= 144986.8) return "TIER_3";
+    if (amount >= 79000) return "TIER_2";
+    return "TIER_1";
   }
-  const ifTier = computeTier(f?.estimatedAmount5y);
-
-  // Tier for edit mode (recomputed from draft while editing)
+  const ifTier = computeValueTier(f?.estimatedAmount5y) ?? (f?.valueTier as ReturnType<typeof computeValueTier>) ?? null;
   const editTier = useMemo(
-    () => computeTier(draft.estimatedAmount5y),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draft.estimatedAmount5y, ifLimitX, ifLimitY],
+    () => computeValueTier(draft.estimatedAmount5y),
+    [draft.estimatedAmount5y],
   );
 
   const budgetPositionsList = (ifSettings?.budgetPositions ?? [])
     .slice()
     .sort((a, b) => a.localeCompare(b, "fr"));
+  const ifLivreIList = (ifSettings as { livreIExceptions?: string[] } | undefined)?.livreIExceptions ?? [];
+  const ifLivreIIList = (ifSettings as { livreIIExceptions?: string[] } | undefined)?.livreIIExceptions ?? [];
 
   // ── Shared card header with edit / save / cancel controls ────────────────
   const cardHeader = (
@@ -4250,71 +4248,145 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
                 value={draft.estimatedAmount5y ?? ""}
                 onChange={(e) => {
                   const n = parseFloat(e.target.value);
-                  patch("estimatedAmount5y", isNaN(n) ? null : n);
+                  const newAmount = isNaN(n) ? null : n;
+                  patch("estimatedAmount5y", newAmount);
+                  patch("valueTier", computeValueTier(newAmount));
+                  patch("tier2Choice", null);
+                  patch("livreIExceptionItem", null);
+                  patch("livreIIExceptionItem", null);
                   patch("exceptionProcedure", null);
                   patch("exceptionJustification", null);
                 }}
                 placeholder="Montant total HTVA"
               />
-              {editTier === "BAND_XY" && (
-                <p className="text-xs text-amber-600">
-                  Besoin de 3 Offres ou Procédure d'exception Livre I.
+              {editTier === "TIER_1" && (
+                <p className="text-xs text-muted-foreground">
+                  Inférieur à 79 000 € HTVA — une seule offre suffira.
                 </p>
               )}
-              {editTier === "ABOVE_Y" && (
+              {editTier === "TIER_2" && (
                 <p className="text-xs text-amber-600">
-                  Démarche marché international ou procédure d'exception Livre II.
+                  Entre 79 000 € et 144 986,79 € HTVA — choisir entre 3 offres ou une procédure d'exception Livre I.
+                </p>
+              )}
+              {editTier === "TIER_3" && (
+                <p className="text-xs text-amber-600">
+                  Entre 144 986,80 € et 215 999 € HTVA — procédure d'exception Livre II requise.
+                </p>
+              )}
+              {editTier === "TIER_4" && (
+                <p className="text-xs text-amber-600 font-medium">
+                  Supérieur à 216 000 € HTVA — Le service juridique sera notifié.
                 </p>
               )}
             </div>
 
-            {editTier === "BAND_XY" && (
+            {editTier === "TIER_2" && (
               <div className="space-y-3 rounded-md border p-4 bg-muted/30">
                 <div className="space-y-1.5">
-                  <Label>4.1.1 La demande relève-t-elle d'une procédure d'exception Livre I ?</Label>
-                  <IFEditYesNo
-                    value={draft.exceptionProcedure === "LIVRE_I" ? "true" : draft.exceptionProcedure === "NONE" ? "false" : ""}
-                    onChange={(v) => {
-                      patch("exceptionProcedure", v === "true" ? "LIVRE_I" : v === "false" ? "NONE" : null);
+                  <Label>4.1.1 Type de procédure</Label>
+                  <Select
+                    value={draft.tier2Choice ?? ""}
+                    onValueChange={(v) => {
+                      patch("tier2Choice", v || null);
+                      patch("exceptionProcedure", v === "LIVRE_I_EXCEPTION" ? "LIVRE_I" : "NONE");
+                      patch("livreIExceptionItem", null);
                       patch("exceptionJustification", null);
                     }}
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="THREE_QUOTES">Je dispose de trois offres</SelectItem>
+                      <SelectItem value="LIVRE_I_EXCEPTION">
+                        Je sélectionne une procédure d'exception du Livre I
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                {draft.exceptionProcedure === "LIVRE_I" && (
-                  <div className="space-y-1.5">
-                    <Label>4.1.2 Justification détaillée de la procédure d'exception Livre I</Label>
-                    <Textarea
-                      rows={3}
-                      value={draft.exceptionJustification ?? ""}
-                      onChange={(e) => patch("exceptionJustification", e.target.value || null)}
-                    />
-                  </div>
+                {draft.tier2Choice === "LIVRE_I_EXCEPTION" && (
+                  <>
+                    <p className="text-xs text-amber-600 font-medium">
+                      Le service juridique sera notifié.
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label>4.1.2 Procédure d'exception — Livre I</Label>
+                      {ifLivreIList.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Aucune procédure configurée dans les paramètres.
+                        </p>
+                      ) : (
+                        <Select
+                          value={draft.livreIExceptionItem ?? ""}
+                          onValueChange={(v) => patch("livreIExceptionItem", v || null)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sélectionner une exception..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ifLivreIList.map((p) => (
+                              <SelectItem key={p} value={p}>
+                                {p}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>4.1.3 Justification de la procédure d'exception</Label>
+                      <Textarea
+                        rows={3}
+                        value={draft.exceptionJustification ?? ""}
+                        onChange={(e) => patch("exceptionJustification", e.target.value || null)}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             )}
 
-            {editTier === "ABOVE_Y" && (
+            {editTier === "TIER_3" && (
               <div className="space-y-3 rounded-md border p-4 bg-muted/30">
+                <p className="text-xs text-amber-600 font-medium">
+                  Le service juridique sera notifié.
+                </p>
                 <div className="space-y-1.5">
-                  <Label>4.1.3 La demande relève-t-elle d'une procédure d'exception Livre II ?</Label>
-                  <IFEditYesNo
-                    value={draft.exceptionProcedure === "LIVRE_II" ? "true" : draft.exceptionProcedure === "NONE" ? "false" : ""}
-                    onChange={(v) => {
-                      patch("exceptionProcedure", v === "true" ? "LIVRE_II" : v === "false" ? "NONE" : null);
-                      patch("exceptionJustification", null);
-                    }}
+                  <Label>4.1.4 Procédure d'exception — Livre II</Label>
+                  {ifLivreIIList.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Aucune procédure configurée dans les paramètres.
+                    </p>
+                  ) : (
+                    <Select
+                      value={draft.livreIIExceptionItem ?? ""}
+                      onValueChange={(v) => {
+                        patch("livreIIExceptionItem", v || null);
+                        patch("exceptionProcedure", "LIVRE_II");
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner une exception..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ifLivreIIList.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>4.1.5 Justification de la procédure d'exception</Label>
+                  <Textarea
+                    rows={3}
+                    value={draft.exceptionJustification ?? ""}
+                    onChange={(e) => patch("exceptionJustification", e.target.value || null)}
                   />
                 </div>
-                {draft.exceptionProcedure === "LIVRE_II" && (
-                  <div className="space-y-1.5">
-                    <Label>4.1.4 Justification détaillée de la procédure d'exception Livre II</Label>
-                    <Textarea
-                      rows={3}
-                      value={draft.exceptionJustification ?? ""}
-                      onChange={(e) => patch("exceptionJustification", e.target.value || null)}
-                    />
-                  </div>
-                )}
               </div>
             )}
 
@@ -4645,28 +4717,36 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
             label="4.1 Coût estimé 5 ans (HTVA)"
             value={f!.estimatedAmount5y != null ? `${f!.estimatedAmount5y.toLocaleString("fr-BE")} €` : null}
           />
-          {ifTier === "BAND_XY" && (
+          {ifTier === "TIER_2" && (
             <IFRow
-              label="4.1.1 Procédure d'exception Livre I ?"
-              value={f!.exceptionProcedure === "LIVRE_I" ? "Oui" : "Non"}
+              label="4.1.1 Type de procédure"
+              value={
+                f!.tier2Choice === "THREE_QUOTES"
+                  ? "3 offres"
+                  : f!.tier2Choice === "LIVRE_I_EXCEPTION"
+                    ? "Procédure d'exception Livre I"
+                    : f!.exceptionProcedure === "LIVRE_I"
+                      ? "Procédure d'exception Livre I"
+                      : null
+              }
             />
           )}
-          {ifTier === "BAND_XY" && f!.exceptionProcedure === "LIVRE_I" && (
-            <IFRow
-              label="4.1.2 Justification exception Livre I"
-              value={f!.exceptionJustification}
-            />
+          {ifTier === "TIER_2" && f!.tier2Choice === "LIVRE_I_EXCEPTION" && (
+            <>
+              <IFRow label="4.1.2 Procédure d'exception Livre I" value={f!.livreIExceptionItem} />
+              <IFRow label="4.1.3 Justification" value={f!.exceptionJustification} />
+            </>
           )}
-          {ifTier === "ABOVE_Y" && (
-            <IFRow
-              label="4.1.3 Procédure d'exception Livre II ?"
-              value={f!.exceptionProcedure === "LIVRE_II" ? "Oui" : "Non"}
-            />
+          {ifTier === "TIER_3" && (
+            <>
+              <IFRow label="4.1.4 Procédure d'exception Livre II" value={f!.livreIIExceptionItem} />
+              <IFRow label="4.1.5 Justification" value={f!.exceptionJustification} />
+            </>
           )}
-          {ifTier === "ABOVE_Y" && f!.exceptionProcedure === "LIVRE_II" && (
+          {ifTier === "TIER_4" && (
             <IFRow
-              label="4.1.4 Justification exception Livre II"
-              value={f!.exceptionJustification}
+              label="4.1 Tranche"
+              value="Supérieur à 216 000 € HTVA — service juridique notifié."
             />
           )}
           <IFRow

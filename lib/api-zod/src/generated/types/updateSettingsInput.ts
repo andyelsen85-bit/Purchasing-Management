@@ -39,6 +39,8 @@ export interface UpdateSettingsInput {
   notifications?: UpdateSettingsInputNotifications;
   gtInvestRecipients?: string[];
   budgetPositions?: string[];
+  livreIExceptions?: string[];
+  livreIIExceptions?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;
 }

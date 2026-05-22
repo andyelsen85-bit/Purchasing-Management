@@ -171,6 +171,18 @@ export interface AppSettings {
    * on workflow creation. Managed in Settings → GT Invest.
    */
   budgetPositions: string[];
+  /**
+   * Configurable list of Livre I exception labels — picked in
+   * section 4.1.2 of the investment request form when the user
+   * chooses "Procédure d'exception Livre I" at tier 2.
+   */
+  livreIExceptions: string[];
+  /**
+   * Configurable list of Livre II exception labels — picked in
+   * section 4.1.4 of the investment request form when the amount
+   * falls into tier 3.
+   */
+  livreIIExceptions: string[];
   ldap: LdapConfigStored;
   smtp: SmtpConfigStored;
   /**
@@ -207,6 +219,29 @@ const DEFAULT: AppSettings = {
   archiveRetentionDays: 365,
   gtInvestRecipients: [],
   budgetPositions: [],
+  livreIExceptions: [
+    "Offres irrégulières/inacceptables ou absence d’offres (avec urgence ou après seconde procédure)",
+    "Recherche, expérimentation, étude ou développement",
+    "Impossibilité de fixer les prix à l’avance (nature/aléas du marché)",
+    "Absence de concurrence (raisons techniques, artistiques, scientifiques ou droits exclusifs)",
+    "Urgence impérieuse imprévisible non imputable au pouvoir adjudicateur",
+    "Répétition de travaux ou services similaires (marché initial + max 3 ans)",
+    "Livraisons complémentaires du fournisseur initial (compatibilité technique)",
+    "Fournitures cotées en bourse des matières premières",
+    "Prix soustraits à la concurrence ou services à tarif officiel",
+    "Je ne sais pas",
+  ],
+  livreIIExceptions: [
+    "Aucune offre / aucune offre appropriée / aucune demande appropriée après procédure ouverte ou restreinte",
+    "Œuvre d’art ou performance artistique unique",
+    "Absence de concurrence pour raisons techniques",
+    "Protection de droits d’exclusivité (ex : propriété intellectuelle)",
+    "Urgence impérieuse imprévisible non imputable au CHdN",
+    "Fournitures : recherche, expérimentation ou développement",
+    "Fournitures : livraisons complémentaires du fournisseur initial (compatibilité technique – max ± 3 ans)",
+    "Fournitures : cotées en bourse des matières premières",
+    "Fournitures : achats à conditions particulièrement avantageuses (faillite, liquidation…)",
+  ],
   ldap: {
     enabled: false,
     host: null,
@@ -321,6 +356,8 @@ export function toPublicSettings(s: AppSettings) {
     archiveRetentionDays: s.archiveRetentionDays ?? null,
     gtInvestRecipients: s.gtInvestRecipients ?? [],
     budgetPositions: s.budgetPositions ?? [],
+    livreIExceptions: s.livreIExceptions ?? [],
+    livreIIExceptions: s.livreIIExceptions ?? [],
     ldap: {
       enabled: !!s.ldap?.enabled,
       host: s.ldap?.host ?? null,

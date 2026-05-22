@@ -280,30 +280,38 @@ export function NewWorkflowPage() {
 
   // ── Section 4 – Aspects financiers ────────────────────────────
   const [estimatedAmount5y, setEstimatedAmount5y] = useState("");
-  // Q4.1.1 — exception Livre I? (shown when amount is between X and Y)
-  const [livreIException, setLivreIException] = useState("");
-  // Q4.1.2 — justification Livre I (shown when 4.1.1 = Oui)
-  // Q4.1.4 — justification Livre II (shown when 4.1.3 = Oui)
-  // Reuse the same field since the two tiers are mutually exclusive.
+  // Q4.1.1 — tier-2 choice: "3 offres" vs "Procédure d'exception Livre I"
+  const [tier2Choice, setTier2Choice] = useState<
+    "" | "THREE_QUOTES" | "LIVRE_I_EXCEPTION"
+  >("");
+  // Q4.1.2 — selected from settings.livreIExceptions (tier 2 + Livre I)
+  const [livreIExceptionItem, setLivreIExceptionItem] = useState("");
+  // Q4.1.4 — selected from settings.livreIIExceptions (tier 3)
+  const [livreIIExceptionItem, setLivreIIExceptionItem] = useState("");
+  // Q4.1.3 / Q4.1.5 — justification shared across Livre I/II since the
+  // two tiers are mutually exclusive.
   const [exceptionJustification, setExceptionJustification] = useState("");
-  // Q4.1.3 — exception Livre II? (shown when amount > Y)
-  const [livreIIException, setLivreIIException] = useState("");
   const [budgetPositionKnown, setBudgetPositionKnown] = useState("");
   const [budgetPosition, setBudgetPosition] = useState("");
 
-  // Derive the publication tier from the 5-year amount and the configured
-  // thresholds. Two bands: between X and Y, or above Y.
-  const limitX = settings?.limitX ?? null;
-  const limitY = settings?.quoteThresholdLivreI ?? null;
+  // Four-tier model — fixed breakpoints (HTVA, EUR) per spec:
+  //  TIER_1 : <  79 000
+  //  TIER_2 : ≥  79 000  &  ≤ 144 986,79
+  //  TIER_3 : ≥ 144 986,80 & ≤ 215 999
+  //  TIER_4 : ≥ 216 000
   const amount5yNum = estimatedAmount5y ? Number(estimatedAmount5y) : null;
-  const tier: "STANDARD" | "BAND_XY" | "ABOVE_Y" =
-    amount5yNum == null
-      ? "STANDARD"
-      : limitY != null && amount5yNum > limitY
-        ? "ABOVE_Y"
-        : limitX != null && amount5yNum > limitX
-          ? "BAND_XY"
-          : "STANDARD";
+  const valueTier: "TIER_1" | "TIER_2" | "TIER_3" | "TIER_4" | null =
+    amount5yNum == null || isNaN(amount5yNum)
+      ? null
+      : amount5yNum >= 216000
+        ? "TIER_4"
+        : amount5yNum >= 144986.8
+          ? "TIER_3"
+          : amount5yNum >= 79000
+            ? "TIER_2"
+            : "TIER_1";
+  const livreIList = settings?.livreIExceptions ?? [];
+  const livreIIList = settings?.livreIIExceptions ?? [];
 
   // ── Section 5 – Fournisseur ────────────────────────────────────
   const [supplierCompanyId, setSupplierCompanyId] = useState<string>("");
@@ -415,8 +423,10 @@ export function NewWorkflowPage() {
     setDecommissioned(b2s(inv.decommissioned));
     if (inv.decommissionedNote) setDecommissionedNote(inv.decommissionedNote);
     if (inv.estimatedAmount5y != null) setEstimatedAmount5y(String(inv.estimatedAmount5y));
-    if (inv.livreIAnswer) setLivreIException(inv.livreIAnswer);
-    if (inv.livreIIAnswer) setLivreIIException(inv.livreIIAnswer);
+    if (inv.tier2Choice === "THREE_QUOTES" || inv.tier2Choice === "LIVRE_I_EXCEPTION")
+      setTier2Choice(inv.tier2Choice);
+    if (inv.livreIExceptionItem) setLivreIExceptionItem(inv.livreIExceptionItem);
+    if (inv.livreIIExceptionItem) setLivreIIExceptionItem(inv.livreIIExceptionItem);
     if (inv.exceptionJustification) setExceptionJustification(inv.exceptionJustification);
     if (inv.budgetPositionKnown) setBudgetPositionKnown(inv.budgetPositionKnown);
     if (inv.budgetPosition) setBudgetPosition(inv.budgetPosition);
@@ -638,18 +648,25 @@ export function NewWorkflowPage() {
       decommissioned: boolVal(decommissioned),
       decommissionedNote: decommissionedNote || null,
       estimatedAmount5y: estimatedAmount5y ? Number(estimatedAmount5y) : null,
+      valueTier,
+      tier2Choice: valueTier === "TIER_2" ? (tier2Choice || null) : null,
+      livreIExceptionItem:
+        valueTier === "TIER_2" && tier2Choice === "LIVRE_I_EXCEPTION"
+          ? (livreIExceptionItem || null)
+          : null,
+      livreIIExceptionItem:
+        valueTier === "TIER_3" ? (livreIIExceptionItem || null) : null,
+      exceptionJustification: exceptionJustification || null,
+      // Legacy mirrors so older readers (and the legal-trigger fallback
+      // path) keep working until every workflow has been migrated.
       exceptionProcedure:
-        tier === "BAND_XY" && livreIException === "true"
+        valueTier === "TIER_2" && tier2Choice === "LIVRE_I_EXCEPTION"
           ? "LIVRE_I"
-          : tier === "ABOVE_Y" && livreIIException === "true"
+          : valueTier === "TIER_3"
             ? "LIVRE_II"
             : "NONE",
-      // Raw answers (true / false / unknown / null) for Q4.1.1 and
-      // Q4.1.3 — kept alongside `exceptionProcedure` so the legal
-      // notification rule can fire on JNS / Non as well.
-      livreIAnswer: tier === "BAND_XY" ? (livreIException || null) : null,
-      livreIIAnswer: tier === "ABOVE_Y" ? (livreIIException || null) : null,
-      exceptionJustification: exceptionJustification || null,
+      livreIAnswer: null,
+      livreIIAnswer: null,
       budgetPositionKnown: budgetPositionKnown || null,
       budgetPosition: budgetPosition || null,
       supplierName:
@@ -753,14 +770,20 @@ export function NewWorkflowPage() {
           m.push("3.1.4 Précision sur le devenir de l'équipement");
       }
       if (!estimatedAmount5y) m.push("4.1 Coût estimé sur 5 ans");
-      if (tier === "BAND_XY" && !livreIException)
-        m.push("4.1.1 Procédure d'exception Livre I");
-      if (tier === "BAND_XY" && livreIException === "true" && !exceptionJustification.trim())
-        m.push("4.1.2 Justification procédure d'exception Livre I");
-      if (tier === "ABOVE_Y" && !livreIIException)
-        m.push("4.1.3 Procédure d'exception Livre II");
-      if (tier === "ABOVE_Y" && livreIIException === "true" && !exceptionJustification.trim())
-        m.push("4.1.4 Justification procédure d'exception Livre II");
+      if (valueTier === "TIER_2" && !tier2Choice)
+        m.push("4.1.1 Choix entre 3 offres ou procédure d'exception Livre I");
+      if (valueTier === "TIER_2" && tier2Choice === "LIVRE_I_EXCEPTION") {
+        if (!livreIExceptionItem)
+          m.push("4.1.2 Procédure d'exception Livre I");
+        if (!exceptionJustification.trim())
+          m.push("4.1.3 Justification procédure d'exception Livre I");
+      }
+      if (valueTier === "TIER_3") {
+        if (!livreIIExceptionItem)
+          m.push("4.1.4 Procédure d'exception Livre II");
+        if (!exceptionJustification.trim())
+          m.push("4.1.5 Justification procédure d'exception Livre II");
+      }
       if (!budgetPositionKnown) m.push("4.2 Position budgétaire connue");
       if (budgetPositionKnown === "YES" && !budgetPosition.trim()) m.push("4.2.1 Position budgétaire");
     }
@@ -1331,7 +1354,7 @@ export function NewWorkflowPage() {
                     4.1 Coût total estimé sur 5 années (HTVA)<Req />
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Inclure : achat, maintenance, consommables, formation, abonnements.
+                    Prix total de l&apos;investissement (HTVA) — prendre en considération la durée TOTALE de l&apos;engagement (équipement + maintenance + consommables + formation).
                   </p>
                   <Input
                     id="amount5y"
@@ -1340,90 +1363,164 @@ export function NewWorkflowPage() {
                     value={estimatedAmount5y}
                     onChange={(e) => {
                       setEstimatedAmount5y(e.target.value);
-                      setLivreIException("");
-                      setLivreIIException("");
+                      setTier2Choice("");
+                      setLivreIExceptionItem("");
+                      setLivreIIExceptionItem("");
                       setExceptionJustification("");
                     }}
                     placeholder="Montant total HTVA"
                   />
-                  {tier === "BAND_XY" && (
-                    <p className="text-xs text-amber-600">
-                      Besoin de 3 Offres ou Procédure d&apos;exception Livre I (Marchés au-dessous des seuils européens).
+                  {valueTier === "TIER_1" && (
+                    <p className="text-xs text-muted-foreground">
+                      Inférieur à 79 000 € HTVA — une seule offre suffira.
                     </p>
                   )}
-                  {tier === "ABOVE_Y" && (
+                  {valueTier === "TIER_2" && (
                     <p className="text-xs text-amber-600">
-                      Démarche marché international ou procédure d&apos;exception Livre II.
+                      Entre 79 000 € et 144 986,79 € HTVA — choisir entre 3 offres ou une procédure d&apos;exception Livre I.
+                    </p>
+                  )}
+                  {valueTier === "TIER_3" && (
+                    <p className="text-xs text-amber-600">
+                      Entre 144 986,80 € et 215 999 € HTVA — procédure d&apos;exception Livre II requise.
+                    </p>
+                  )}
+                  {valueTier === "TIER_4" && (
+                    <p className="text-xs text-amber-600 font-medium">
+                      Supérieur à 216 000 € HTVA — Le service juridique sera notifié.
                     </p>
                   )}
                 </div>
 
-                {/* ── Q4.1.1 : exception Livre I ? (band X–Y only) ── */}
-                {tier === "BAND_XY" && (
+                {/* ── Q4.1.1 : tier-2 choice ── */}
+                {valueTier === "TIER_2" && (
                   <div className="space-y-3 rounded-md border p-4 bg-muted/30">
                     <div className="space-y-1.5">
                       <Label>
-                        4.1.1 La demande relève-t-elle d&apos;une procédure d&apos;exception Livre I ?<Req />
+                        4.1.1 Type de procédure<Req />
                       </Label>
-                      <YesNoMaybeSelect value={livreIException} onChange={(v) => {
-                        setLivreIException(v);
-                        setExceptionJustification("");
-                      }} />
+                      <Select
+                        value={tier2Choice}
+                        onValueChange={(v) => {
+                          setTier2Choice(v as typeof tier2Choice);
+                          setLivreIExceptionItem("");
+                          setExceptionJustification("");
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="THREE_QUOTES">Je dispose de trois offres</SelectItem>
+                          <SelectItem value="LIVRE_I_EXCEPTION">
+                            Je sélectionne une procédure d&apos;exception du Livre I
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    {livreIException === "false" && (
+                    {tier2Choice === "THREE_QUOTES" && (
                       <p className="text-xs text-amber-600">
-                        Besoin de 3 Offres, voir import après création de la demande.
+                        Les trois offres seront demandées à l&apos;étape Offres de prix.
                       </p>
                     )}
-                    {(livreIException === "true" || livreIException === "unknown") && (
-                      <p className="text-xs text-amber-600 font-medium">
-                        Le service juridique sera notifié.
-                      </p>
-                    )}
-                    {livreIException === "true" && (
-                      <div className="space-y-1.5">
-                        <Label>
-                          4.1.2 Justification détaillée de la procédure d&apos;exception Livre I<Req />
-                        </Label>
-                        <Textarea
-                          rows={3}
-                          value={exceptionJustification}
-                          onChange={(e) => setExceptionJustification(e.target.value)}
-                        />
-                      </div>
+                    {tier2Choice === "LIVRE_I_EXCEPTION" && (
+                      <>
+                        <p className="text-xs text-amber-600 font-medium">
+                          Le service juridique sera notifié.
+                        </p>
+                        <div className="space-y-1.5">
+                          <Label>
+                            4.1.2 Procédure d&apos;exception — Livre I<Req />
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Veuillez sélectionner si vous pensez vous trouver dans une exception et justifiez.
+                          </p>
+                          {livreIList.length === 0 ? (
+                            <Alert variant="destructive">
+                              <AlertDescription className="text-xs">
+                                Aucune procédure d&apos;exception Livre I n&apos;est configurée. Un administrateur doit en ajouter dans Paramètres avant de pouvoir poursuivre.
+                              </AlertDescription>
+                            </Alert>
+                          ) : (
+                            <Select
+                              value={livreIExceptionItem}
+                              onValueChange={setLivreIExceptionItem}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sélectionner une exception..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {livreIList.map((p) => (
+                                  <SelectItem key={p} value={p}>
+                                    {p}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>
+                            4.1.3 Justification de la procédure d&apos;exception<Req />
+                          </Label>
+                          <Textarea
+                            rows={3}
+                            value={exceptionJustification}
+                            onChange={(e) => setExceptionJustification(e.target.value)}
+                          />
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
 
-                {/* ── Q4.1.3 : exception Livre II ? (above Y) ── */}
-                {tier === "ABOVE_Y" && (
+                {/* ── Q4.1.4 / 4.1.5 : Livre II (tier 3) ── */}
+                {valueTier === "TIER_3" && (
                   <div className="space-y-3 rounded-md border p-4 bg-muted/30">
+                    <p className="text-xs text-amber-600 font-medium">
+                      Le service juridique sera notifié.
+                    </p>
                     <div className="space-y-1.5">
                       <Label>
-                        4.1.3 La demande relève-t-elle d&apos;une procédure d&apos;exception Livre II ?<Req />
+                        4.1.4 Procédure d&apos;exception — Livre II<Req />
                       </Label>
-                      <YesNoMaybeSelect value={livreIIException} onChange={(v) => {
-                        setLivreIIException(v);
-                        setExceptionJustification("");
-                      }} />
-                    </div>
-                    {livreIIException !== "" && (
-                      <p className="text-xs text-amber-600 font-medium">
-                        Le service juridique sera notifié.
+                      <p className="text-xs text-muted-foreground">
+                        Veuillez sélectionner si vous pensez vous trouver dans une exception et justifiez.
                       </p>
-                    )}
-                    {livreIIException === "true" && (
-                      <div className="space-y-1.5">
-                        <Label>
-                          4.1.4 Justification détaillée de la procédure d&apos;exception Livre II<Req />
-                        </Label>
-                        <Textarea
-                          rows={3}
-                          value={exceptionJustification}
-                          onChange={(e) => setExceptionJustification(e.target.value)}
-                        />
-                      </div>
-                    )}
+                      {livreIIList.length === 0 ? (
+                        <Alert variant="destructive">
+                          <AlertDescription className="text-xs">
+                            Aucune procédure d&apos;exception Livre II n&apos;est configurée. Un administrateur doit en ajouter dans Paramètres avant de pouvoir poursuivre.
+                          </AlertDescription>
+                        </Alert>
+                      ) : (
+                        <Select
+                          value={livreIIExceptionItem}
+                          onValueChange={setLivreIIExceptionItem}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sélectionner une exception..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {livreIIList.map((p) => (
+                              <SelectItem key={p} value={p}>
+                                {p}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>
+                        4.1.5 Justification de la procédure d&apos;exception<Req />
+                      </Label>
+                      <Textarea
+                        rows={3}
+                        value={exceptionJustification}
+                        onChange={(e) => setExceptionJustification(e.target.value)}
+                      />
+                    </div>
                   </div>
                 )}
 

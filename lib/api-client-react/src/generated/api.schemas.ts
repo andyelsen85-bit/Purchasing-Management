@@ -290,6 +290,14 @@ export interface InvestmentForm {
   /** @nullable */
   estimatedAmount5y?: number | null;
   /** @nullable */
+  valueTier?: string | null;
+  /** @nullable */
+  tier2Choice?: string | null;
+  /** @nullable */
+  livreIExceptionItem?: string | null;
+  /** @nullable */
+  livreIIExceptionItem?: string | null;
+  /** @nullable */
   exceptionProcedure?: string | null;
   /** @nullable */
   livreIAnswer?: string | null;
@@ -942,6 +950,8 @@ export interface AppSettings {
   archiveRetentionDays?: number | null;
   gtInvestRecipients: string[];
   budgetPositions: string[];
+  livreIExceptions?: string[];
+  livreIIExceptions?: string[];
   ldap: LdapsSettings;
   smtp: SmtpSettings;
   /** Minutes between automated notification batch sends */
@@ -1107,6 +1117,8 @@ export interface UpdateSettingsInput {
   notifications?: UpdateSettingsInputNotifications;
   gtInvestRecipients?: string[];
   budgetPositions?: string[];
+  livreIExceptions?: string[];
+  livreIIExceptions?: string[];
   ldap?: UpdateSettingsInputLdap;
   smtp?: UpdateSettingsInputSmtp;
 }

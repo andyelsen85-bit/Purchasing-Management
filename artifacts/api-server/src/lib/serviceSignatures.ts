@@ -31,11 +31,17 @@ const RULE_DEFS: Array<{
     key: "q_legal",
     label: "Service juridique (4.1.1 / 4.1.3 / 7.1 / 7.3)",
     triggered: (f) => {
-      const livreI = f.livreIAnswer;
-      if (livreI === "true" || livreI === "unknown") return true;
-      const livreII = f.livreIIAnswer;
-      if (livreII === "true" || livreII === "false" || livreII === "unknown")
+      // New four-tier rule (Q4.1):
+      //  - TIER_1                              → no legal
+      //  - TIER_2 + "3 offres"                 → no legal
+      //  - TIER_2 + "Procédure d'exception"    → legal
+      //  - TIER_3                              → legal (always)
+      //  - TIER_4                              → legal (always)
+      const tier = f.valueTier;
+      if (tier === "TIER_3" || tier === "TIER_4") return true;
+      if (tier === "TIER_2" && f.tier2Choice === "LIVRE_I_EXCEPTION")
         return true;
+      // Q7.1 / Q7.3 — unchanged.
       if (f.hasAI === true) return true;
       const dataTypes = f.dataTypes;
       if (
@@ -46,8 +52,14 @@ const RULE_DEFS: Array<{
       ) {
         return true;
       }
-      // Backward compat with workflows created before the raw-answer
-      // fields were introduced: fall back to the stored procedure tier.
+      // Backward compat for workflows created before the four-tier
+      // rework — fall back to the legacy livreI/livreII raw answers
+      // and the older exceptionProcedure tag.
+      const livreI = f.livreIAnswer;
+      if (livreI === "true" || livreI === "unknown") return true;
+      const livreII = f.livreIIAnswer;
+      if (livreII === "true" || livreII === "false" || livreII === "unknown")
+        return true;
       if (f.exceptionProcedure === "LIVRE_I") return true;
       if (f.exceptionProcedure === "LIVRE_II") return true;
       return false;

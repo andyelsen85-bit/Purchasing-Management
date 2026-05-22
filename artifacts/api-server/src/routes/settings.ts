@@ -55,7 +55,15 @@ router.patch(
         if (v !== null && v !== undefined) out[k] = v;
       return out as Partial<{ [K in keyof T]: NonNullable<T[K]> }>;
     };
-    const { smtp, ldap, gtInvestRecipients, budgetPositions, ...top } = parsed.data;
+    const {
+      smtp,
+      ldap,
+      gtInvestRecipients,
+      budgetPositions,
+      livreIExceptions,
+      livreIIExceptions,
+      ...top
+    } = parsed.data;
     const patch: Parameters<typeof updateSettingsRecord>[0] = {
       ...dropNulls(top),
       // `logoDataUrl: null` is the explicit "remove the logo" signal
@@ -74,6 +82,8 @@ router.patch(
         : {}),
       ...(gtInvestRecipients ? { gtInvestRecipients } : {}),
       ...(budgetPositions ? { budgetPositions } : {}),
+      ...(livreIExceptions ? { livreIExceptions } : {}),
+      ...(livreIIExceptions ? { livreIIExceptions } : {}),
       ...(ldap ? { ldap: dropNulls(ldap) } : {}),
       ...(smtp
         ? {

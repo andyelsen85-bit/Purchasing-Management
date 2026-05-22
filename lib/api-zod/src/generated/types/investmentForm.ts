@@ -38,6 +38,14 @@ export interface InvestmentForm {
   /** @nullable */
   estimatedAmount5y?: number | null;
   /** @nullable */
+  valueTier?: string | null;
+  /** @nullable */
+  tier2Choice?: string | null;
+  /** @nullable */
+  livreIExceptionItem?: string | null;
+  /** @nullable */
+  livreIIExceptionItem?: string | null;
+  /** @nullable */
   exceptionProcedure?: string | null;
   /** @nullable */
   livreIAnswer?: string | null;
