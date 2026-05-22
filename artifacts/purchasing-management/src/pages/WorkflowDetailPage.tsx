@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
@@ -2541,16 +2541,28 @@ function ImmoPanel({
   const [items, setItems] = useState<AaEntry[]>(() => (wf.aaEntries ?? []).slice());
   const save = useSaveWorkflow(wf, onChange);
   const { setBeforeAdvance } = useMissingFields();
+  // Track unsaved local edits so background workflow refetches (e.g. after
+  // saving other panels, after uploading a document, after sibling
+  // mutations invalidate the workflow query) don't silently wipe in-progress
+  // rows on this form.
+  const dirty = useRef(false);
+  const markDirty = () => {
+    dirty.current = true;
+  };
   // Persist on Next Step so unsaved edits are taken into account
   // when the user clicks the global "Next step" button.
   useEffect(() => {
     setBeforeAdvance(async () => {
       await save.mutateAsync({ id: wf.id, data: { aaEntries: items } });
+      dirty.current = false;
     });
     return () => setBeforeAdvance(null);
   }, [setBeforeAdvance, save, wf.id, items]);
-  // Resync when the server-side value changes (other tab, undo, etc.)
+  // Resync when the server-side value changes (other tab, undo, etc.),
+  // but only when the user has no unsaved local edits — otherwise a
+  // background workflow refetch would clobber the rows being edited.
   useEffect(() => {
+    if (dirty.current) return;
     setItems((wf.aaEntries ?? []).slice());
   }, [wf.aaEntries]);
 
@@ -2561,15 +2573,22 @@ function ImmoPanel({
     .slice()
     .sort((a, b) => a - b);
 
-  const addRow = () => setItems((prev) => [...prev, { ...EMPTY_AA }]);
-  const removeAt = (i: number) =>
+  const addRow = () => {
+    markDirty();
+    setItems((prev) => [...prev, { ...EMPTY_AA }]);
+  };
+  const removeAt = (i: number) => {
+    markDirty();
     setItems((prev) => prev.filter((_, idx) => idx !== i));
-  const patch = (i: number, key: keyof AaEntry, val: unknown) =>
+  };
+  const patch = (i: number, key: keyof AaEntry, val: unknown) => {
+    markDirty();
     setItems((prev) =>
       prev.map((row, idx) =>
         idx === i ? { ...row, [key]: val as AaEntry[typeof key] } : row,
       ),
     );
+  };
 
   return (
     <div className="space-y-4">
@@ -2751,7 +2770,10 @@ function ImmoPanel({
           <div className="flex justify-end">
             <Button
               onClick={() =>
-                save.mutate({ id: wf.id, data: { aaEntries: items } })
+                save.mutate(
+                  { id: wf.id, data: { aaEntries: items } },
+                  { onSuccess: () => (dirty.current = false) },
+                )
               }
               disabled={save.isPending}
               data-testid="button-save-aa"
