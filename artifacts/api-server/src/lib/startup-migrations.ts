@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { logger } from "./logger";
-import { derivePublicationTier, getSettings } from "./settings";
 
 /**
  * One-shot, idempotent data migrations that run on server boot.
@@ -50,36 +49,40 @@ export async function runStartupMigrations(): Promise<void> {
       );
     }
 
-    // Tier rule change: only THREE_QUOTES (between Standard and
-    // Livre I thresholds) requires three competing quotes. LIVRE_I
-    // and LIVRE_II are public-publication regimes with a single
-    // awarded supplier and only need one quote. Backfill any rows
-    // that were previously flagged as `three_quote_required = true`
-    // for a non-THREE_QUOTES tier (or that have a stale tier vs the
-    // current settings thresholds and stored quote amounts). Safe
-    // to re-run: rows already in the correct state are no-ops.
-    const settings = await getSettings();
+    // Tier rule change (four-tier Q4.1 model): publication tier and
+    // `three_quote_required` are now derived from the investment form's
+    // `valueTier` + `tier2Choice`, not from quote amounts vs threshold
+    // settings. Backfill any workflow whose stored flags disagree with
+    // its form. Safe to re-run: rows in the correct state are no-ops.
+    // Workflows whose form has no `valueTier` (legacy / not-yet-filled)
+    // are left untouched so we don't overwrite valid historical values.
     type WfRow = {
       id: number;
-      quotes: unknown;
+      investment_form: unknown;
       publication_tier: string | null;
       three_quote_required: boolean | null;
     };
     const rowsRes = (await db.execute(sql`
-      SELECT id, quotes, publication_tier, three_quote_required
+      SELECT id, investment_form, publication_tier, three_quote_required
         FROM workflows
        WHERE deleted_at IS NULL
     `)) as { rows?: WfRow[] };
     const allRows = rowsRes.rows ?? [];
     let tierFixed = 0;
     for (const r of allRows) {
-      const quotes = Array.isArray(r.quotes)
-        ? (r.quotes as Array<{ amount?: number | null }>)
-        : [];
-      const firstAmount = quotes
-        .map((q) => q?.amount)
-        .find((a): a is number => a != null);
-      const tier = derivePublicationTier(firstAmount, settings);
+      const f = (r.investment_form ?? {}) as {
+        valueTier?: string | null;
+        tier2Choice?: string | null;
+      };
+      if (!f.valueTier) continue;
+      const tier: "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" =
+        f.valueTier === "TIER_2"
+          ? f.tier2Choice === "LIVRE_I_EXCEPTION"
+            ? "LIVRE_I"
+            : "THREE_QUOTES"
+          : f.valueTier === "TIER_3" || f.valueTier === "TIER_4"
+            ? "LIVRE_II"
+            : "STANDARD";
       const expectedThreeQuote = tier === "THREE_QUOTES";
       if (
         r.publication_tier !== tier ||
@@ -98,6 +101,80 @@ export async function runStartupMigrations(): Promise<void> {
       logger.info(
         { migrated: tierFixed },
         "Startup migration: re-derived publication tier / three_quote_required for existing workflows",
+      );
+    }
+
+    // Juridique notification rules: legacy installs had separate rows
+    // per question (q_4_1_1, q_4_1_3, q_7_1, q_7_3) all pointing at the
+    // same Service juridique. Consolidate them into a single q_legal
+    // rule so admins see one mailing list instead of several. Unions
+    // emails + ad_group, rewires any service_signatures references,
+    // then deletes the legacy rows. Idempotent.
+    const legacyRowsRes = (await db.execute(sql`
+      SELECT key, ad_group, emails
+        FROM notification_rules
+       WHERE key IN ('q_4_1_1','q_4_1_3','q_7_1','q_7_3')
+    `)) as { rows?: Array<{ key: string; ad_group: string | null; emails: unknown }> };
+    const legacyRows = legacyRowsRes.rows ?? [];
+    if (legacyRows.length > 0) {
+      const mergedLabel =
+        "Q4.1.1 / 4.1.3 / 7.1 / 7.3 — Cadre légal · Service juridique";
+      const mergedEmails = new Set<string>();
+      let mergedAdGroup: string | null = null;
+      for (const r of legacyRows) {
+        if (Array.isArray(r.emails)) {
+          for (const e of r.emails as unknown[]) {
+            if (typeof e === "string" && e.trim()) mergedEmails.add(e.trim());
+          }
+        }
+        if (!mergedAdGroup && r.ad_group && r.ad_group.trim()) {
+          mergedAdGroup = r.ad_group.trim();
+        }
+      }
+      const existingLegalRes = (await db.execute(sql`
+        SELECT id, ad_group, emails FROM notification_rules WHERE key = 'q_legal'
+      `)) as { rows?: Array<{ id: number; ad_group: string | null; emails: unknown }> };
+      const existingLegal = existingLegalRes.rows?.[0];
+      if (existingLegal) {
+        if (Array.isArray(existingLegal.emails)) {
+          for (const e of existingLegal.emails as unknown[]) {
+            if (typeof e === "string" && e.trim()) mergedEmails.add(e.trim());
+          }
+        }
+        if (!mergedAdGroup && existingLegal.ad_group) {
+          mergedAdGroup = existingLegal.ad_group;
+        }
+        await db.execute(sql`
+          UPDATE notification_rules
+             SET label = ${mergedLabel},
+                 emails = ${JSON.stringify([...mergedEmails])}::jsonb,
+                 ad_group = ${mergedAdGroup}
+           WHERE key = 'q_legal'
+        `);
+      } else {
+        await db.execute(sql`
+          INSERT INTO notification_rules (key, label, emails, ad_group)
+          VALUES ('q_legal', ${mergedLabel},
+                  ${JSON.stringify([...mergedEmails])}::jsonb,
+                  ${mergedAdGroup})
+        `);
+      }
+      // Rewire any service_signatures rows that still reference the
+      // legacy keys so they point at q_legal (preserves history).
+      await db.execute(sql`
+        UPDATE service_signatures
+           SET rule_key = 'q_legal',
+               rule_label = ${mergedLabel}
+         WHERE rule_key IN ('q_4_1_1','q_4_1_3','q_7_1','q_7_3')
+      `);
+      // Finally drop the legacy rules.
+      await db.execute(sql`
+        DELETE FROM notification_rules
+         WHERE key IN ('q_4_1_1','q_4_1_3','q_7_1','q_7_3')
+      `);
+      logger.info(
+        { merged: legacyRows.map((r) => r.key) },
+        "Startup migration: merged legacy juridique notification rules into q_legal",
       );
     }
   } catch (err) {
