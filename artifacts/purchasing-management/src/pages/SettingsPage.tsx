@@ -2795,9 +2795,18 @@ function BudgetPositionsPanel() {
   const [next, setNext] = useState("");
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  // Track whether the user has unsaved local edits. We must NOT
+  // overwrite their work when react-query refetches in the background
+  // (window focus, sibling mutations, etc.) — that was silently wiping
+  // newly added rows before the user could click Save.
+  const dirty = useRef(false);
+  const markDirty = () => {
+    dirty.current = true;
+  };
 
   useEffect(() => {
     if (!s) return;
+    if (dirty.current) return;
     setPositions((s.budgetPositions ?? []).slice().sort((a, b) => a.localeCompare(b, "fr")));
   }, [s]);
 
@@ -2822,6 +2831,7 @@ function BudgetPositionsPanel() {
             onClick={() => {
               const v = next.trim();
               if (!v) return;
+              markDirty();
               setPositions((r) =>
                 Array.from(new Set([...r, v])).sort((a, b) => a.localeCompare(b, "fr")),
               );
@@ -2848,9 +2858,10 @@ function BudgetPositionsPanel() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() =>
-                    setPositions((rs) => rs.filter((x) => x !== p))
-                  }
+                  onClick={() => {
+                    markDirty();
+                    setPositions((rs) => rs.filter((x) => x !== p));
+                  }}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
@@ -2917,7 +2928,10 @@ function BudgetPositionsPanel() {
           </div>
           <Button
             onClick={() =>
-              save.mutate({ data: { budgetPositions: positions } })
+              save.mutate(
+                { data: { budgetPositions: positions } },
+                { onSuccess: () => (dirty.current = false) },
+              )
             }
             disabled={save.isPending}
             data-testid="button-save-budget-positions"
@@ -2947,9 +2961,16 @@ function KostenstellePanel() {
   const [next, setNext] = useState("");
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  // See BudgetPositionsPanel — guard local edits from being clobbered
+  // by background refetches before the user clicks Save.
+  const dirty = useRef(false);
+  const markDirty = () => {
+    dirty.current = true;
+  };
 
   useEffect(() => {
     if (!s) return;
+    if (dirty.current) return;
     setItems(
       (s.kostenstelleList ?? []).slice().sort((a, b) => a.localeCompare(b, "fr")),
     );
@@ -2977,6 +2998,7 @@ function KostenstellePanel() {
             onClick={() => {
               const v = next.trim();
               if (!v) return;
+              markDirty();
               setItems((r) =>
                 Array.from(new Set([...r, v])).sort((a, b) =>
                   a.localeCompare(b, "fr"),
@@ -3005,7 +3027,10 @@ function KostenstellePanel() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setItems((rs) => rs.filter((x) => x !== p))}
+                  onClick={() => {
+                    markDirty();
+                    setItems((rs) => rs.filter((x) => x !== p));
+                  }}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
@@ -3073,7 +3098,12 @@ function KostenstellePanel() {
             />
           </div>
           <Button
-            onClick={() => save.mutate({ data: { kostenstelleList: items } })}
+            onClick={() =>
+              save.mutate(
+                { data: { kostenstelleList: items } },
+                { onSuccess: () => (dirty.current = false) },
+              )
+            }
             disabled={save.isPending}
             data-testid="button-save-kostenstelle"
           >
@@ -3105,9 +3135,16 @@ function SimpleStringListPanel({
   const save = useSaveSettings();
   const [items, setItems] = useState<string[]>([]);
   const [next, setNext] = useState("");
+  // See BudgetPositionsPanel — guard local edits from being clobbered
+  // by background refetches before the user clicks Save.
+  const dirty = useRef(false);
+  const markDirty = () => {
+    dirty.current = true;
+  };
 
   useEffect(() => {
     if (!s) return;
+    if (dirty.current) return;
     const list =
       (s as unknown as Record<string, string[] | undefined>)[field] ?? [];
     setItems(list.slice().sort((a, b) => a.localeCompare(b, "fr")));
@@ -3131,6 +3168,7 @@ function SimpleStringListPanel({
             onClick={() => {
               const v = next.trim();
               if (!v) return;
+              markDirty();
               setItems((r) =>
                 Array.from(new Set([...r, v])).sort((a, b) =>
                   a.localeCompare(b, "fr"),
@@ -3159,7 +3197,10 @@ function SimpleStringListPanel({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setItems((rs) => rs.filter((x) => x !== p))}
+                  onClick={() => {
+                    markDirty();
+                    setItems((rs) => rs.filter((x) => x !== p));
+                  }}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
@@ -3169,7 +3210,12 @@ function SimpleStringListPanel({
         </div>
         <div className="flex justify-end">
           <Button
-            onClick={() => save.mutate({ data: { [field]: items } })}
+            onClick={() =>
+              save.mutate(
+                { data: { [field]: items } },
+                { onSuccess: () => (dirty.current = false) },
+              )
+            }
             disabled={save.isPending}
             data-testid={`button-save-${testIdPrefix}`}
           >
@@ -3201,9 +3247,16 @@ function SimpleNumberListPanel({
   const save = useSaveSettings();
   const [items, setItems] = useState<number[]>([]);
   const [next, setNext] = useState("");
+  // See BudgetPositionsPanel — guard local edits from being clobbered
+  // by background refetches before the user clicks Save.
+  const dirty = useRef(false);
+  const markDirty = () => {
+    dirty.current = true;
+  };
 
   useEffect(() => {
     if (!s) return;
+    if (dirty.current) return;
     const list =
       (s as unknown as Record<string, number[] | undefined>)[field] ?? [];
     setItems(list.slice().sort((a, b) => a - b));
@@ -3229,6 +3282,7 @@ function SimpleNumberListPanel({
             onClick={() => {
               const v = Number(next.replace(",", "."));
               if (!Number.isFinite(v)) return;
+              markDirty();
               setItems((r) =>
                 Array.from(new Set([...r, v])).sort((a, b) => a - b),
               );
@@ -3255,7 +3309,10 @@ function SimpleNumberListPanel({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setItems((rs) => rs.filter((x) => x !== p))}
+                  onClick={() => {
+                    markDirty();
+                    setItems((rs) => rs.filter((x) => x !== p));
+                  }}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
@@ -3265,7 +3322,12 @@ function SimpleNumberListPanel({
         </div>
         <div className="flex justify-end">
           <Button
-            onClick={() => save.mutate({ data: { [field]: items } })}
+            onClick={() =>
+              save.mutate(
+                { data: { [field]: items } },
+                { onSuccess: () => (dirty.current = false) },
+              )
+            }
             disabled={save.isPending}
             data-testid={`button-save-${testIdPrefix}`}
           >
