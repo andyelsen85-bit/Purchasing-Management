@@ -824,8 +824,8 @@ export function NewWorkflowPage() {
     if (s === 6) {
       if (!warrantyDuration.trim()) m.push("9.1 Durée de la garantie");
       if (!maintenanceContract) m.push("9.2 Contrat de maintenance");
-      if (!cleaningRequired) m.push("9.4 Nettoyage / désinfection");
-      if (!sterilizationRequired) m.push("9.5 Stérilisation");
+      if (!cleaningRequired) m.push("9.3 Nettoyage / désinfection");
+      if (!sterilizationRequired) m.push("9.4 Stérilisation");
       if (!trainingRequired) m.push("10.1 Formation nécessaire");
       if (trainingRequired === "true" && !trainingOfferAttached)
         m.push("10.1.1 Offre de formation jointe");
@@ -1686,25 +1686,23 @@ export function NewWorkflowPage() {
 
               <SectionTitle number="6" label="Aspects techniques et infrastructure" />
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?<Req /></Label>
-                    <YesNoSelect value={architecturalWorks} onChange={setArchitecturalWorks} />
-                    {architecturalWorks === "true" && (
-                      <p className="text-xs text-amber-600">
-                        Le service Technique sera notifié.
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>6.2 Connexion informatique requise ?<Req /></Label>
-                    <YesNoSelect value={itConnection} onChange={setItConnection} />
-                    {itConnection === "true" && (
-                      <p className="text-xs text-amber-600 font-medium">
-                        Le Plateau des Systèmes d'Informations sera notifié.
-                      </p>
-                    )}
-                  </div>
+                <div className="space-y-1.5">
+                  <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?<Req /></Label>
+                  <YesNoSelect value={architecturalWorks} onChange={setArchitecturalWorks} />
+                  {architecturalWorks === "true" && (
+                    <p className="text-xs text-amber-600">
+                      Le service Technique sera notifié.
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>6.2 Connexion informatique requise ?<Req /></Label>
+                  <YesNoSelect value={itConnection} onChange={setItConnection} />
+                  {itConnection === "true" && (
+                    <p className="text-xs text-amber-600 font-medium">
+                      Le Plateau des Systèmes d'Informations sera notifié.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>
@@ -1826,25 +1824,23 @@ export function NewWorkflowPage() {
                     placeholder="ex. 2 ans"
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <Label>9.2 Contrat de maintenance nécessaire ?<Req /></Label>
-                    <YesNoSelect value={maintenanceContract} onChange={setMaintenanceContract} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>9.4 Nettoyage / désinfection requis ?<Req /></Label>
-                    <YesNoSelect value={cleaningRequired} onChange={setCleaningRequired} />
-                    {cleaningRequired === "true" && (
-                      <p className="text-xs text-amber-600">Le service SPCI sera notifié.</p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>9.5 Stérilisation requise ?<Req /></Label>
-                    <YesNoSelect value={sterilizationRequired} onChange={setSterilizationRequired} />
-                    {sterilizationRequired === "true" && (
-                      <p className="text-xs text-amber-600">Le service Stérilisation sera notifié.</p>
-                    )}
-                  </div>
+                <div className="space-y-1.5">
+                  <Label>9.2 Contrat de maintenance nécessaire ?<Req /></Label>
+                  <YesNoSelect value={maintenanceContract} onChange={setMaintenanceContract} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>9.3 Nettoyage / désinfection requis ?<Req /></Label>
+                  <YesNoSelect value={cleaningRequired} onChange={setCleaningRequired} />
+                  {cleaningRequired === "true" && (
+                    <p className="text-xs text-amber-600">Le service SPCI sera notifié.</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>9.4 Stérilisation requise ?<Req /></Label>
+                  <YesNoSelect value={sterilizationRequired} onChange={setSterilizationRequired} />
+                  {sterilizationRequired === "true" && (
+                    <p className="text-xs text-amber-600">Le service Stérilisation sera notifié.</p>
+                  )}
                 </div>
               </div>
 

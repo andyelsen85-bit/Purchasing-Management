@@ -4467,24 +4467,22 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
           {/* §6 */}
           <SL label="6 · Aspects techniques et infrastructure" />
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?</Label>
-                <IFEditYesNo
-                  value={boolToStr(draft.architecturalWorks)}
-                  onChange={(v) => patch("architecturalWorks", strToBool(v))}
-                />
-                {draft.architecturalWorks === true && (
-                  <p className="text-xs text-amber-600">Contacter le service technique.</p>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label>6.2 Connexion informatique requise ?</Label>
-                <IFEditYesNo
-                  value={boolToStr(draft.itConnection)}
-                  onChange={(v) => patch("itConnection", strToBool(v))}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label>6.1 Aménagements architecturaux ou techniques nécessaires ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.architecturalWorks)}
+                onChange={(v) => patch("architecturalWorks", strToBool(v))}
+              />
+              {draft.architecturalWorks === true && (
+                <p className="text-xs text-amber-600">Contacter le service technique.</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>6.2 Connexion informatique requise ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.itConnection)}
+                onChange={(v) => patch("itConnection", strToBool(v))}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>6.3 Accès ou interopérabilité avec des systèmes critiques (DPI, IT…) ?</Label>
@@ -4604,34 +4602,32 @@ function InvestmentFormPanel({ wf, user }: { wf: Workflow; user: SessionUser }) 
                 placeholder="ex. 2 ans"
               />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label>9.2 Contrat de maintenance nécessaire ?</Label>
-                <IFEditYesNo
-                  value={boolToStr(draft.maintenanceContract)}
-                  onChange={(v) => patch("maintenanceContract", strToBool(v))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>9.4 Nettoyage / désinfection requis ?</Label>
-                <IFEditYesNo
-                  value={boolToStr(draft.cleaningRequired)}
-                  onChange={(v) => patch("cleaningRequired", strToBool(v))}
-                />
-                {draft.cleaningRequired === true && (
-                  <p className="text-xs text-amber-600">Contacter le service hygiène.</p>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label>9.5 Stérilisation requise ?</Label>
-                <IFEditYesNo
-                  value={boolToStr(draft.sterilizationRequired)}
-                  onChange={(v) => patch("sterilizationRequired", strToBool(v))}
-                />
-                {draft.sterilizationRequired === true && (
-                  <p className="text-xs text-amber-600">Contacter le service stérilisation.</p>
-                )}
-              </div>
+            <div className="space-y-1.5">
+              <Label>9.2 Contrat de maintenance nécessaire ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.maintenanceContract)}
+                onChange={(v) => patch("maintenanceContract", strToBool(v))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>9.3 Nettoyage / désinfection requis ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.cleaningRequired)}
+                onChange={(v) => patch("cleaningRequired", strToBool(v))}
+              />
+              {draft.cleaningRequired === true && (
+                <p className="text-xs text-amber-600">Contacter le service hygiène.</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>9.4 Stérilisation requise ?</Label>
+              <IFEditYesNo
+                value={boolToStr(draft.sterilizationRequired)}
+                onChange={(v) => patch("sterilizationRequired", strToBool(v))}
+              />
+              {draft.sterilizationRequired === true && (
+                <p className="text-xs text-amber-600">Contacter le service stérilisation.</p>
+              )}
             </div>
           </div>
 
