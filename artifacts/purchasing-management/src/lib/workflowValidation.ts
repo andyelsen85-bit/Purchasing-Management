@@ -64,11 +64,8 @@ export function computeMissingFields(
         out.add("gtInvestDecision");
       return out;
     case "ORDERING":
-      // Order date and the attached PO scan are no longer required to
-      // advance — finance teams sometimes move the workflow forward
-      // before the signed PO arrives. Only the order number gates the
-      // advance, mirroring the server's validateAdvancePrereqs.
       if (!wf.orderNumber) out.add("orderNumber");
+      if (!wf.orderDate) out.add("orderDate");
       return out;
     case "DELIVERY":
       // No required fields on Delivery — see server validateAdvancePrereqs.

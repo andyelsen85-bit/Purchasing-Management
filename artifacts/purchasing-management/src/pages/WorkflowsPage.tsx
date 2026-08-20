@@ -19,7 +19,12 @@ import {
   WorkflowStep,
   type WorkflowSummary,
 } from "@/lib/api";
-import { STEP_LABEL, PRIORITY_LABEL, PRIORITY_TONE } from "@/lib/steps";
+import {
+  ACTIVE_STEPS,
+  STEP_LABEL,
+  PRIORITY_LABEL,
+  PRIORITY_TONE,
+} from "@/lib/steps";
 
 export function WorkflowsPage() {
   const [q, setQ] = useState("");
@@ -95,7 +100,7 @@ export function WorkflowsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Toutes les étapes</SelectItem>
-              {Object.values(WorkflowStep).map((s) => (
+              {(["DRAFT", ...ACTIVE_STEPS, "REJECTED"] as const).map((s) => (
                 <SelectItem key={s} value={s}>
                   {STEP_LABEL[s]}
                 </SelectItem>

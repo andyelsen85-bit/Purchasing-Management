@@ -104,6 +104,42 @@ export async function runStartupMigrations(): Promise<void> {
       );
     }
 
+    // Commande is now the final actionable step. Workflows already parked
+    // in one of the retired post-order states are therefore complete.
+    // Preserve the old state in history while normalising the live row.
+    const retiredPostOrder = await db.execute(sql`
+      WITH candidates AS (
+        SELECT id, created_by_id, current_step AS from_step
+          FROM workflows
+         WHERE current_step IN ('DELIVERY', 'INVOICE', 'VALIDATING_INVOICE', 'PAYMENT')
+      ),
+      updated AS (
+        UPDATE workflows AS w
+           SET current_step = 'DONE',
+               previous_step = 'ORDERING',
+               last_step_change_at = NOW()
+          FROM candidates AS c
+         WHERE w.id = c.id
+        RETURNING c.id, c.created_by_id, c.from_step
+      )
+      INSERT INTO history (workflow_id, action, from_step, to_step, actor_id, details)
+      SELECT id, 'ADVANCE', from_step, 'DONE', created_by_id,
+             'Auto-migrated: Commande is now the final workflow step'
+        FROM updated
+      RETURNING workflow_id
+    `);
+    const retiredPostOrderCount = Array.isArray(
+      (retiredPostOrder as { rows?: unknown[] }).rows,
+    )
+      ? (retiredPostOrder as { rows: unknown[] }).rows.length
+      : 0;
+    if (retiredPostOrderCount > 0) {
+      logger.info(
+        { migrated: retiredPostOrderCount },
+        "Startup migration: completed workflows in retired post-order steps",
+      );
+    }
+
     // Juridique notification rules: legacy installs had separate rows
     // per question (q_4_1_1, q_4_1_3, q_7_1, q_7_3) all pointing at the
     // same Service juridique. Consolidate them into a single q_legal

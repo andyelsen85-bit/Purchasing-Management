@@ -83,13 +83,10 @@ router.get("/dashboard/summary", requireAuth, async (req, res): Promise<void> =>
 });
 
 // Returns workflows that are waiting for an action from the current
-// user — quote / invoice validation, service signature, but also the
-// "doing" steps (placing the order, recording the invoice, paying)
+// user — quote validation, service signature, and placing the order
 // since the dashboard card lists every workflow the user still has to
 // touch. Scoping by role:
 //   ADMIN / FINANCIAL_ALL — every action step across all departments
-//   FINANCIAL_INVOICE     — INVOICE + VALIDATING_INVOICE everywhere
-//   FINANCIAL_PAYMENT     — PAYMENT everywhere
 //   GT_INVEST             — GT_INVEST everywhere
 //   DEPT_MANAGER          — VALIDATING_QUOTE_FINANCIAL in their depts
 // Additionally, anyone whose email matches a PENDING per-service
@@ -107,17 +104,8 @@ router.get("/dashboard/pending-signatures", requireAuth, async (req, res): Promi
       "VALIDATING_SERVICES",
       "GT_INVEST",
       "ORDERING",
-      "INVOICE",
-      "VALIDATING_INVOICE",
-      "PAYMENT",
     );
   } else {
-    if (hasRole(user, "FINANCIAL_INVOICE")) {
-      approvalSteps.push("INVOICE", "VALIDATING_INVOICE");
-    }
-    if (hasRole(user, "FINANCIAL_PAYMENT")) {
-      approvalSteps.push("PAYMENT");
-    }
     if (hasRole(user, "GT_INVEST")) {
       approvalSteps.push("GT_INVEST");
     }

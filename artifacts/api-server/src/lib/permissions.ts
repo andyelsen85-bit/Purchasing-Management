@@ -34,10 +34,6 @@ export const ACTIVE_WORKFLOW_STEPS = [
   "GT_INVEST",
   "IMMO",
   "ORDERING",
-  "DELIVERY",
-  "INVOICE",
-  "VALIDATING_INVOICE",
-  "PAYMENT",
   "DONE",
 ] as const;
 
@@ -232,13 +228,13 @@ export function nextStep(
     case "IMMO":
       return "ORDERING";
     case "ORDERING":
-      return "DELIVERY";
+      return "DONE";
+    // Retired post-order steps are kept as recognised legacy values so
+    // historical rows remain readable. If one is ever advanced before
+    // the startup migration normalises it, finish it immediately.
     case "DELIVERY":
-      return "INVOICE";
     case "INVOICE":
-      return "VALIDATING_INVOICE";
     case "VALIDATING_INVOICE":
-      return "PAYMENT";
     case "PAYMENT":
       return "DONE";
     case "DONE":

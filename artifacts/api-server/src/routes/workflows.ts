@@ -427,6 +427,19 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
     update.invoiceSignedBy = user.displayName;
     update.invoiceSignedAt = new Date();
   }
+  const finalOrderNumber =
+    b.orderNumber !== undefined ? b.orderNumber : wf.orderNumber;
+  const finalOrderDate =
+    b.orderDate !== undefined ? b.orderDate : wf.orderDate;
+  const completesOrdering =
+    wf.currentStep === "ORDERING" &&
+    Boolean(finalOrderNumber?.trim()) &&
+    Boolean(finalOrderDate);
+  if (completesOrdering) {
+    update.currentStep = "DONE";
+    update.previousStep = "ORDERING";
+    update.lastStepChangeAt = new Date();
+  }
   if (Object.keys(update).length > 0) {
     await db
       .update(workflowsTable)
@@ -434,13 +447,50 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
       .where(eq(workflowsTable.id, wf.id));
     await db.insert(historyTable).values({
       workflowId: wf.id,
-      action: "EDIT",
+      action: completesOrdering ? "ADVANCE" : "EDIT",
       fromStep: wf.currentStep,
-      toStep: wf.currentStep,
+      toStep: completesOrdering ? "DONE" : wf.currentStep,
       actorId: user.id,
-      details: "Edited fields",
+      details: completesOrdering
+        ? "Commande enregistrée — workflow terminé"
+        : "Edited fields",
     });
-    await audit(user.id, "WORKFLOW_UPDATE", "workflow", wf.id);
+    await audit(
+      user.id,
+      completesOrdering ? "WORKFLOW_ADVANCE" : "WORKFLOW_UPDATE",
+      "workflow",
+      wf.id,
+      completesOrdering ? "ORDERING->DONE" : undefined,
+    );
+    if (
+      completesOrdering &&
+      (await isNotificationEventEnabled("stepAdvance"))
+    ) {
+      const completed = await loadWorkflowFull(wf.id);
+      const recipients = await recipientsForStep(
+        {
+          id: wf.id,
+          departmentId: wf.departmentId,
+          createdById: wf.createdById,
+        },
+        "DONE",
+      );
+      if (completed && recipients.length > 0) {
+        const summary = buildWorkflowSummary(completed);
+        const attachments = await loadWorkflowAttachments(wf.id);
+        void queueNotification(
+          recipients,
+          `${wf.reference} : ${STEP_LABEL_FR.DONE ?? "Terminé"}`,
+          `Le numéro et la date de commande ont été enregistrés. Ce dossier est désormais terminé.\n\n` +
+            summary +
+            (attachments.length > 0
+              ? `\n\nLes pièces jointes du dossier sont attachées à ce message.`
+              : ""),
+          { workflowId: wf.id, step: "DONE" },
+          attachments,
+        );
+      }
+    }
   }
   res.json(await loadWorkflowFull(wf.id));
 });
@@ -524,12 +574,8 @@ async function validateAdvancePrereqs(
         return "Record the GT Invest decision before advancing.";
       return null;
     case "ORDERING":
-      // Only the order number is mandatory — the order date is
-      // informational and may legitimately be left blank when the
-      // supplier has not confirmed it yet, so we don't gate the
-      // advance on it.
-      if (!wf.orderNumber)
-        return "Enter the order number before advancing.";
+      if (!wf.orderNumber || !wf.orderDate)
+        return "Enter the order number and order date before completing the workflow.";
       // Order document is now optional — finance teams sometimes
       // advance the workflow before the signed PO scan arrives.
       return null;
@@ -844,34 +890,48 @@ router.post("/workflows/:id/undo", requireAuth, async (req, res): Promise<void> 
       .json({ error: "Cannot undo from the first step (Quotation)" });
     return;
   }
+  // N° AA always rewinds to GT Invest. This explicit business rule takes
+  // priority over historical rows that may contain an older or incomplete
+  // transition chain. Likewise, undoing a completed workflow returns to
+  // Commande because it is now the final actionable step.
+  let prev: string | null =
+    wf.currentStep === "IMMO"
+      ? "GT_INVEST"
+      : wf.currentStep === "DONE"
+        ? "ORDERING"
+        : null;
+
   // Multi-step undo: derive the previous step from history rather than
   // relying on the (single-slot) `previousStep` column. We look for the
   // most recent forward transition (ADVANCE / REJECT) whose toStep is
   // the current step and rewind to its fromStep. This lets an admin
   // undo as many steps as they like, one click at a time, instead of
   // being limited to the single most-recent ADVANCE.
-  const recent = await db
-    .select()
-    .from(historyTable)
-    .where(eq(historyTable.workflowId, wf.id))
-    .orderBy(desc(historyTable.createdAt))
-    .limit(50);
-  const lastForward = recent.find(
-    (h) =>
-      (h.action === "ADVANCE" || h.action === "REJECT") &&
-      h.toStep === wf.currentStep &&
-      h.fromStep,
-  );
-  if (!lastForward || !lastForward.fromStep) {
-    res.status(400).json({ error: "No previous step to undo to" });
-    return;
+  if (!prev) {
+    const recent = await db
+      .select()
+      .from(historyTable)
+      .where(eq(historyTable.workflowId, wf.id))
+      .orderBy(desc(historyTable.createdAt))
+      .limit(50);
+    const lastForward = recent.find(
+      (h) =>
+        (h.action === "ADVANCE" || h.action === "REJECT") &&
+        h.toStep === wf.currentStep &&
+        h.fromStep,
+    );
+    if (!lastForward || !lastForward.fromStep) {
+      res.status(400).json({ error: "No previous step to undo to" });
+      return;
+    }
+    prev = lastForward.fromStep;
   }
-  const prev = lastForward.fromStep;
   await db
     .update(workflowsTable)
     .set({
       currentStep: prev,
       previousStep: null,
+      ...(wf.currentStep === "IMMO" ? { branch: "GT_INVEST" } : {}),
       lastStepChangeAt: new Date(),
     })
     .where(eq(workflowsTable.id, wf.id));

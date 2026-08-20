@@ -29,10 +29,6 @@ export const ACTIVE_STEPS = [
   "GT_INVEST",
   "IMMO",
   "ORDERING",
-  "DELIVERY",
-  "INVOICE",
-  "VALIDATING_INVOICE",
-  "PAYMENT",
   "DONE",
 ] as const satisfies readonly Step[];
 

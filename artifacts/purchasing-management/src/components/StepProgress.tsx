@@ -22,10 +22,6 @@ export function StepProgress({ current, branch }: Props) {
         "GT_INVEST",
         "IMMO",
         "ORDERING",
-        "DELIVERY",
-        "INVOICE",
-        "VALIDATING_INVOICE",
-        "PAYMENT",
         "DONE",
       ];
     }
@@ -36,10 +32,6 @@ export function StepProgress({ current, branch }: Props) {
       "VALIDATING_SERVICES",
       "IMMO",
       "ORDERING",
-      "DELIVERY",
-      "INVOICE",
-      "VALIDATING_INVOICE",
-      "PAYMENT",
       "DONE",
     ];
   })();

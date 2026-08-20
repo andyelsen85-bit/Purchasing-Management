@@ -385,7 +385,9 @@ function ActionBar({
   // bundles "approve + route" into a single inline action, so we hide
   // the global Advance control here to avoid two ways to do the same
   // thing (and to prevent advancing without picking a branch).
-  const inlineAdvanceStep = wf.currentStep === "VALIDATING_BY_FINANCIAL";
+  const inlineAdvanceStep =
+    wf.currentStep === "VALIDATING_BY_FINANCIAL" ||
+    wf.currentStep === "ORDERING";
   const isTerminal =
     wf.currentStep === "DONE" || wf.currentStep === "REJECTED";
 
@@ -700,16 +702,12 @@ function StepPanel({
       return <ImmoPanel wf={wf} onChange={onChange} />;
     case "ORDERING":
       return <OrderingPanel wf={wf} onChange={onChange} />;
-    case "DELIVERY":
-      return <DeliveryPanel wf={wf} onChange={onChange} />;
-    case "INVOICE":
-      return <InvoicePanel wf={wf} onChange={onChange} />;
     case "VALIDATING_SERVICES":
       return <ServiceSignaturesPanel wf={wf} user={user} onChange={onChange} />;
+    case "DELIVERY":
+    case "INVOICE":
     case "VALIDATING_INVOICE":
-      return <InvoiceValidationPanel wf={wf} user={user} onChange={onChange} />;
     case "PAYMENT":
-      return <PaymentPanel wf={wf} onChange={onChange} />;
     case "DONE":
       return <DoneSummaryPanel wf={wf} />;
     case "REJECTED":
@@ -901,30 +899,6 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
             <Row label="Date de commande" value={fmtDate(wf.orderDate)} />
           </Section>
 
-          <Section title="6 · Livraison" step="DELIVERY">
-            <Row label="Livré le" value={fmtDate(wf.deliveredOn)} />
-            <Row label="Notes" value={orDash(wf.deliveryNotes)} />
-          </Section>
-
-          <Section title="7 · Facture" step="INVOICE">
-            <Row label="N° de facture" value={orDash(wf.invoiceNumber)} />
-            <Row label="Montant facture" value={fmtMoney(wf.invoiceAmount)} />
-            <Row label="Date de facture" value={fmtDate(wf.invoiceDate)} />
-          </Section>
-
-          <Section
-            title="8 · Validation facture"
-            step="VALIDATING_INVOICE"
-          >
-            <Row label="Validé" value={fmtBool(wf.invoiceValidated)} />
-            <Row label="Signé par" value={orDash(wf.invoiceSignedBy)} />
-            <Row label="Signé le" value={fmtDateTime(wf.invoiceSignedAt)} />
-          </Section>
-
-          <Section title="9 · Paiement" step="PAYMENT">
-            <Row label="Date de paiement" value={fmtDate(wf.paymentDate)} />
-            <Row label="Référence paiement" value={orDash(wf.paymentReference)} />
-          </Section>
         </CardContent>
       </Card>
 
@@ -2289,10 +2263,7 @@ function PriorStepsRecap({
     "VALIDATING_BY_FINANCIAL",
     "GT_INVEST",
     "ORDERING",
-    "DELIVERY",
-    "INVOICE",
-    "VALIDATING_INVOICE",
-    "PAYMENT",
+    "DONE",
   ];
   const cutoff = ORDER.indexOf(throughStep);
   const show = (step: Step) => {
@@ -2424,28 +2395,6 @@ function PriorStepsRecap({
           </Section>
         )}
 
-        {show("DELIVERY") && (
-          <Section title="6 · Livraison">
-            <Row label="Livré le" value={fmtDate(wf.deliveredOn)} />
-            <Row label="Notes" value={orDash(wf.deliveryNotes)} />
-          </Section>
-        )}
-
-        {show("INVOICE") && (
-          <Section title="7 · Facture">
-            <Row label="N° de facture" value={orDash(wf.invoiceNumber)} />
-            <Row label="Montant facture" value={fmtMoney(wf.invoiceAmount)} />
-            <Row label="Date de facture" value={fmtDate(wf.invoiceDate)} />
-          </Section>
-        )}
-
-        {show("VALIDATING_INVOICE") && (
-          <Section title="8 · Validation facture">
-            <Row label="Validé" value={fmtBool(wf.invoiceValidated)} />
-            <Row label="Signé par" value={orDash(wf.invoiceSignedBy)} />
-            <Row label="Signé le" value={fmtDateTime(wf.invoiceSignedAt)} />
-          </Section>
-        )}
       </CardContent>
     </Card>
   );
@@ -2830,19 +2779,7 @@ function OrderingPanel({
   const [orderNumber, setOrderNumber] = useState(wf.orderNumber ?? "");
   const [orderDate, setOrderDate] = useState(toDateInput(wf.orderDate));
   const save = useSaveWorkflow(wf, onChange);
-  const { missing, clearKey, setBeforeAdvance } = useMissingFields();
-  // Auto-save the form when the user clicks the global Next Step
-  // so freshly-typed values are taken into account by the server's
-  // advance prerequisites — no need to click Save first.
-  useEffect(() => {
-    setBeforeAdvance(async () => {
-      await save.mutateAsync({
-        id: wf.id,
-        data: { orderNumber, orderDate: orderDate || null },
-      });
-    });
-    return () => setBeforeAdvance(null);
-  }, [setBeforeAdvance, save, wf.id, orderNumber, orderDate]);
+  const { missing, clearKey } = useMissingFields();
   // Keep local form state in sync with the latest server snapshot so
   // a Save → refetch (or another tab editing) is reflected here.
   useEffect(() => {
@@ -2855,6 +2792,9 @@ function OrderingPanel({
   useEffect(() => {
     if (orderNumber) clearKey("orderNumber");
   }, [orderNumber, clearKey]);
+  useEffect(() => {
+    if (orderDate) clearKey("orderDate");
+  }, [orderDate, clearKey]);
   return (
     <div className="space-y-4">
       {/* Recap of prior steps lives on the dedicated Summary tab now;
@@ -2883,7 +2823,9 @@ function OrderingPanel({
             />
           </div>
           <div className="space-y-1">
-            <Label>Date de commande</Label>
+            <Label>
+              Date de commande<RequiredMark />
+            </Label>
             <DatePicker
               value={orderDate}
               onChange={setOrderDate}
@@ -2901,8 +2843,12 @@ function OrderingPanel({
           disabled={save.isPending}
           data-testid="button-save-order"
         >
-          <Save className="mr-2 h-4 w-4" /> Enregistrer
+          <Save className="mr-2 h-4 w-4" /> Enregistrer et terminer
         </Button>
+        <p className="text-xs text-muted-foreground">
+          Dès que le N° de commande et la date de commande sont enregistrés,
+          la demande passe automatiquement à « Terminé ».
+        </p>
         <StepDocumentUploader
           wf={wf}
           kind="ORDER"

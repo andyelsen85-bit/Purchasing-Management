@@ -382,7 +382,7 @@ function QueuePanel() {
                 </div>
                 {g.workflows.length === 0 ? (
                   <p className="rounded-md border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                    No workflows assigned to this meeting yet.
+                    Pas de demande assignée à cette réunion.
                   </p>
                 ) : (
                 <div className="divide-y rounded-md border">
