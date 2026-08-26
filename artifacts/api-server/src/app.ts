@@ -1,4 +1,7 @@
-import express, { type Express } from "express";
+import express, {
+  type ErrorRequestHandler,
+  type Express,
+} from "express";
 import cors from "cors";
 import session from "express-session";
 import ConnectPgSimple from "connect-pg-simple";
@@ -140,6 +143,62 @@ app.use(
 );
 
 app.use("/api", corsMiddleware, router);
+
+// API errors must remain machine-readable. Express otherwise renders thrown
+// async/multipart errors as a generic HTML page, which hides the actual cause
+// from the client. Preserve an explicit status code when one exists and map
+// common upload/database failures to precise, safe French explanations.
+const apiErrorHandler: ErrorRequestHandler = (err, req, res, next) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  const e = err as Error & {
+    status?: number;
+    statusCode?: number;
+    code?: string;
+    type?: string;
+  };
+  let code = e.code ?? "INTERNAL_ERROR";
+  let status = e.status ?? e.statusCode ?? 500;
+  let message = "La demande n'a pas pu être enregistrée en raison d'une erreur serveur.";
+
+  if (code === "LIMIT_FILE_SIZE") {
+    status = 413;
+    code = "FILE_TOO_LARGE";
+    message = "Le fichier dépasse la taille maximale autorisée de 50 Mo.";
+  } else if (e.type === "entity.too.large") {
+    status = 413;
+    code = "PAYLOAD_TOO_LARGE";
+    message = "La requête dépasse la taille maximale autorisée.";
+  } else if (code === "22001") {
+    code = "VALUE_TOO_LONG";
+    message = "Une valeur saisie dépasse la longueur autorisée.";
+  } else if (code === "23502") {
+    code = "REQUIRED_VALUE_MISSING";
+    message = "Un champ obligatoire manque dans les données à enregistrer.";
+  } else if (code === "23503") {
+    code = "REFERENCE_NOT_FOUND";
+    message = "Une donnée sélectionnée n'existe plus ou n'est plus disponible.";
+  } else if (code === "23505") {
+    status = 409;
+    code = "DUPLICATE_VALUE";
+    message = "Une donnée identique existe déjà.";
+  } else if (e.name === "MulterError") {
+    status = status >= 400 && status < 600 ? status : 400;
+    message = `Le fichier n'a pas pu être téléversé (${e.message}).`;
+  } else if (status >= 400 && status < 500 && e.message) {
+    message = e.message;
+  }
+
+  req.log?.error({ err: e, status, code }, "API request failed");
+  res.status(status).json({
+    error: message,
+    message,
+    code,
+  });
+};
+app.use("/api", apiErrorHandler);
 
 // Optional SPA passthrough: when WEB_DIST is set (Docker / production), the
 // API process also serves the built React app and falls back to index.html

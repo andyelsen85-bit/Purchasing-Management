@@ -47,7 +47,7 @@ import {
   derivePublicationTier,
   isNotificationEventEnabled,
 } from "../lib/settings";
-import { queueNotification, sendNotificationNow, recipientsForStep, STEP_LABEL_FR, buildWorkflowSummary, type NotificationAttachment } from "../lib/email";
+import { queueNotification, sendNotificationNow, recipientsForRole, recipientsForStep, STEP_LABEL_FR, buildWorkflowSummary, type NotificationAttachment } from "../lib/email";
 import {
   seedServiceSignatures,
   serviceSignaturesStatus,
@@ -138,6 +138,46 @@ async function loadWorkflowFull(id: number, includeDeleted = false) {
       wf.currentStep !== "DONE" &&
       wf.currentStep !== "REJECTED",
   };
+}
+
+const FINANCIAL_PURCHASING_ROLE = "FINANCIAL_Achat";
+
+function financialPurchasingReasons(investmentForm: unknown): string[] {
+  const form =
+    investmentForm && typeof investmentForm === "object"
+      ? (investmentForm as Record<string, unknown>)
+      : {};
+  const reasons: string[] = [];
+  if (["TIER_2", "TIER_3", "TIER_4"].includes(String(form.valueTier ?? ""))) {
+    reasons.push("la valeur d'investissement se situe dans une tranche nécessitant un suivi Achats");
+  }
+  if (form.maintenanceContract === true) {
+    reasons.push("un contrat de maintenance est nécessaire");
+  }
+  return reasons;
+}
+
+async function queueFinancialPurchasingNotification(
+  workflow: NonNullable<Awaited<ReturnType<typeof loadWorkflowFull>>>,
+): Promise<void> {
+  const reasons = financialPurchasingReasons(workflow.investmentForm);
+  const settings = await getSettings();
+  if (reasons.length === 0 || !settings.notifications.enabled) return;
+  const recipients = await recipientsForRole(FINANCIAL_PURCHASING_ROLE);
+  if (recipients.length === 0) return;
+  const summary = buildWorkflowSummary({
+    ...workflow,
+    deptName: workflow.departmentName,
+    creatorName: workflow.createdByName,
+  });
+  void queueNotification(
+    recipients,
+    `${workflow.reference} : suivi Achats requis`,
+    `Le dossier ${workflow.reference} (${workflow.title}) nécessite l'attention du service Achats :\n` +
+      reasons.map((reason) => `• ${reason}`).join("\n") +
+      `\n\n${summary}\n\nConnectez-vous à Purchasing Management pour consulter le dossier.`,
+    { workflowId: workflow.id, step: workflow.currentStep },
+  );
 }
 
 router.get("/workflows", requireAuth, async (req, res): Promise<void> => {
@@ -312,7 +352,11 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
     });
     await audit(user.id, "WORKFLOW_CREATE", "workflow", created.id, reference);
   }
-  res.status(201).json(await loadWorkflowFull(created!.id));
+  const createdWorkflow = await loadWorkflowFull(created!.id);
+  if (createdWorkflow && !parsed.data.asDraft) {
+    await queueFinancialPurchasingNotification(createdWorkflow);
+  }
+  res.status(201).json(createdWorkflow);
 });
 
 router.get("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
@@ -752,6 +796,14 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
         );
       }
     }
+  }
+
+  // A saved draft becomes an active request only when it advances to
+  // Quotation. Notify purchasing here (rather than on every draft PATCH) so
+  // users receive one message for the finalized request.
+  if (wf.currentStep === "DRAFT" && next === "QUOTATION") {
+    const activated = await loadWorkflowFull(wf.id);
+    if (activated) await queueFinancialPurchasingNotification(activated);
   }
 
   res.json(await loadWorkflowFull(wf.id));

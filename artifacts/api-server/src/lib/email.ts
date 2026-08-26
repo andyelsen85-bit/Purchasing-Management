@@ -68,6 +68,22 @@ export async function recipientsForStep(
   return Array.from(emails);
 }
 
+/**
+ * Resolve every active application user whose role list contains the exact
+ * role. Unlike step notifications this intentionally does not add the
+ * workflow creator or apply department scoping.
+ */
+export async function recipientsForRole(role: string): Promise<string[]> {
+  const candidates = await db.select().from(usersTable);
+  const emails = new Set<string>();
+  for (const user of candidates) {
+    if (!user.email) continue;
+    const roles = (user.roles as string[] | null) ?? [];
+    if (roles.includes(role)) emails.add(user.email);
+  }
+  return Array.from(emails);
+}
+
 // ─── SMTP config type ─────────────────────────────────────────────────────────
 
 export interface SmtpConfig {

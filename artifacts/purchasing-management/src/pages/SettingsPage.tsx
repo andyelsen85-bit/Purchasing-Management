@@ -99,6 +99,12 @@ const ROLE_DEFS: Array<{ role: string; label: string; description: string }> = [
       "Can act on every step of every workflow regardless of department: quotation, financial validation (K-Order/GT-Invest routing), ordering, delivery, invoice, payment. Can undo. Can edit master data (companies, contacts).",
   },
   {
+    role: "FINANCIAL_Achat",
+    label: "Financial — purchasing notifications",
+    description:
+      "Receives purchasing notifications when an investment is in one of the three upper value ranges or requires a maintenance contract. This role does not grant additional workflow permissions.",
+  },
+  {
     role: "FINANCIAL_INVOICE",
     label: "Financial — invoicing",
     description:

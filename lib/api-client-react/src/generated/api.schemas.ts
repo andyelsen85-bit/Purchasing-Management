@@ -18,6 +18,7 @@ export type Role = (typeof Role)[keyof typeof Role];
 export const Role = {
   ADMIN: "ADMIN",
   FINANCIAL_ALL: "FINANCIAL_ALL",
+  FINANCIAL_Achat: "FINANCIAL_Achat",
   FINANCIAL_INVOICE: "FINANCIAL_INVOICE",
   FINANCIAL_PAYMENT: "FINANCIAL_PAYMENT",
   DEPT_MANAGER: "DEPT_MANAGER",

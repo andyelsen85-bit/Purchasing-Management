@@ -24,6 +24,7 @@ export async function verifyPassword(
 export type Role =
   | "ADMIN"
   | "FINANCIAL_ALL"
+  | "FINANCIAL_Achat"
   | "FINANCIAL_INVOICE"
   | "FINANCIAL_PAYMENT"
   | "DEPT_MANAGER"

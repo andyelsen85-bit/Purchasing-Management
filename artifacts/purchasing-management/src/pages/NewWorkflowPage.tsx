@@ -80,6 +80,12 @@ const DATA_TYPES = [
 
 const CE_CERT_LABEL = "Certificat CE (obligatoire si équipement médical ou hardware)";
 const DECLARATION_CONFORMITE_LABEL = "Déclaration de conformité";
+const OTHER_DOCUMENT_LABEL = "Autre document";
+const OPTIONAL_UPLOAD_DOCS = new Set([
+  DECLARATION_CONFORMITE_LABEL,
+  "Offre de prix des consommables",
+  "Manuel d'utilisation",
+]);
 
 const REQUIRED_DOCS = [
   "Offre de prix",
@@ -93,6 +99,7 @@ const REQUIRED_DOCS = [
   DECLARATION_CONFORMITE_LABEL,
   "Certificat de résistance au feu (si mobilier ou matériel inflammable)",
   "Normes ISO 80601 et/ou IEC 60601 (pour matériel roulant)",
+  OTHER_DOCUMENT_LABEL,
 ];
 
 // Map a section-11 doc label to the document `kind` stored in the
@@ -101,6 +108,31 @@ const REQUIRED_DOCS = [
 // document is filed as OTHER on the QUOTATION step.
 function docKindFor(label: string): "QUOTE" | "OTHER" {
   return label === "Offre de prix" ? "QUOTE" : "OTHER";
+}
+
+async function throwUploadError(
+  response: Response,
+  label: string,
+): Promise<never> {
+  const contentType = response.headers.get("content-type") ?? "";
+  let detail = response.statusText || "Échec du téléversement";
+  if (contentType.includes("application/json")) {
+    const data = (await response.json().catch(() => null)) as
+      | { error?: string; message?: string; code?: string }
+      | null;
+    detail = data?.message ?? data?.error ?? detail;
+  } else {
+    const text = await response.text();
+    if (text && !/<html|<!doctype/i.test(text)) detail = text;
+  }
+  const message = `HTTP ${response.status} — ${label} : ${detail}`;
+  const error = new Error(message) as Error & {
+    status?: number;
+    data?: { error: string; message: string };
+  };
+  error.status = response.status;
+  error.data = { error: message, message };
+  throw error;
 }
 
 function SectionTitle({ number, label }: { number: string; label: string }) {
@@ -772,11 +804,8 @@ export function NewWorkflowPage() {
     if (s === 3) {
       if (!requestNature) m.push("3.1 Nature de la demande");
       if (requestNature === "REPLACEMENT") {
-        if (!replacedEquipmentRef.trim())
-          m.push("3.1.1 Numéro / nom de l'équipement remplacé");
         if (!replacedEquipmentLocation.trim())
           m.push("3.1.2 Localisation");
-        if (!replacementReason.trim()) m.push("3.1.3 Motif du remplacement");
         if (!decommissioned) m.push("3.1.4 Mise hors service");
         if (decommissioned === "false" && !decommissionedNote.trim())
           m.push("3.1.4 Précision sur le devenir de l'équipement");
@@ -837,7 +866,13 @@ export function NewWorkflowPage() {
       for (const d of documentsProvided) {
         // A label is satisfied either by a freshly-picked File or by a
         // document carried over from a resumed draft.
-        if (!files[d] && !existingDocs[d]) m.push(`Fichier pour « ${d} »`);
+        if (
+          !OPTIONAL_UPLOAD_DOCS.has(d) &&
+          !files[d] &&
+          !existingDocs[d]
+        ) {
+          m.push(`Fichier pour « ${d} »`);
+        }
       }
     }
     return m;
@@ -928,8 +963,7 @@ export function NewWorkflowPage() {
           credentials: "include",
         });
         if (!r.ok) {
-          const txt = await r.text();
-          throw new Error(`Upload failed for « ${label} »: ${txt}`);
+          await throwUploadError(r, `téléversement de « ${label} »`);
         }
         const doc = (await r.json()) as { id: number };
         freshDocIds[label] = doc.id;
@@ -1039,8 +1073,7 @@ export function NewWorkflowPage() {
           credentials: "include",
         });
         if (!r.ok) {
-          const txt = await r.text();
-          throw new Error(`Upload failed for « ${label} »: ${txt}`);
+          await throwUploadError(r, `téléversement de « ${label} »`);
         }
         const doc = (await r.json()) as { id: number };
         if (label === "Offre de prix") offrePrixDocId = doc.id;
@@ -1320,7 +1353,7 @@ export function NewWorkflowPage() {
                 {requestNature === "REPLACEMENT" && (
                   <div className="rounded-md border p-4 space-y-4 bg-muted/30">
                     <div className="space-y-1.5">
-                      <Label>3.1.1 Numéro d'équipement / numéro de série ou nom remplacé<Req /></Label>
+                      <Label>3.1.1 Numéro d'équipement / numéro de série ou nom remplacé</Label>
                       <Input
                         value={replacedEquipmentRef}
                         onChange={(e) => setReplacedEquipmentRef(e.target.value)}
@@ -1334,7 +1367,7 @@ export function NewWorkflowPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>3.1.3 Motif du remplacement<Req /></Label>
+                      <Label>3.1.3 Motif du remplacement</Label>
                       <Textarea
                         rows={2}
                         value={replacementReason}
@@ -1920,7 +1953,7 @@ export function NewWorkflowPage() {
               ) : (
                 <div className="space-y-4">
                   <p className="text-xs text-muted-foreground">
-                    Téléversez le fichier correspondant à chaque document coché. Tous les fichiers sont obligatoires. L'« Offre de prix » sera enregistrée comme premier devis du workflow, avec le fournisseur sélectionné en 5.1.
+                    Téléversez les fichiers disponibles. L'« Offre de prix » et les documents marqués d'un astérisque sont obligatoires. L'« Offre de prix » sera enregistrée comme premier devis du workflow, avec le fournisseur sélectionné en 5.1.
                   </p>
                   {documentsProvided.map((label) => {
                     const f = files[label] ?? null;
@@ -1934,7 +1967,7 @@ export function NewWorkflowPage() {
                         <div className="flex items-start justify-between gap-3">
                           <Label className="text-sm font-medium leading-snug">
                             {label}
-                            <Req />
+                            {!OPTIONAL_UPLOAD_DOCS.has(label) && <Req />}
                           </Label>
                           {label === "Offre de prix" && (
                             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">

@@ -5,6 +5,7 @@ import type { Role } from "./auth";
 const VALID_ROLES: ReadonlySet<Role> = new Set<Role>([
   "ADMIN",
   "FINANCIAL_ALL",
+  "FINANCIAL_Achat",
   "FINANCIAL_INVOICE",
   "FINANCIAL_PAYMENT",
   "DEPT_MANAGER",

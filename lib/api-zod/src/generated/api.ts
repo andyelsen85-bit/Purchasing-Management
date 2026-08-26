@@ -32,6 +32,7 @@ export const LoginResponse = zod.object({
     zod.enum([
       "ADMIN",
       "FINANCIAL_ALL",
+      "FINANCIAL_Achat",
       "FINANCIAL_INVOICE",
       "FINANCIAL_PAYMENT",
       "DEPT_MANAGER",
@@ -61,6 +62,7 @@ export const GetSessionResponse = zod.object({
         zod.enum([
           "ADMIN",
           "FINANCIAL_ALL",
+          "FINANCIAL_Achat",
           "FINANCIAL_INVOICE",
           "FINANCIAL_PAYMENT",
           "DEPT_MANAGER",
@@ -113,6 +115,7 @@ export const KerberosNegotiateResponse = zod.object({
     zod.enum([
       "ADMIN",
       "FINANCIAL_ALL",
+      "FINANCIAL_Achat",
       "FINANCIAL_INVOICE",
       "FINANCIAL_PAYMENT",
       "DEPT_MANAGER",
@@ -136,6 +139,7 @@ export const ListUsersResponseItem = zod.object({
     zod.enum([
       "ADMIN",
       "FINANCIAL_ALL",
+      "FINANCIAL_Achat",
       "FINANCIAL_INVOICE",
       "FINANCIAL_PAYMENT",
       "DEPT_MANAGER",
@@ -161,6 +165,7 @@ export const CreateUserBody = zod.object({
     zod.enum([
       "ADMIN",
       "FINANCIAL_ALL",
+      "FINANCIAL_Achat",
       "FINANCIAL_INVOICE",
       "FINANCIAL_PAYMENT",
       "DEPT_MANAGER",
@@ -187,6 +192,7 @@ export const UpdateUserBody = zod.object({
       zod.enum([
         "ADMIN",
         "FINANCIAL_ALL",
+        "FINANCIAL_Achat",
         "FINANCIAL_INVOICE",
         "FINANCIAL_PAYMENT",
         "DEPT_MANAGER",
@@ -210,6 +216,7 @@ export const UpdateUserResponse = zod.object({
     zod.enum([
       "ADMIN",
       "FINANCIAL_ALL",
+      "FINANCIAL_Achat",
       "FINANCIAL_INVOICE",
       "FINANCIAL_PAYMENT",
       "DEPT_MANAGER",
@@ -3281,6 +3288,7 @@ export const TestLdapResponse = zod.object({
     zod.enum([
       "ADMIN",
       "FINANCIAL_ALL",
+      "FINANCIAL_Achat",
       "FINANCIAL_INVOICE",
       "FINANCIAL_PAYMENT",
       "DEPT_MANAGER",
