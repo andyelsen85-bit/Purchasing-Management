@@ -102,10 +102,40 @@ async function loadWorkflowAttachments(
 
 async function generateReference(): Promise<string> {
   const year = new Date().getFullYear();
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(workflowsTable);
-  return `PO-${year}-${String((count ?? 0) + 1).padStart(5, "0")}`;
+  const prefix = `PO-${year}-`;
+  const [{ maxSequence }] = await db
+    .select({
+      maxSequence: sql<number>`
+        coalesce(
+          max(substring(${workflowsTable.reference} from '([0-9]+)$')::int),
+          0
+        )::int
+      `,
+    })
+    .from(workflowsTable)
+    .where(sql`${workflowsTable.reference} like ${`${prefix}%`}`);
+  return `${prefix}${String((maxSequence ?? 0) + 1).padStart(5, "0")}`;
+}
+
+function isDuplicateWorkflowReference(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    const detail = current as {
+      code?: string;
+      constraint?: string;
+      message?: string;
+      cause?: unknown;
+    };
+    if (
+      detail.code === "23505" &&
+      (detail.constraint === "workflows_reference_uniq" ||
+        detail.message?.includes("workflows_reference_uniq"))
+    ) {
+      return true;
+    }
+    current = detail.cause;
+  }
+  return false;
 }
 
 async function loadWorkflowFull(id: number, includeDeleted = false) {
@@ -293,7 +323,6 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
     });
     return;
   }
-  const reference = await generateReference();
   const settings = await getSettings();
   // The "3 quotes required" flag is now derived from the FIRST quote
   // line entered in the QUOTATION step (see PATCH /workflows/:id), so
@@ -315,32 +344,47 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
       : initForm?.valueTier === "TIER_3" || initForm?.valueTier === "TIER_4"
         ? "LIVRE_II"
         : "STANDARD";
-  const [created] = await db
-    .insert(workflowsTable)
-    .values({
-      reference,
-      title: parsed.data.title,
-      departmentId: parsed.data.departmentId,
-      createdById: user.id,
-      priority: parsed.data.priority,
-      description: parsed.data.description ?? null,
-      category: parsed.data.category ?? null,
-      estimatedAmount: amount != null ? String(amount) : null,
-      currency: parsed.data.currency ?? settings.currency,
-      neededBy: parsed.data.neededBy
-        ? new Date(parsed.data.neededBy).toISOString().slice(0, 10)
-        : null,
-      investmentForm: parsed.data.investmentForm ?? null,
-      threeQuoteRequired: initTier === "THREE_QUOTES",
-      publicationTier: initTier,
-      // Workflows normally skip the legacy "NEW" step and land
-      // directly on Quotation. When the client passes asDraft=true,
-      // the request is parked in DRAFT instead — visible to the
-      // whole department but skipping every advance prerequisite,
-      // and deletable by the creator (or any admin).
-      currentStep: parsed.data.asDraft ? "DRAFT" : "QUOTATION",
-    })
-    .returning();
+  let created: typeof workflowsTable.$inferSelect | undefined;
+  let reference = "";
+  // Derive references from the highest existing suffix, not the row count:
+  // soft/hard deletes can leave gaps while the unique reference remains in
+  // use. Retry handles two requests racing for the same next number.
+  for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
+    reference = await generateReference();
+    try {
+      [created] = await db
+        .insert(workflowsTable)
+        .values({
+          reference,
+          title: parsed.data.title,
+          departmentId: parsed.data.departmentId,
+          createdById: user.id,
+          priority: parsed.data.priority,
+          description: parsed.data.description ?? null,
+          category: parsed.data.category ?? null,
+          estimatedAmount: amount != null ? String(amount) : null,
+          currency: parsed.data.currency ?? settings.currency,
+          neededBy: parsed.data.neededBy
+            ? new Date(parsed.data.neededBy).toISOString().slice(0, 10)
+            : null,
+          investmentForm: parsed.data.investmentForm ?? null,
+          threeQuoteRequired: initTier === "THREE_QUOTES",
+          publicationTier: initTier,
+          // Workflows normally skip the legacy "NEW" step and land
+          // directly on Quotation. When the client passes asDraft=true,
+          // the request is parked in DRAFT instead — visible to the
+          // whole department but skipping every advance prerequisite,
+          // and deletable by the creator (or any admin).
+          currentStep: parsed.data.asDraft ? "DRAFT" : "QUOTATION",
+        })
+        .returning();
+    } catch (err) {
+      if (!isDuplicateWorkflowReference(err) || attempt === 4) throw err;
+    }
+  }
+  if (!created) {
+    throw new Error("Unable to allocate a unique workflow reference");
+  }
   if (created) {
     const initialStep = parsed.data.asDraft ? "DRAFT" : "QUOTATION";
     await db.insert(historyTable).values({

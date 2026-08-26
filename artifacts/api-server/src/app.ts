@@ -159,7 +159,21 @@ const apiErrorHandler: ErrorRequestHandler = (err, req, res, next) => {
     code?: string;
     type?: string;
   };
-  let code = e.code ?? "INTERNAL_ERROR";
+  let nested: unknown = e;
+  let databaseError:
+    | { code?: string; constraint?: string; detail?: string }
+    | undefined;
+  for (let depth = 0; nested && depth < 5; depth += 1) {
+    const detail = nested as {
+      code?: string;
+      constraint?: string;
+      detail?: string;
+      cause?: unknown;
+    };
+    if (detail.code) databaseError = detail;
+    nested = detail.cause;
+  }
+  let code = databaseError?.code ?? e.code ?? "INTERNAL_ERROR";
   let status = e.status ?? e.statusCode ?? 500;
   let message = "La demande n'a pas pu être enregistrée en raison d'une erreur serveur.";
 
