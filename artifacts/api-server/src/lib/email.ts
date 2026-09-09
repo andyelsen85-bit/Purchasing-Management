@@ -116,7 +116,7 @@ export const STEP_LABEL_FR: Record<string, string> = {
   NEW: "Nouveau",
   QUOTATION: "Devis",
   VALIDATING_QUOTE_FINANCIAL: "Validation devis",
-  VALIDATING_BY_FINANCIAL: "Validation financière",
+  VALIDATING_BY_FINANCIAL: "Validation Flux",
   GT_INVEST: "GT Invest",
   IMMO: "N° AA",
   ORDERING: "Commande",
@@ -550,7 +550,7 @@ export async function flushNotificationQueue(): Promise<{
     ...(smtp.skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
   });
 
-  const baseAddr = smtp.from ?? smtp.username ?? "noreply@example.com";
+  const baseAddr = smtp.from ?? smtp.username ?? "noreply@investflow.local";
   const fromAddr = smtp.senderName
     ? `"${smtp.senderName}" <${baseAddr}>`
     : baseAddr;
@@ -735,7 +735,7 @@ export async function sendNotificationNow(
           : undefined,
       ...(cfg.skipTlsVerify ? { tls: { rejectUnauthorized: false } } : {}),
     });
-    const baseAddr = cfg.from ?? cfg.username ?? "noreply@example.com";
+    const baseAddr = cfg.from ?? cfg.username ?? "noreply@investflow.local";
     const fromAddr = cfg.senderName
       ? `"${cfg.senderName}" <${baseAddr}>`
       : baseAddr;

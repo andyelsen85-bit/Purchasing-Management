@@ -74,12 +74,13 @@ router.post(
       return;
     }
     const user = getUser(req);
+    const isCreatorOrAdmin = wf.createdById === user.id || user.roles.includes("ADMIN");
     if (
-      !canEditWorkflow(
+      (!isCreatorOrAdmin && !canEditWorkflow(
         user,
         wf.departmentId,
         wf.currentStep as Parameters<typeof canEditWorkflow>[2],
-      )
+      ))
     ) {
       res.status(403).json({
         error: "Forbidden — your role cannot write notes on this step",

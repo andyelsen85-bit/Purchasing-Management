@@ -82,6 +82,7 @@ type WfForPdf = {
   estimatedAmount: unknown;
   currency: unknown;
   investmentForm: unknown;
+  gtInvestDecision?: string | null;
 };
 
 type QuoteEntry = { amount?: number | null; winning?: boolean };
@@ -429,6 +430,9 @@ async function buildMeetingPdf(
       { kind: "row", label: "D\xE9partement",         value: pdfSafe(w.departmentName) },
       { kind: "row", label: "Objet",                   value: t(w.title) },
       { kind: "row", label: "Prix HTVA (retenu)",      value: fmtCurrency(getWinningPrice(w), w.currency) },
+      ...(w.gtInvestDecision === "ACCORD_PRINCIPE"
+        ? [{ kind: "row" as const, label: "Décision GT Invest", value: "Accord de principe - Approve & move to ordering + CR (Compte Rendu)" }]
+        : []),
       { kind: "row", label: "Pi\xE8ce jointe",         value: pdfSafe(attachmentFilename || (hasAttachment ? "voir ci-apr\xE8s" : "aucune")) },
       // ── §1 ────────────────────────────────────────────────────────────────
       { kind: "sec", title: "1 \xB7 Identification" },
@@ -672,6 +676,7 @@ router.get(
       estimatedAmount: r.w.estimatedAmount,
       currency: r.w.currency,
       investmentForm: r.w.investmentForm,
+      gtInvestDecision: r.w.gtInvestDecision,
     }));
 
     const settings = await getSettings();
@@ -735,6 +740,7 @@ router.post(
       estimatedAmount: r.w.estimatedAmount,
       currency: r.w.currency,
       investmentForm: r.w.investmentForm,
+      gtInvestDecision: r.w.gtInvestDecision,
     }));
 
     const settings = await getSettings();

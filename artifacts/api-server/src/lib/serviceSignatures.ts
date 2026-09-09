@@ -200,7 +200,7 @@ export async function buildServiceAttestationPdf(args: {
     font: bold,
     color: WHITE,
   });
-  page.drawText("Purchasing Management", {
+  page.drawText("InvestFlow", {
     x: 40,
     y: PH - 65,
     size: 9,

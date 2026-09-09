@@ -222,7 +222,7 @@ export interface AppSettings {
 }
 
 const DEFAULT: AppSettings = {
-  appName: "Purchasing Management",
+  appName: "InvestFlow",
   logoDataUrl: null,
   appBaseUrl: null,
   limitX: 10000,
@@ -332,6 +332,12 @@ export async function getSettings(): Promise<AppSettings> {
     return DEFAULT;
   }
   const merged = { ...DEFAULT, ...((row.data as Partial<AppSettings>) ?? {}) };
+  // Migrate only the two historical built-in labels; operator-customized
+  // branding must remain untouched.
+  if (merged.appName === "Purchasing Management" || merged.appName === "Gestion des Achats") {
+    merged.appName = "InvestFlow";
+    await db.update(settingsTable).set({ data: merged }).where(eq(settingsTable.id, row.id));
+  }
   // Keep legacy `limitX` and the new `quoteThresholdStandard` mirrored
   // both ways so old saved settings (which only have limitX) seed the
   // new field, and new saves (which only set quoteThresholdStandard)

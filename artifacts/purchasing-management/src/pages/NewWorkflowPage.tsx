@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, ArrowRight, Loader2, ClipboardList, Upload, FileText, X, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, ClipboardList, Upload, FileText, X, Trash2, Info, Plus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -25,6 +25,7 @@ import {
   useGetCompany,
   useGetSettings,
   useUpdateWorkflow,
+  useUpdateInitialWorkflowRequest,
   useGetWorkflow,
   useAdvanceWorkflow,
   useDeleteWorkflow,
@@ -32,11 +33,45 @@ import {
   Priority,
   type InvestmentForm,
   type Workflow,
+  type QuoteEntry,
 } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError } from "@/lib/api-error";
 
 const TOTAL_STEPS = 7;
+
+type CreationQuote = {
+  supplier: string;
+  contact: string;
+  amount: string;
+  currency: string;
+  file: File | null;
+  companyId: number | null;
+  contactId: number | null;
+  notes: string | null;
+  winning: boolean;
+  documentIds: number[];
+};
+
+function creationQuotePayload(
+  row: CreationQuote,
+  editMode: boolean,
+  uploadedDocumentId?: number,
+): QuoteEntry {
+  const documentIds = uploadedDocumentId == null
+    ? [...row.documentIds]
+    : [...row.documentIds, uploadedDocumentId];
+  return {
+    companyId: editMode ? row.companyId : null,
+    companyName: row.supplier.trim(),
+    contactId: editMode ? row.contactId : null,
+    amount: Number(row.amount),
+    currency: row.currency.trim(),
+    notes: row.contact.trim() || row.notes || null,
+    winning: editMode ? row.winning : false,
+    documentIds: Array.from(new Set(documentIds)),
+  };
+}
 
 const STEP_LABELS = [
   "Identification",
@@ -88,7 +123,6 @@ const OPTIONAL_UPLOAD_DOCS = new Set([
 ]);
 
 const REQUIRED_DOCS = [
-  "Offre de prix",
   "Offre de prix des consommables",
   "Offre de prix pour formation",
   "Offre de prix pour la maintenance",
@@ -103,11 +137,10 @@ const REQUIRED_DOCS = [
 ];
 
 // Map a section-11 doc label to the document `kind` stored in the
-// workflow documents collection. The first one ("Offre de prix") is
-// the first quote of the workflow, so it gets QUOTE — every other
-// document is filed as OTHER on the QUOTATION step.
+// Section-11 supporting documents are filed as OTHER. Quote-row uploads
+// are explicitly filed as QUOTE in the offers editor.
 function docKindFor(label: string): "QUOTE" | "OTHER" {
-  return label === "Offre de prix" ? "QUOTE" : "OTHER";
+  return "OTHER";
 }
 
 async function throwUploadError(
@@ -269,25 +302,35 @@ export function NewWorkflowPage() {
     const n = v ? Number(v) : NaN;
     return Number.isFinite(n) && n > 0 ? n : null;
   })();
-  const draftQuery = useGetWorkflow(draftId ?? 0, {
+  const editId = (() => {
+    if (typeof window === "undefined") return null;
+    const v = new URLSearchParams(window.location.search).get("editId");
+    const n = v ? Number(v) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+  const initialRequestId = draftId ?? editId;
+  const isEditMode = editId != null;
+  const draftQuery = useGetWorkflow(initialRequestId ?? 0, {
     query: {
-      enabled: draftId != null,
-      queryKey: ["draft-workflow", draftId] as const,
+      enabled: initialRequestId != null,
+      queryKey: ["initial-request-workflow", initialRequestId] as const,
     },
   });
   // Documents already uploaded with this draft (if any).
-  const draftDocsQuery = useListWorkflowDocuments(draftId ?? 0, {
+  const draftDocsQuery = useListWorkflowDocuments(initialRequestId ?? 0, {
     query: {
-      enabled: draftId != null,
-      queryKey: ["draft-workflow-documents", draftId] as const,
+      enabled: initialRequestId != null,
+      queryKey: ["initial-request-documents", initialRequestId] as const,
     },
   });
   const advance = useAdvanceWorkflow();
+  const updateInitial = useUpdateInitialWorkflowRequest();
   const [hydratedFromDraft, setHydratedFromDraft] = useState(false);
 
   // ── Basic workflow fields ──────────────────────────────────────
   const [title, setTitle] = useState("");
   const [departmentId, setDepartmentId] = useState<string>("");
+  const [departmentOther, setDepartmentOther] = useState("");
   const [priority, setPriority] = useState<keyof typeof Priority>("NORMAL");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
@@ -337,7 +380,12 @@ export function NewWorkflowPage() {
   const livreIList = settings?.livreIExceptions ?? [];
   const livreIIList = settings?.livreIIExceptions ?? [];
 
-  // ── Section 5 – Fournisseur ────────────────────────────────────
+  // ── Section 5 – Offres et fournisseurs ─────────────────────────
+  const [creationQuotes, setCreationQuotes] = useState<CreationQuote[]>([
+    { supplier: "", contact: "", amount: "", currency: "EUR", file: null, companyId: null, contactId: null, notes: null, winning: false, documentIds: [] },
+  ]);
+  // Legacy fields remain available for backwards-compatible investmentForm
+  // hydration; the creation UI itself is quote-row based.
   const [supplierCompanyId, setSupplierCompanyId] = useState<string>("");
   const [supplierContactId, setSupplierContactId] = useState<string>("");
   const [supplierFreeTextName, setSupplierFreeTextName] = useState("");
@@ -371,12 +419,7 @@ export function NewWorkflowPage() {
   const [commissioningDate, setCommissioningDate] = useState("");
 
   // ── Section 11 – Documentation à fournir (just the checked list)
-  // "Offre de prix" is permanently included — it is always mandatory
-  // (it doubles as the first quote of the workflow). The CheckboxList
-  // below disables this row so the user cannot uncheck it.
-  const [documentsProvided, setDocumentsProvided] = useState<string[]>([
-    "Offre de prix",
-  ]);
+  const [documentsProvided, setDocumentsProvided] = useState<string[]>([]);
 
   // ── Step 7 – uploads, one per checked item in section 11 ──────
   const [files, setFiles] = useState<Record<string, File | null>>({});
@@ -392,9 +435,15 @@ export function NewWorkflowPage() {
   // Default the department selector to the first one once departments
   // load — the user can change it but this avoids an empty required.
   useEffect(() => {
+    if (initialRequestId != null && !draftQuery.data) return;
     if (!departmentId && departments && departments.length > 0) {
       setDepartmentId(String(departments[0].id));
     }
+  }, [departments, departmentId, initialRequestId, draftQuery.data]);
+  useEffect(() => {
+    if (!departmentId || !departments) return;
+    const selected = departments.find((d) => String(d.id) === departmentId);
+    if (!selected || !/^(autre|other)$/i.test(selected.name)) setDepartmentOther("");
   }, [departments, departmentId]);
 
   // If the URL carries ?draftId=<n>, hydrate every form field from the
@@ -403,7 +452,7 @@ export function NewWorkflowPage() {
   // convert back here. This is the exact reverse of buildInvestmentForm.
   useEffect(() => {
     if (hydratedFromDraft) return;
-    if (draftId == null) return;
+    if (initialRequestId == null) return;
     const wf = draftQuery.data;
     if (!wf) return;
     // Wait for the documents list to settle before hydrating — otherwise
@@ -421,6 +470,8 @@ export function NewWorkflowPage() {
     if (wf.departmentId != null) setDepartmentId(String(wf.departmentId));
     if (wf.description) setDescription(wf.description);
     if (wf.category) setCategory(wf.category);
+    if (typeof (inv as { departmentOther?: string | null }).departmentOther === "string")
+      setDepartmentOther((inv as { departmentOther: string }).departmentOther);
     if (inv.projectLeader) setProjectLeader(inv.projectLeader);
     if (Array.isArray(inv.investmentTypes)) {
       // "Autre: <text>" was packed by buildInvestmentForm — unpack it.
@@ -501,7 +552,25 @@ export function NewWorkflowPage() {
     setTrainingOfferAttached(b2s(inv.trainingOfferAttached));
     if (inv.commissioningDate) setCommissioningDate(inv.commissioningDate);
     if (Array.isArray(inv.documentsProvided) && inv.documentsProvided.length) {
-      setDocumentsProvided(inv.documentsProvided);
+      setDocumentsProvided(
+        inv.documentsProvided.filter((d) => d !== "Offre de prix"),
+      );
+    }
+    if (Array.isArray(wf.quotes) && wf.quotes.length) {
+      setCreationQuotes(
+        wf.quotes.map((q) => ({
+          supplier: q.companyName ?? "",
+          contact: q.notes ?? "",
+          amount: q.amount == null ? "" : String(q.amount),
+          currency: q.currency ?? "EUR",
+          file: null,
+          companyId: q.companyId ?? null,
+          contactId: q.contactId ?? null,
+          notes: q.notes ?? null,
+          winning: q.winning,
+          documentIds: [...(q.documentIds ?? [])],
+        })),
+      );
     }
     // Rehydrate the uploaded-files panel. The label → docId mapping is
     // stored on the workflow's investmentForm; we join it with the live
@@ -529,7 +598,7 @@ export function NewWorkflowPage() {
     setHydratedFromDraft(true);
     toast({ description: "Brouillon repris." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId, draftQuery.data, draftDocsQuery.data]);
+  }, [initialRequestId, draftQuery.data, draftDocsQuery.data]);
 
   // Selected company → contacts list filtered for the 5.2 dropdown.
   // The list endpoint does not embed contacts, so we re-query the
@@ -643,7 +712,7 @@ export function NewWorkflowPage() {
     }
     setSubmitting(true);
     try {
-      if (draftId != null) {
+       if (draftId != null) {
         await del.mutateAsync({ id: draftId });
       }
       try {
@@ -718,8 +787,8 @@ export function NewWorkflowPage() {
           ? supplierFreeTextName || null
           : (supplierCompany?.name ?? null),
       supplierContact:
-        supplierCompanyId === "NE_FIGURE_PAS"
-          ? supplierFreeTextContact || null
+        supplierFreeTextContact.trim()
+          ? supplierFreeTextContact.trim()
           : supplierContact
             ? [supplierContact.name, supplierContact.email, supplierContact.phone]
                 .filter(Boolean)
@@ -744,6 +813,13 @@ export function NewWorkflowPage() {
       trainingRequired: boolVal(trainingRequired),
       trainingOfferAttached: boolVal(trainingOfferAttached),
       commissioningDate: commissioningDate || null,
+      departmentOther:
+        (() => {
+          const selected = (departments ?? []).find((d) => String(d.id) === departmentId);
+          return selected && /^(autre|other)$/i.test(selected.name)
+            ? departmentOther.trim() || null
+            : null;
+        })(),
       documentsProvided: documentsProvided.length ? documentsProvided : undefined,
       // Carry the label → docId map so reopening a draft still finds
       // its attached files. Callers that have just uploaded new files
@@ -785,6 +861,9 @@ export function NewWorkflowPage() {
     if (s === 1) {
       if (!title.trim()) m.push("Titre de la Demande");
       if (!departmentId) m.push("Département");
+      const selectedDepartment = (departments ?? []).find((d) => String(d.id) === departmentId);
+      if (selectedDepartment && /^(autre|other)$/i.test(selectedDepartment.name) && !departmentOther.trim())
+        m.push("Précision du département");
       if (!projectLeader.trim()) m.push("1.3 Responsable / Leader du projet");
       if (investmentTypes.length === 0)
         m.push("1.4 Type(s) d'investissement");
@@ -829,11 +908,15 @@ export function NewWorkflowPage() {
       if (budgetPositionKnown === "YES" && !budgetPosition.trim()) m.push("4.2.1 Position budgétaire");
     }
     if (s === 4) {
-      if (!supplierCompanyId) m.push("5.1 Nom du fournisseur");
-      if (supplierCompanyId === "NE_FIGURE_PAS") {
-        if (!supplierFreeTextName.trim()) m.push("5.1 Nom du fournisseur (texte libre)");
-      } else if (supplierCompanyId && !supplierContactId) {
-        m.push("5.2 Personne de contact");
+      if (creationQuotes.length === 0) m.push("Au moins une offre");
+      for (const [i, quote] of creationQuotes.entries()) {
+        if (!quote.supplier.trim()) m.push(`Fournisseur de l'offre ${i + 1}`);
+        if (!quote.amount || !Number.isFinite(Number(quote.amount)) || Number(quote.amount) < 0)
+          m.push(`Montant HTVA de l'offre ${i + 1}`);
+        if (!quote.currency.trim()) m.push(`Devise de l'offre ${i + 1}`);
+        if (!isEditMode && !quote.file) m.push(`Fichier de l'offre ${i + 1}`);
+        if (isEditMode && !quote.file && quote.documentIds.length === 0)
+          m.push(`Fichier de l'offre ${i + 1}`);
       }
       if (!architecturalWorks) m.push("6.1 Aménagements architecturaux");
       if (!itConnection) m.push("6.2 Connexion informatique");
@@ -858,9 +941,6 @@ export function NewWorkflowPage() {
       if (!trainingRequired) m.push("10.1 Formation nécessaire");
       if (trainingRequired === "true" && !trainingOfferAttached)
         m.push("10.1.1 Offre de formation jointe");
-      if (!commissioningDate) m.push("10.2 Date de mise en service");
-      if (documentsProvided.length === 0)
-        m.push("11 Documents à fournir (cocher au moins un)");
     }
     if (s === 7) {
       for (const d of documentsProvided) {
@@ -1000,11 +1080,8 @@ export function NewWorkflowPage() {
     setStep((s) => Math.max(1, s - 1));
   }
 
-  // Submit: create the workflow, then upload each section-11 document
-  // sequentially (so we can capture the returned doc IDs), then — if
-  // an "Offre de prix" was uploaded — PATCH the workflow's `quotes`
-  // with that document attached as the first (winning, by default
-  // when there's only one) quote, supplier pre-filled from 5.1.
+  // Submit the initial request, then materialize section-5 quote rows and
+  // upload the separate section-11 supporting documents.
   async function onSubmit() {
     if (!canAdvance) {
       setShowErrors(true);
@@ -1013,7 +1090,32 @@ export function NewWorkflowPage() {
     setSubmitting(true);
     try {
       let wf: Workflow;
-      if (draftId != null) {
+      if (isEditMode) {
+        const freshDocIds: Record<string, number> = {};
+        for (const label of documentsProvided) {
+          const file = files[label];
+          if (!file) continue;
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("step", "QUOTATION");
+          fd.append("kind", docKindFor(label));
+          const response = await fetch(`/api/workflows/${editId}/initial-request/documents`, {
+            method: "POST", body: fd, credentials: "include",
+          });
+          if (!response.ok) await throwUploadError(response, `téléversement de « ${label} »`);
+          freshDocIds[label] = ((await response.json()) as { id: number }).id;
+        }
+        wf = await updateInitial.mutateAsync({
+          id: editId!,
+          data: {
+            title, departmentId: departmentId ? Number(departmentId) : null,
+            priority, description: description || null, category: category || null,
+            neededBy: commissioningDate || null,
+            investmentForm: buildInvestmentFormWithDocs(freshDocIds),
+            quotes: creationQuotes.map((q) => creationQuotePayload(q, true)),
+          },
+        });
+      } else if (draftId != null) {
         // Resuming a server-side draft: PATCH the existing row, then
         // advance it from DRAFT to QUOTATION so the rest of the flow
         // (document upload + quote materialisation) proceeds the same
@@ -1046,21 +1148,40 @@ export function NewWorkflowPage() {
         });
       }
 
+      if (isEditMode) {
+        const editedQuotes = creationQuotes.map((q) => creationQuotePayload(q, true));
+        for (let i = 0; i < creationQuotes.length; i++) {
+          const file = creationQuotes[i].file;
+          if (!file) continue;
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("step", "QUOTATION");
+          fd.append("kind", "QUOTE");
+          const response = await fetch(`/api/workflows/${wf.id}/initial-request/documents`, {
+            method: "POST", body: fd, credentials: "include",
+          });
+          if (!response.ok) await throwUploadError(response, "téléversement du devis");
+          const uploaded = (await response.json()) as { id: number };
+          editedQuotes[i] = creationQuotePayload(creationQuotes[i], true, uploaded.id);
+        }
+        await updateInitial.mutateAsync({
+          id: wf.id,
+          data: { quotes: editedQuotes },
+        });
+        localStorage.removeItem("purchasing-workflow-draft");
+        qc.invalidateQueries();
+        toast({ description: "Demande initiale modifiée sans changement d’étape." });
+        setLocation(`/workflows/${wf.id}`);
+        return;
+      }
+
       // Upload every checked document. Multipart fetch directly — the
       // codegen client also exposes UploadWorkflowDocumentBodyTwo for
       // multipart, but a plain fetch is simpler than juggling the
       // generated discriminator.
-      let offrePrixDocId: number | null = null;
       for (const label of documentsProvided) {
         const file = files[label];
         if (!file) {
-          // No fresh file picked — but a file from a resumed draft may
-          // already be attached. Reuse its id (notably for the "Offre
-          // de prix" → first quote linkage below).
-          const existing = existingDocs[label];
-          if (existing && label === "Offre de prix") {
-            offrePrixDocId = existing.id;
-          }
           continue;
         }
         const fd = new FormData();
@@ -1076,48 +1197,32 @@ export function NewWorkflowPage() {
           await throwUploadError(r, `téléversement de « ${label} »`);
         }
         const doc = (await r.json()) as { id: number };
-        if (label === "Offre de prix") offrePrixDocId = doc.id;
       }
 
-      // If an "Offre de prix" was uploaded, materialise it as the
-      // first quote of the workflow. The supplier (5.1) is pre-filled
-      // and the document is linked. Amount is left null — the user
-      // enters it on the QUOTATION step. With a single quote, the
-      // server will treat it as the winner.
-      if (offrePrixDocId != null && supplierCompanyId) {
-        const isFreeText = supplierCompanyId === "NE_FIGURE_PAS";
-        const company = isFreeText
-          ? null
-          : (companies ?? []).find(
-              (c) => String(c.id) === supplierCompanyId,
-            ) ?? null;
-        // Free-text supplier: no FK to companies/contacts, but we still
-        // record the typed-in name on the quote line so the workflow
-        // detail (which reads supplier from `quotes[].companyName`)
-        // displays it instead of "—".
-        await update.mutateAsync({
-          id: wf.id,
-          data: {
-            quotes: [
-              {
-                companyId: isFreeText ? null : Number(supplierCompanyId),
-                companyName: isFreeText
-                  ? supplierFreeTextName.trim() || null
-                  : company?.name ?? null,
-                contactId:
-                  !isFreeText && supplierContactId
-                    ? Number(supplierContactId)
-                    : null,
-                amount: null,
-                currency: null,
-                notes: null,
-                winning: true,
-                documentIds: [offrePrixDocId],
-              },
-            ],
-          },
-        });
+      // Section 5 quote rows are the authoritative creation offers. Upload
+      // each selected quote and materialize the complete quote contract.
+      const materializedQuotes: QuoteEntry[] = [];
+      for (const quote of creationQuotes) {
+        let uploadedDocumentId: number | undefined;
+        if (quote.file) {
+          const fd = new FormData();
+          fd.append("file", quote.file);
+          fd.append("step", "QUOTATION");
+          fd.append("kind", "QUOTE");
+          const response = await fetch(`/api/workflows/${wf.id}/documents`, {
+            method: "POST",
+            body: fd,
+            credentials: "include",
+          });
+          if (!response.ok) await throwUploadError(response, "téléversement du devis");
+          const uploaded = (await response.json()) as { id: number };
+          uploadedDocumentId = uploaded.id;
+        }
+        const payload = creationQuotePayload(quote, false, uploadedDocumentId);
+        payload.winning = creationQuotes.length === 1;
+        materializedQuotes.push(payload);
       }
+      await update.mutateAsync({ id: wf.id, data: { quotes: materializedQuotes } });
 
       localStorage.removeItem("purchasing-workflow-draft");
       qc.invalidateQueries();
@@ -1221,7 +1326,11 @@ export function NewWorkflowPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>Service / Département<Req /></Label>
-                    <Select value={departmentId} onValueChange={setDepartmentId}>
+                    <Select value={departmentId} onValueChange={(value) => {
+                      setDepartmentId(value);
+                      const selected = (departments ?? []).find((d) => String(d.id) === value);
+                      if (!selected || !/^(autre|other)$/i.test(selected.name)) setDepartmentOther("");
+                    }}>
                       <SelectTrigger data-testid="select-department">
                         <SelectValue placeholder="Sélectionner..." />
                       </SelectTrigger>
@@ -1233,6 +1342,25 @@ export function NewWorkflowPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {(() => {
+                      const selected = (departments ?? []).find((d) => String(d.id) === departmentId);
+                      const hasAutre = (departments ?? []).some((d) => /^(autre|other)$/i.test(d.name));
+                      if (selected && /^(autre|other)$/i.test(selected.name)) {
+                        return (
+                          <Input
+                            required
+                            value={departmentOther}
+                            onChange={(e) => setDepartmentOther(e.target.value)}
+                            placeholder="Préciser le département"
+                            data-testid="input-department-other"
+                          />
+                        );
+                      }
+                      if (!hasAutre) {
+                        return <p className="text-xs text-muted-foreground">Pour un autre département, un administrateur doit d’abord importer ou créer un service « Autre ».</p>;
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div className="space-y-1.5">
                     <Label>Priorité</Label>
@@ -1620,16 +1748,63 @@ export function NewWorkflowPage() {
           {/* ── STEP 4 ─────────────────────────────────────────────── */}
           {step === 4 && (
             <>
-              <SectionTitle number="5" label="Fournisseur" />
+              <SectionTitle number="5" label="Offres et fournisseurs" />
+              <div className="space-y-3">
+                {creationQuotes.map((quote, index) => (
+                  <div key={index} className="rounded-md border p-3 space-y-2" data-testid={`creation-quote-${index}`}>
+                    <div className="flex items-center justify-between">
+                      <Label>Offre {index + 1}</Label>
+                      {creationQuotes.length > 1 && (
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setCreationQuotes((rows) => rows.filter((_, i) => i !== index))} data-testid={`button-remove-quote-${index}`}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <Input required value={quote.supplier} placeholder="Fournisseur (texte libre)" onChange={(e) => setCreationQuotes((rows) => rows.map((r, i) => i === index ? { ...r, supplier: e.target.value } : r))} data-testid={`input-quote-supplier-${index}`} />
+                    <Input value={quote.contact} placeholder="Contact (facultatif)" onChange={(e) => setCreationQuotes((rows) => rows.map((r, i) => i === index ? { ...r, contact: e.target.value } : r))} data-testid={`input-quote-contact-${index}`} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input required type="number" min="0" step="0.01" value={quote.amount} placeholder="Montant HTVA" onChange={(e) => setCreationQuotes((rows) => rows.map((r, i) => i === index ? { ...r, amount: e.target.value } : r))} data-testid={`input-quote-amount-${index}`} />
+                      <Input required value={quote.currency} placeholder="Devise" onChange={(e) => setCreationQuotes((rows) => rows.map((r, i) => i === index ? { ...r, currency: e.target.value } : r))} data-testid={`input-quote-currency-${index}`} />
+                    </div>
+                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed px-3 py-2 text-sm text-muted-foreground" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files?.[0] ?? null; if (file) setCreationQuotes((rows) => rows.map((r, i) => i === index ? { ...r, file } : r)); }}>
+                      <Upload className="h-4 w-4" /><span>{quote.file?.name ?? "Choisir ou déposer le devis"}</span>
+                      <input type="file" className="sr-only" onChange={(e) => { const file = e.target.files?.[0] ?? null; setCreationQuotes((rows) => rows.map((r, i) => i === index ? { ...r, file } : r)); }} data-testid={`input-quote-file-${index}`} />
+                    </label>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" onClick={() => setCreationQuotes((rows) => [...rows, {
+                  supplier: "", contact: "", amount: "", currency: "EUR", file: null,
+                  companyId: null, contactId: null, notes: null,
+                  winning: isEditMode && rows.length === 0 && !rows.some((r) => r.winning),
+                  documentIds: [],
+                }])} data-testid="button-add-quote">
+                  <Plus className="mr-2 h-4 w-4" /> Ajouter une offre
+                </Button>
+              </div>
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label>5.1 Nom du fournisseur<Req /></Label>
-                  {(companies ?? []).length === 0 ? (
-                    <Alert variant="destructive">
-                      <AlertDescription className="text-xs">
-                        Aucun fournisseur n'est enregistré. Ajoutez-en un dans la page Fournisseurs avant de continuer.
-                      </AlertDescription>
-                    </Alert>
+                    {(companies ?? []).length === 0 ? (
+                      <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                        <p className="text-xs text-muted-foreground">
+                          Aucun fournisseur du répertoire ne correspond. Saisissez librement le fournisseur.
+                        </p>
+                        <Input
+                          value={supplierFreeTextName}
+                          onChange={(e) => {
+                            setSupplierCompanyId("NE_FIGURE_PAS");
+                            setSupplierFreeTextName(e.target.value);
+                          }}
+                          placeholder="Nom du fournisseur"
+                          data-testid="input-supplier-freetext-name"
+                        />
+                        <Input
+                          value={supplierFreeTextContact}
+                          onChange={(e) => setSupplierFreeTextContact(e.target.value)}
+                          placeholder="Contact (facultatif)"
+                          data-testid="input-supplier-freetext-contact"
+                        />
+                      </div>
                   ) : (
                     <>
                       <Select
@@ -1687,18 +1862,20 @@ export function NewWorkflowPage() {
                 </div>
                 {supplierCompanyId !== "NE_FIGURE_PAS" && (
                 <div className="space-y-1.5">
-                  <Label>5.2 Personne de contact<Req /></Label>
+                    <Label>5.2 Personne de contact <span className="text-xs font-normal text-muted-foreground">(facultatif)</span></Label>
                   {!supplierCompanyId ? (
                     <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                       Sélectionner d'abord un fournisseur ci-dessus.
                     </p>
                   ) : supplierContacts.length === 0 ? (
-                    <Alert variant="destructive">
-                      <AlertDescription className="text-xs">
-                        Ce fournisseur n'a aucun contact enregistré. Ajoutez-en un dans la page Fournisseurs avant de continuer.
-                      </AlertDescription>
-                    </Alert>
+                    <Input
+                      value={supplierFreeTextContact}
+                      onChange={(e) => setSupplierFreeTextContact(e.target.value)}
+                      placeholder="Contact libre (facultatif)"
+                      data-testid="input-supplier-contact"
+                    />
                   ) : (
+                    <>
                     <Select value={supplierContactId} onValueChange={setSupplierContactId}>
                       <SelectTrigger data-testid="select-supplier-contact">
                         <SelectValue placeholder="Sélectionner un contact..." />
@@ -1712,6 +1889,13 @@ export function NewWorkflowPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <Input
+                      value={supplierFreeTextContact}
+                      onChange={(e) => setSupplierFreeTextContact(e.target.value)}
+                      placeholder="Contact complémentaire (facultatif)"
+                      data-testid="input-supplier-contact-free-text"
+                    />
+                    </>
                   )}
                 </div>
                 )}
@@ -1893,8 +2077,8 @@ export function NewWorkflowPage() {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label htmlFor="commissioningDate">
-                    10.2 Date souhaitée de mise en production / service<Req />
+                    <Label htmlFor="commissioningDate">
+                     10.2 Date souhaitée de mise en production / service <span className="text-xs font-normal text-muted-foreground">(facultatif)</span>
                   </Label>
                   <DatePicker
                     value={commissioningDate}
@@ -1907,23 +2091,17 @@ export function NewWorkflowPage() {
               <SectionTitle number="11" label="Documentation obligatoire à fournir" />
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Cocher les documents qui seront joints. Vous pourrez les déposer à l'étape suivante. L'« Offre de prix » est toujours obligatoire.<Req />
+                  Cocher les documents qui seront joints. Les devis sont ajoutés dans la section 5.
                 </p>
                 <CheckboxList
                   options={REQUIRED_DOCS}
                   values={documentsProvided}
-                  disabledOptions={["Offre de prix"]}
                   onChange={(v) => {
-                    // Force "Offre de prix" to stay in the list even if
-                    // the CheckboxList ever lets it through.
-                    const forced = v.includes("Offre de prix")
-                      ? v
-                      : ["Offre de prix", ...v];
-                    setDocumentsProvided(forced);
+                    setDocumentsProvided(v);
                     // Drop any file selection for items that were just unchecked.
                     setFiles((f) => {
                       const next: Record<string, File | null> = {};
-                      for (const k of forced) next[k] = f[k] ?? null;
+                      for (const k of v) next[k] = f[k] ?? null;
                       return next;
                     });
                   }}
@@ -1968,12 +2146,14 @@ export function NewWorkflowPage() {
                           <Label className="text-sm font-medium leading-snug">
                             {label}
                             {!OPTIONAL_UPLOAD_DOCS.has(label) && <Req />}
-                          </Label>
-                          {label === "Offre de prix" && (
-                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
-                              Premier devis
+                            <span
+                              className="ml-1 inline-flex align-middle text-muted-foreground"
+                              title="Document attendu pour faciliter l’analyse de la demande. Le texte explicatif pourra être personnalisé ultérieurement."
+                              aria-label={`Informations sur ${label}`}
+                            >
+                              <Info className="h-3.5 w-3.5" />
                             </span>
-                          )}
+                          </Label>
                         </div>
                         {f ? (
                           <div className="flex items-center justify-between gap-2 rounded bg-muted/40 px-3 py-2">
@@ -2023,9 +2203,17 @@ export function NewWorkflowPage() {
                             </Button>
                           </div>
                         ) : (
-                          <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40">
+                          <label
+                            className="flex cursor-pointer items-center gap-2 rounded border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40"
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const file = e.dataTransfer.files?.[0] ?? null;
+                              if (file) setFiles((m) => ({ ...m, [label]: file }));
+                            }}
+                          >
                             <Upload className="h-4 w-4" />
-                            <span>Choisir un fichier…</span>
+                            <span>Choisir ou déposer un fichier…</span>
                             <input
                               type="file"
                               className="sr-only"

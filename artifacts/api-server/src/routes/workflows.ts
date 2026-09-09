@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql, desc, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, sql, desc, isNull, isNotNull, inArray } from "drizzle-orm";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   db,
@@ -18,6 +18,7 @@ import {
 import {
   CreateWorkflowBody,
   UpdateWorkflowBody,
+  UpdateInitialWorkflowRequestBody,
   UpdateWorkflowParams,
   AdvanceWorkflowBody,
   AdvanceWorkflowParams,
@@ -37,6 +38,7 @@ import {
   canViewAll,
   canCreateInDepartment,
   canUndo,
+  hasRole,
   nextStep,
   ACTIVE_WORKFLOW_STEPS,
   type WorkflowStep,
@@ -138,6 +140,40 @@ function isDuplicateWorkflowReference(err: unknown): boolean {
   return false;
 }
 
+function deriveTierFromInvestmentForm(form: unknown): "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" {
+  const f = form as { valueTier?: string | null; tier2Choice?: string | null } | null | undefined;
+  if (f?.valueTier === "TIER_2") return f.tier2Choice === "LIVRE_I_EXCEPTION" ? "LIVRE_I" : "THREE_QUOTES";
+  if (f?.valueTier === "TIER_3" || f?.valueTier === "TIER_4") return "LIVRE_II";
+  return "STANDARD";
+}
+
+async function canonicalizeDepartmentOther(
+  departmentId: number,
+  form: unknown,
+  requireForSubmitted: boolean,
+): Promise<{ form: unknown; error?: string }> {
+  const [department] = await db
+    .select({ name: departmentsTable.name })
+    .from(departmentsTable)
+    .where(eq(departmentsTable.id, departmentId));
+  if (!department) return { form, error: "Department not found" };
+  const isOther = department.name === "Autre" || department.name === "Other";
+  if (!form || typeof form !== "object") {
+    return isOther && requireForSubmitted
+      ? { form, error: "departmentOther is required for the Autre/Other department" }
+      : { form };
+  }
+  const input = form as Record<string, unknown>;
+  const value = typeof input.departmentOther === "string" ? input.departmentOther.trim() : "";
+  if (isOther && requireForSubmitted && !value) {
+    return { form: input, error: "departmentOther is required for the Autre/Other department" };
+  }
+  const normalized = { ...input };
+  if (!isOther) delete normalized.departmentOther;
+  else if (value) normalized.departmentOther = value;
+  return { form: normalized };
+}
+
 async function loadWorkflowFull(id: number, includeDeleted = false) {
   const [w] = await db
     .select({
@@ -205,7 +241,7 @@ async function queueFinancialPurchasingNotification(
     `${workflow.reference} : suivi Achats requis`,
     `Le dossier ${workflow.reference} (${workflow.title}) nécessite l'attention du service Achats :\n` +
       reasons.map((reason) => `• ${reason}`).join("\n") +
-      `\n\n${summary}\n\nConnectez-vous à Purchasing Management pour consulter le dossier.`,
+      `\n\n${summary}\n\nConnectez-vous à InvestFlow pour consulter le dossier.`,
     { workflowId: workflow.id, step: workflow.currentStep },
   );
 }
@@ -323,6 +359,15 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
     });
     return;
   }
+  const canonicalForm = await canonicalizeDepartmentOther(
+    parsed.data.departmentId,
+    parsed.data.investmentForm,
+    !parsed.data.asDraft,
+  );
+  if (canonicalForm.error) {
+    res.status(400).json({ error: canonicalForm.error, message: canonicalForm.error });
+    return;
+  }
   const settings = await getSettings();
   // The "3 quotes required" flag is now derived from the FIRST quote
   // line entered in the QUOTATION step (see PATCH /workflows/:id), so
@@ -332,7 +377,7 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
   // Derive the publication tier and 3-quotes flag from Q4.1 of the
   // investment form, when it is present at creation time. Same rules
   // as PATCH /workflows/:id.
-  const initForm = parsed.data.investmentForm as
+  const initForm = canonicalForm.form as
     | { valueTier?: string | null; tier2Choice?: string | null }
     | null
     | undefined;
@@ -367,7 +412,7 @@ router.post("/workflows", requireAuth, async (req, res): Promise<void> => {
           neededBy: parsed.data.neededBy
             ? new Date(parsed.data.neededBy).toISOString().slice(0, 10)
             : null,
-          investmentForm: parsed.data.investmentForm ?? null,
+           investmentForm: canonicalForm.form ?? null,
           threeQuoteRequired: initTier === "THREE_QUOTES",
           publicationTier: initTier,
           // Workflows normally skip the legacy "NEW" step and land
@@ -451,7 +496,16 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
   if (b.neededBy !== undefined)
     update.neededBy = b.neededBy ? new Date(b.neededBy).toISOString().slice(0, 10) : null;
   if (b.investmentForm !== undefined) {
-    update.investmentForm = b.investmentForm;
+    const canonicalForm = await canonicalizeDepartmentOther(
+      wf.departmentId,
+      b.investmentForm,
+      wf.currentStep !== "DRAFT",
+    );
+    if (canonicalForm.error) {
+      res.status(400).json({ error: canonicalForm.error, message: canonicalForm.error });
+      return;
+    }
+    update.investmentForm = canonicalForm.form;
     // Derive the publication tier and the `threeQuoteRequired` flag
     // from the new four-tier model on the investment form (Q4.1).
     // - TIER_2 + "3 offres"        → THREE_QUOTES (3 offres needed)
@@ -459,19 +513,12 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
     // - TIER_3                     → LIVRE_II
     // - TIER_4                     → LIVRE_II (marché européen)
     // - TIER_1 / unset             → STANDARD
-    const f = b.investmentForm as {
+    const f = canonicalForm.form as {
       valueTier?: string | null;
       tier2Choice?: string | null;
     } | null;
     if (f && f.valueTier) {
-      const tier: "STANDARD" | "THREE_QUOTES" | "LIVRE_I" | "LIVRE_II" =
-        f.valueTier === "TIER_2"
-          ? f.tier2Choice === "LIVRE_I_EXCEPTION"
-            ? "LIVRE_I"
-            : "THREE_QUOTES"
-          : f.valueTier === "TIER_3" || f.valueTier === "TIER_4"
-            ? "LIVRE_II"
-            : "STANDARD";
+      const tier = deriveTierFromInvestmentForm(f);
       update.publicationTier = tier;
       update.threeQuoteRequired = tier === "THREE_QUOTES";
     }
@@ -579,6 +626,113 @@ router.patch("/workflows/:id", requireAuth, async (req, res): Promise<void> => {
         );
       }
     }
+  }
+  res.json(await loadWorkflowFull(wf.id));
+});
+
+// Edit the submitted request without invoking step permissions or changing
+// its current stage. This is deliberately separate from the step editor:
+// only the requester or an administrator may correct the initial payload.
+router.patch("/workflows/:id/initial-request", requireAuth, async (req, res): Promise<void> => {
+  const params = UpdateWorkflowParams.safeParse(req.params);
+  const body = UpdateInitialWorkflowRequestBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid request", message: "Invalid request" });
+    return;
+  }
+  const wf = await loadWorkflowFull(params.data.id);
+  if (!wf) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  const user = getUser(req);
+  if (wf.currentStep === "DONE" || wf.currentStep === "REJECTED" || hasRole(user, "READ_ONLY_ALL", "READ_ONLY_DEPT")) {
+    res.status(400).json({ error: "Workflow cannot be edited in its current state" });
+    return;
+  }
+  if (wf.createdById !== user.id && !hasRole(user, "ADMIN")) {
+    res.status(403).json({ error: "Only the workflow creator or an administrator may edit the initial request" });
+    return;
+  }
+  const b = body.data;
+  const update: Record<string, unknown> = {};
+  if (b.departmentId !== undefined) {
+    if (b.departmentId == null || !Number.isInteger(b.departmentId) || b.departmentId <= 0) {
+      res.status(400).json({ error: "departmentId must reference an existing department", message: "departmentId must reference an existing department" });
+      return;
+    }
+    const [department] = await db.select({ id: departmentsTable.id }).from(departmentsTable).where(eq(departmentsTable.id, b.departmentId));
+    if (!department) {
+      res.status(400).json({ error: "Department not found", message: "Department not found" });
+      return;
+    }
+    if (b.departmentId !== wf.departmentId && !hasRole(user, "ADMIN") && !canCreateInDepartment(user, b.departmentId)) {
+      res.status(403).json({ error: "Forbidden — you cannot create workflows in the destination department", message: "Forbidden — you cannot create workflows in the destination department" });
+      return;
+    }
+    update.departmentId = b.departmentId;
+  }
+  if (b.title != null) update.title = b.title;
+  if (b.priority !== undefined) update.priority = b.priority;
+  if (b.description !== undefined) update.description = b.description;
+  if (b.category !== undefined) update.category = b.category;
+  if (b.estimatedAmount !== undefined) update.estimatedAmount = b.estimatedAmount == null ? null : String(b.estimatedAmount);
+  if (b.currency !== undefined) update.currency = b.currency;
+  if (b.neededBy !== undefined) update.neededBy = b.neededBy ? new Date(b.neededBy).toISOString().slice(0, 10) : null;
+  if (b.investmentForm !== undefined) {
+    const targetDepartmentId = b.departmentId ?? wf.departmentId;
+    const canonicalForm = await canonicalizeDepartmentOther(
+      targetDepartmentId,
+      b.investmentForm,
+      wf.currentStep !== "DRAFT",
+    );
+    if (canonicalForm.error) {
+      res.status(400).json({ error: canonicalForm.error, message: canonicalForm.error });
+      return;
+    }
+    update.investmentForm = canonicalForm.form;
+    const tier = deriveTierFromInvestmentForm(canonicalForm.form);
+    update.publicationTier = tier;
+    update.threeQuoteRequired = tier === "THREE_QUOTES";
+  }
+  if (b.quotes !== undefined) {
+    const quotes = b.quotes;
+    const invalidQuote = quotes.find((q) =>
+      (q.companyName != null && typeof q.companyName !== "string") ||
+      (q.amount != null && (!Number.isFinite(Number(q.amount)) || Number(q.amount) < 0)) ||
+      (q.currency != null && typeof q.currency !== "string") ||
+      (q.documentIds != null && (!Array.isArray(q.documentIds) || q.documentIds.some((id) => !Number.isInteger(id) || id <= 0))),
+    );
+    if (invalidQuote) {
+      res.status(400).json({ error: "Invalid quote supplier, amount, currency or document references", message: "Invalid quote supplier, amount, currency or document references" });
+      return;
+    }
+    const documentIds = [...new Set(quotes.flatMap((q) => q.documentIds ?? []))];
+    if (documentIds.length > 0) {
+      const documents = await db
+        .select({ id: documentsTable.id })
+        .from(documentsTable)
+        .where(and(eq(documentsTable.workflowId, wf.id), inArray(documentsTable.id, documentIds)));
+      if (documents.length !== documentIds.length) {
+        res.status(400).json({ error: "Quote document references must belong to this workflow", message: "Quote document references must belong to this workflow" });
+        return;
+      }
+    }
+    update.quotes = quotes;
+  }
+  if (Object.keys(update).length > 0) {
+    await db.transaction(async (tx) => {
+      await tx.update(workflowsTable).set(update).where(eq(workflowsTable.id, wf.id));
+      await tx.insert(historyTable).values({
+        workflowId: wf.id,
+        action: "EDIT",
+        fromStep: wf.currentStep,
+        toStep: wf.currentStep,
+        actorId: user.id,
+        details: "Initial request fields, quotes and document references updated; workflow stage preserved",
+      });
+    });
+    await audit(user.id, "WORKFLOW_INITIAL_REQUEST_UPDATE", "workflow", wf.id, `stage preserved: ${wf.currentStep}`);
   }
   res.json(await loadWorkflowFull(wf.id));
 });
@@ -712,6 +866,11 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
     res.status(403).json({ error: "Forbidden" });
     return;
   }
+  if (wf.currentStep === "GT_INVEST" && wf.gtInvestDecision === "ACCORD_PRINCIPE") {
+    const msg = "Accord de principe doit être validé via l'action dédiée avant de poursuivre.";
+    res.status(400).json({ error: msg, message: msg });
+    return;
+  }
   const branch = body.data.branch ?? wf.branch ?? null;
   // Block bypassing steps when the required data isn't there. The
   // error message is surfaced to the client toast so the user knows
@@ -794,7 +953,7 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
         recipients,
         `${wf.reference} : ${STEP_LABEL_FR[next] ?? next}`,
         `Ce dossier vient de passer à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\n` +
-          `Connectez-vous à Purchasing Management pour consulter ou agir sur ce dossier.\n\n` +
+          `Connectez-vous à InvestFlow pour consulter ou agir sur ce dossier.\n\n` +
           summary +
           (attachments.length > 0
             ? `\n\nLes pièces jointes du dossier sont attachées à ce message.`
@@ -827,7 +986,7 @@ router.post("/workflows/:id/advance", requireAuth, async (req, res): Promise<voi
           `Le dossier ${wf.reference} (${wf.title}) attend votre validation en tant que ${s.label}.\n\n` +
           `Votre validation est requise pour que le dossier puisse passer à l'étape Commande.\n\n` +
           summary +
-          `\n\nLes pièces jointes au dossier sont attachées à ce message. Vous pouvez aussi vous connecter à Purchasing Management pour signer électroniquement.`;
+          `\n\nLes pièces jointes au dossier sont attachées à ce message. Vous pouvez aussi vous connecter à InvestFlow pour signer électroniquement.`;
         // Queue the per-rule notification alongside the other workflow
         // notifications so it gets folded into the next batch e-mail
         // (with documents attached) instead of going out immediately.
@@ -1174,6 +1333,82 @@ router.post(
   },
 );
 
+router.post("/workflows/:id/validate-accord-principe", requireAuth, async (req, res): Promise<void> => {
+  const params = GetWorkflowParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const wf = await loadWorkflowFull(params.data.id);
+  if (!wf) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  const user = getUser(req);
+  if (!hasRole(user, "GT_INVEST", "FINANCIAL_ALL", "ADMIN")) {
+    res.status(403).json({ error: "Only GT Invest validators or administrators may validate an accord de principe" });
+    return;
+  }
+  if (wf.currentStep !== "GT_INVEST" || wf.gtInvestDecision !== "ACCORD_PRINCIPE") {
+    res.status(400).json({ error: "Workflow must be at GT Invest with an accord de principe decision" });
+    return;
+  }
+  const next = nextStep("GT_INVEST");
+  if (!next) {
+    res.status(400).json({ error: "No next workflow stage is configured" });
+    return;
+  }
+  const comment = typeof req.body?.comment === "string" ? req.body.comment : wf.gtInvestComment;
+  let transitioned = false;
+  await db.transaction(async (tx) => {
+    const updated = await tx.update(workflowsTable).set({
+      currentStep: next,
+      previousStep: "GT_INVEST",
+      // Keep the committee decision on the workflow so regenerated meeting
+      // packs continue to show the accord; the transition history is also
+      // authoritative for audit purposes.
+      gtInvestDecision: "ACCORD_PRINCIPE",
+      gtInvestComment: comment,
+      lastStepChangeAt: new Date(),
+    }).where(and(
+      eq(workflowsTable.id, wf.id),
+      eq(workflowsTable.currentStep, "GT_INVEST"),
+      eq(workflowsTable.gtInvestDecision, "ACCORD_PRINCIPE"),
+    )).returning({ id: workflowsTable.id });
+    if (updated.length === 0) return;
+    transitioned = true;
+    await tx.insert(historyTable).values({
+      workflowId: wf.id,
+      action: "ADVANCE",
+      fromStep: "GT_INVEST",
+      toStep: next,
+      actorId: user.id,
+      details: "Accord de principe - Approve & move to ordering + CR; validation recorded",
+    });
+  });
+  if (!transitioned) {
+    res.status(409).json({ error: "Accord de principe was already validated", message: "Accord de principe was already validated" });
+    return;
+  }
+  await audit(user.id, "GT_INVEST_ACCORD_PRINCIPE_VALIDATE", "workflow", wf.id, "GT_INVEST->IMMO");
+  if (await isNotificationEventEnabled("gtInvestDecision")) {
+    const recipients = await recipientsForStep(
+      { id: wf.id, departmentId: wf.departmentId, createdById: wf.createdById },
+      next,
+    );
+    if (recipients.length > 0) {
+      void queueNotification(
+        recipients,
+        `${wf.reference} : ${STEP_LABEL_FR[next] ?? next}`,
+        `Accord de principe validé par ${user.displayName}. Le dossier passe à l'étape « ${STEP_LABEL_FR[next] ?? next} ».\n\n${buildWorkflowSummary(wf)}`,
+        { workflowId: wf.id, step: next },
+        await loadWorkflowAttachments(wf.id),
+      );
+    }
+  }
+  res.json(await loadWorkflowFull(wf.id));
+});
+
 /**
  * Merged-PDF export of a single workflow's attachments.
  *
@@ -1241,7 +1476,7 @@ async function buildWorkflowPackPdf(
   const HDR_H = 108, HDR_BOT = PH - HDR_H;
   const INFO_H = 22, FOOTER_H = 22;
   const ROW_H = 16, TABLE_MIN_Y = FOOTER_H + 6;
-  const APP = "Purchasing Management";
+  const APP = "InvestFlow";
 
   const genDate = new Date().toLocaleDateString("fr-FR", {
     day: "2-digit", month: "long", year: "numeric",
@@ -1669,7 +1904,7 @@ router.post(
       rawCertSubject ||
       user.displayName ||
       user.username ||
-      "Purchasing Management";
+      "InvestFlow";
 
     const merged = await buildWorkflowPackPdf(wf, req.log);
     const prepared = await prepareForSigning(merged, {

@@ -1,0 +1,1 @@
+- [Accord de principe workflow](accord-principe-workflow.md) — keep requests at GT Invest until an explicit audited validation resumes the flow; include the decision in the meeting CR.

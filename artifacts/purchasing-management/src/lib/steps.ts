@@ -37,7 +37,7 @@ export const STEP_LABEL: Record<Step, string> = {
   NEW: "Nouveau",
   QUOTATION: "Offre de prix",
   VALIDATING_QUOTE_FINANCIAL: "Validation Responsable",
-  VALIDATING_BY_FINANCIAL: "Validation Financière",
+  VALIDATING_BY_FINANCIAL: "Validation Flux",
   VALIDATING_SERVICES: "Validations Services",
   GT_INVEST: "GT Invest",
   IMMO: "N° AA",

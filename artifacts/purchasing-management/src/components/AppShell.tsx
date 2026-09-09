@@ -50,7 +50,7 @@ import { useDepartmentFilter } from "@/lib/department-filter";
 
 // Version affichée dans la barre latérale. À incrémenter de 0.0.1
 // pour chaque nouvel ajout fonctionnel livré.
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.9";
 
 interface NavItem {
   to: string;
@@ -272,7 +272,7 @@ export function AppShell({ user, children }: Props) {
                   className="truncate text-sm font-semibold"
                   data-testid="text-app-name"
                 >
-                  {settings?.appName ?? "Purchasing Management"}
+                  {settings?.appName ?? "InvestFlow"}
                 </div>
                 <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
                   Procurement Suite

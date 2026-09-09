@@ -19,6 +19,7 @@ import {
   ClipboardList,
   Pencil,
   ShieldCheck,
+  CircleX,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient } from "@tanstack/react-query";
@@ -80,6 +81,7 @@ import {
   useUpdateWorkflow,
   useAdvanceWorkflow,
   useRejectWorkflow,
+  useValidateAccordPrincipe,
   useUndoWorkflow,
   useDeleteWorkflow,
   useUploadWorkflowDocument,
@@ -124,6 +126,7 @@ interface Props {
 
 export function WorkflowDetailPage({ id, user }: Props) {
   const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState("step");
   const qc = useQueryClient();
   const wfQuery = useGetWorkflow(id);
   const wf = wfQuery.data as Workflow | undefined;
@@ -215,7 +218,12 @@ export function WorkflowDetailPage({ id, user }: Props) {
             })()}
           </div>
         </div>
-        <ActionBar wf={wf} user={user} onChange={refresh} />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setActiveTab("notes")} data-testid="button-open-discussion">
+            <MessageSquare className="mr-2 h-4 w-4" /> Discussion
+          </Button>
+          <ActionBar wf={wf} user={user} onChange={refresh} />
+        </div>
       </div>
 
       <Card>
@@ -224,7 +232,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="step" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="step" data-testid="tab-step">
             Principal
@@ -246,7 +254,7 @@ export function WorkflowDetailPage({ id, user }: Props) {
             <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Validations
           </TabsTrigger>
           <TabsTrigger value="notes" data-testid="tab-notes">
-            <MessageSquare className="mr-1 h-3.5 w-3.5" /> Notes
+            <MessageSquare className="mr-1 h-3.5 w-3.5" /> Discussion
           </TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">
             <History className="mr-1 h-3.5 w-3.5" /> Historique
@@ -372,6 +380,9 @@ function ActionBar({
       },
     },
   });
+  const validateAccord = useValidateAccordPrincipe({
+    mutation: { onSuccess: () => onChange() },
+  });
   const canUndo =
     user.roles.includes("ADMIN") || user.roles.includes("FINANCIAL_ALL");
   // Admin can delete anything; the workflow creator can also delete
@@ -390,10 +401,44 @@ function ActionBar({
     wf.currentStep === "ORDERING";
   const isTerminal =
     wf.currentStep === "DONE" || wf.currentStep === "REJECTED";
+  const accordSuspended =
+    wf.currentStep === "GT_INVEST" && wf.gtInvestDecision === "ACCORD_PRINCIPE";
+  const canValidateAccord = user.roles.some((r) =>
+    ["ADMIN", "GT_INVEST", "FINANCIAL_ALL"].includes(r),
+  );
+  const canEditInitialRequest =
+    !isTerminal &&
+    (user.roles.includes("ADMIN") || wf.createdById === user.id);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {!inlineAdvanceStep && (
+      {canEditInitialRequest && (
+        <Button
+          variant="outline"
+          onClick={() => navigate(`/workflows/new?editId=${wf.id}`)}
+          data-testid="button-edit-initial-request"
+        >
+          <Pencil className="mr-2 h-4 w-4" /> Modifier la demande initiale
+        </Button>
+      )}
+      {accordSuspended && (
+        <Button
+          onClick={() => {
+            if (!window.confirm("Valider l’accord de principe et poursuivre vers la commande ?")) return;
+            validateAccord.mutate({ id: wf.id, data: { comment: null } });
+          }}
+          disabled={!canValidateAccord || validateAccord.isPending}
+          data-testid="button-validate-accord-principe"
+        >
+          {validateAccord.isPending ? "Validation…" : "Valider l’accord de principe"}
+        </Button>
+      )}
+      {accordSuspended && (
+        <span className="text-sm text-amber-700" data-testid="status-accord-suspended">
+          Accord de principe suspendu : validation explicite requise.
+        </span>
+      )}
+      {!inlineAdvanceStep && !accordSuspended && (
         <Button
           onClick={async () => {
             // First, persist any unsaved local form edits the user
@@ -482,9 +527,9 @@ function ActionBar({
           {reject.isPending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
-            <Trash2 className="mr-2 h-4 w-4" />
+            <CircleX className="mr-2 h-4 w-4" />
           )}
-          Clôturer
+          Clôturer sans suite
         </Button>
       )}
       {canUndo && (
@@ -510,7 +555,7 @@ function ActionBar({
           onClick={() => {
             if (
               !window.confirm(
-                "Déplacer cette demande vers la corbeille ? Les admins peuvent la restaurer depuis Paramètres → Corbeille.",
+                "Mettre cette demande à la corbeille ? Les admins pourront la restaurer depuis Paramètres → Corbeille.",
               )
             )
               return;
@@ -524,7 +569,7 @@ function ActionBar({
           ) : (
             <Trash2 className="mr-2 h-4 w-4" />
           )}
-          Corbeille
+          Mettre à la corbeille
         </Button>
       )}
     </div>
@@ -670,12 +715,30 @@ function StepDocumentUploader({
           })}
         </ul>
       )}
-      <Input
-        type="file"
-        onChange={onPick}
-        disabled={upload.isPending}
-        data-testid={`input-step-upload-${kind}`}
-      />
+      <label
+        className="flex cursor-pointer items-center gap-2 rounded border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/40"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const file = e.dataTransfer.files?.[0];
+          if (file) {
+            const synthetic = {
+              target: { files: [file] },
+            } as unknown as React.ChangeEvent<HTMLInputElement>;
+            void onPick(synthetic);
+          }
+        }}
+      >
+        <Upload className="h-4 w-4" />
+        <span>Choisir ou déposer un fichier…</span>
+        <Input
+          type="file"
+          className="sr-only"
+          onChange={onPick}
+          disabled={upload.isPending}
+          data-testid={`input-step-upload-${kind}`}
+        />
+      </label>
     </div>
   );
 }
@@ -848,7 +911,7 @@ function DoneSummaryPanel({ wf }: { wf: Workflow }) {
                       <tr className="text-left text-xs text-muted-foreground">
                         <th className="px-2 py-1">Fournisseur</th>
                         <th className="px-2 py-1">Montant</th>
-                        <th className="px-2 py-1">Notes</th>
+                        <th className="px-2 py-1">Discussion</th>
                         <th className="px-2 py-1">Retenu</th>
                       </tr>
                     </thead>
@@ -1352,7 +1415,7 @@ function QuotationPanel({
               </Button>
             </div>
             <div className="col-span-12 space-y-1">
-              <Label className="text-xs">Notes</Label>
+              <Label className="text-xs">Discussion</Label>
               <Input
                 value={q.notes ?? ""}
                 onChange={(e) => update(idx, { notes: e.target.value })}
@@ -1592,7 +1655,7 @@ function WinningQuoteCard({
         })()}
         {winning.notes && (
           <div>
-            <div className="text-xs text-muted-foreground">Notes</div>
+            <div className="text-xs text-muted-foreground">Discussion</div>
             <div className="whitespace-pre-wrap">{winning.notes}</div>
           </div>
         )}
@@ -2343,7 +2406,7 @@ function PriorStepsRecap({
                     <tr className="text-left text-xs text-muted-foreground">
                       <th className="px-2 py-1">Fournisseur</th>
                       <th className="px-2 py-1">Montant</th>
-                      <th className="px-2 py-1">Notes</th>
+                      <th className="px-2 py-1">Discussion</th>
                       <th className="px-2 py-1">Retenu</th>
                     </tr>
                   </thead>
@@ -2900,7 +2963,7 @@ function DeliveryPanel({
           />
         </div>
         <div className="space-y-1">
-          <Label>Notes</Label>
+          <Label>Discussion</Label>
           <Textarea
             rows={3}
             value={deliveryNotes}
@@ -4147,7 +4210,7 @@ function NotesPanel({ wf }: { wf: Workflow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Notes</CardTitle>
+        <CardTitle>Discussion</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
@@ -4177,7 +4240,7 @@ function NotesPanel({ wf }: { wf: Workflow }) {
         <Separator />
         {(notes ?? []).length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Aucune note.
+             Aucune contribution à la discussion.
           </p>
         ) : (
           <div className="space-y-3">
@@ -4238,7 +4301,7 @@ function HistoryPanel({ wf }: { wf: Workflow }) {
                       {h.action === "ADVANCE"
                         ? "Étape suivante"
                         : h.action === "REJECT"
-                          ? "Clôturer"
+                           ? "Clôturer sans suite"
                           : h.action === "UNDO"
                             ? "Annuler"
                             : h.action === "CREATE"

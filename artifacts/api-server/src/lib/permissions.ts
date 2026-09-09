@@ -150,6 +150,10 @@ export function canEditWorkflow(
   return canActOnStep(user, currentStep, workflowDeptId);
 }
 
+export function isReadOnly(user: SessionUser): boolean {
+  return hasRole(user, "READ_ONLY_DEPT", "READ_ONLY_ALL");
+}
+
 /**
  * Who is allowed to *create* a new workflow in `departmentId`.
  * - ADMIN / FINANCIAL_ALL: any department

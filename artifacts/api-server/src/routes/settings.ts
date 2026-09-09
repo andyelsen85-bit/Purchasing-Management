@@ -475,13 +475,13 @@ router.post(
       // sending anything — gives a fast, specific failure when the host
       // or credentials are wrong before we attempt the real send.
       await transport.verify();
-      const baseFrom = fromAddress ?? username ?? "noreply@example.com";
+      const baseFrom = fromAddress ?? username ?? "noreply@investflow.local";
       const info = await transport.sendMail({
         from: senderName ? `"${senderName}" <${baseFrom}>` : baseFrom,
         to: body.to,
-        subject: "Purchasing Management — SMTP test",
+        subject: "InvestFlow — SMTP test",
         text:
-          "This is a test message sent from the Purchasing Management Settings page.\n\n" +
+          "This is a test message sent from the InvestFlow Settings page.\n\n" +
           "If you received this, your SMTP configuration is working.",
       });
       await audit(

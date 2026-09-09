@@ -149,7 +149,7 @@ export function LoginPage() {
             />
 
             <h1 className="text-foreground text-xs font-semibold tracking-widest uppercase opacity-70">
-              {settings?.appName ?? "Gestion des Achats"}
+              {settings?.appName ?? "InvestFlow"}
             </h1>
           </div>
 

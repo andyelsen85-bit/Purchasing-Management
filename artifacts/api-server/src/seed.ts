@@ -174,7 +174,7 @@ async function main() {
   if (!existingSettings) {
     await db.insert(settingsTable).values({
       data: {
-        appName: "Purchasing Management",
+        appName: "InvestFlow",
         currency: "EUR",
         limitX: 10000,
         gtInvestRecipients: [],

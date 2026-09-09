@@ -9,7 +9,7 @@ import {
   DeleteDocumentParams,
 } from "@workspace/api-zod";
 import { requireAuth, getUser } from "../middlewares/auth";
-import { canSeeWorkflow, canEditWorkflow } from "../lib/permissions";
+import { canSeeWorkflow, canEditWorkflow, isReadOnly } from "../lib/permissions";
 import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
@@ -219,6 +219,79 @@ router.post(
       dataUrl: `data:${created!.mimeType};base64,${created!.contentBase64}`,
       uploadedByName: user.displayName,
       uploadedAt: created!.uploadedAt,
+    });
+  },
+);
+
+// Initial-request attachments are intentionally separate from the normal
+// step upload: the requester can correct the submitted file set at any
+// active stage, but cannot use this capability to upload operational docs.
+router.post(
+  "/workflows/:id/initial-request/documents",
+  requireAuth,
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid workflow id", message: "Invalid workflow id" });
+      return;
+    }
+    const normalized = normalizeUpload(req);
+    if ("error" in normalized) {
+      res.status(400).json({ error: normalized.error, message: normalized.error });
+      return;
+    }
+    const [wf] = await db.select().from(workflowsTable).where(eq(workflowsTable.id, id));
+    if (!wf) {
+      res.status(404).json({ error: "Not found", message: "Not found" });
+      return;
+    }
+    const user = getUser(req);
+    if (wf.deletedAt || wf.currentStep === "DONE" || wf.currentStep === "REJECTED") {
+      res.status(400).json({ error: "Workflow cannot be edited in its current state", message: "Workflow cannot be edited in its current state" });
+      return;
+    }
+    if (isReadOnly(user) || (wf.createdById !== user.id && !user.roles.includes("ADMIN"))) {
+      res.status(403).json({ error: "Only the workflow creator or an administrator may upload initial-request documents", message: "Only the workflow creator or an administrator may upload initial-request documents" });
+      return;
+    }
+    const allowedKinds = new Set(["QUOTE", "OTHER"]);
+    if (!allowedKinds.has(normalized.kind) || !["DRAFT", "NEW", "QUOTATION"].includes(normalized.step)) {
+      res.status(400).json({ error: "Only QUOTE and creation-support documents are accepted", message: "Only QUOTE and creation-support documents are accepted" });
+      return;
+    }
+    const allowedTypes = new Set([
+      "application/pdf", "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "image/jpeg", "image/png", "text/plain",
+    ]);
+    if (!allowedTypes.has(normalized.mimeType)) {
+      res.status(400).json({ error: "Unsupported initial-request document type", message: "Unsupported initial-request document type" });
+      return;
+    }
+    const sizeBytes = Math.floor((normalized.contentBase64.length * 3) / 4);
+    const [created] = await db.insert(documentsTable).values({
+      workflowId: wf.id,
+      step: normalized.step,
+      filename: normalized.filename,
+      mimeType: normalized.mimeType,
+      sizeBytes,
+      kind: normalized.kind,
+      version: 1,
+      previousVersionId: null,
+      contentBase64: normalized.contentBase64,
+      uploadedById: user.id,
+      isCurrent: true,
+    }).returning();
+    await audit(user.id, "INITIAL_REQUEST_DOCUMENT_UPLOAD", "document", created!.id, normalized.filename);
+    res.status(201).json({
+      id: created!.id, workflowId: created!.workflowId, step: created!.step,
+      filename: created!.filename, mimeType: created!.mimeType, sizeBytes: created!.sizeBytes,
+      kind: created!.kind, version: created!.version, previousVersionId: created!.previousVersionId,
+      isCurrent: created!.isCurrent, dataUrl: `data:${created!.mimeType};base64,${created!.contentBase64}`,
+      uploadedByName: user.displayName, uploadedAt: created!.uploadedAt,
     });
   },
 );

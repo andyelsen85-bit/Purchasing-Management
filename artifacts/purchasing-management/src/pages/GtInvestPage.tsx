@@ -83,8 +83,8 @@ export const GT_DECISION_OPTIONS: Array<{
   },
   {
     value: "ACCORD_PRINCIPE",
-    label: "Accord de principe — pick a follow-up meeting date",
-    short: "Accord principe",
+    label: "Accord de principe - Approve & move to ordering + CR",
+    short: "Accord de principe - Approve & move to ordering + CR",
     needsDate: true,
     Icon: HandshakeIcon,
     tone: "text-sky-600",

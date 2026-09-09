@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Api
-  version: 0.1.0
-  description: Purchasing Management API
+  version: 1.0.9
+  description: InvestFlow API
 servers:
   - url: /api
     description: Base API path
@@ -541,6 +541,48 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Workflow" }
 
+  /workflows/{id}/validate-accord-principe:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: validateAccordPrincipe
+      tags: [workflows]
+      summary: Validate a previously recorded GT Invest accord de principe
+      description: Generic advance is blocked until this dedicated validation.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: ["string", "null"] }
+      responses:
+        "200":
+          description: Accord validated and workflow advanced to N° AA
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+
+  /workflows/{id}/initial-request:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      operationId: updateInitialWorkflowRequest
+      tags: [workflows]
+      summary: Edit submitted request without changing its workflow stage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateInitialWorkflowRequest" }
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+
   /workflows/{id}/sign-prepare:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -634,6 +676,31 @@ paths:
                   format: binary
                 step: { type: string }
                 kind: { type: string }
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+  /workflows/{id}/initial-request/documents:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: uploadInitialRequestDocument
+      tags: [documents]
+      summary: Upload a quote or creation-support document for the submitted request
+      description: Multipart upload restricted to QUOTE and OTHER creation-support kinds. Available to the creator or an administrator on active nonterminal workflows.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, step, kind]
+              properties:
+                file: { type: string, format: binary }
+                step: { type: string, enum: [DRAFT, NEW, QUOTATION] }
+                kind: { type: string, enum: [QUOTE, OTHER] }
       responses:
         "201":
           description: Uploaded
@@ -1722,6 +1789,7 @@ components:
 
     QuoteEntry:
       type: object
+      description: Supplier name is free text; company and contact references are optional. Amount is HTVA.
       properties:
         companyId: { type: ["integer", "null"] }
         companyName: { type: ["string", "null"] }
@@ -1969,6 +2037,23 @@ components:
         invoiceSignedBy: { type: ["string", "null"] }
         paymentDate: { type: ["string", "null"], format: date }
         paymentReference: { type: ["string", "null"] }
+
+    UpdateInitialWorkflowRequest:
+      type: object
+      description: Correct submitted creation data without changing the current workflow stage.
+      properties:
+        title: { type: ["string", "null"] }
+        departmentId: { type: ["integer", "null"] }
+        priority: { $ref: "#/components/schemas/Priority" }
+        description: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        estimatedAmount: { type: ["number", "null"] }
+        currency: { type: ["string", "null"] }
+        neededBy: { type: ["string", "null"], format: date }
+        investmentForm: { $ref: "#/components/schemas/InvestmentForm" }
+        quotes:
+          type: array
+          items: { $ref: "#/components/schemas/QuoteEntry" }
 
     AdvanceWorkflowInput:
       type: object
@@ -2724,6 +2809,9 @@ components:
       properties:
         # 1 – Identification
         projectLeader: { type: ["string", "null"] }
+        departmentOther:
+          type: ["string", "null"]
+          description: Free-text department when the controlled department choice is Autre/Other.
         investmentTypes:
           type: array
           items: { type: string }

@@ -145,7 +145,7 @@ export async function prepareForSigning(
     pdfDoc,
     reason: opts.reason ?? "Validation facture",
     contactInfo: opts.contactInfo ?? "",
-    name: opts.name ?? "Purchasing Management",
+    name: opts.name ?? "InvestFlow",
     location: opts.location ?? "",
     signatureLength: PLACEHOLDER_HEX_BYTES,
   });
