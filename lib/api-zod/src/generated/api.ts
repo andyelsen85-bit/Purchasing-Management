@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * InvestFlow API
- * OpenAPI spec version: 1.0.9
+ * OpenAPI spec version: 1.1.0
  */
 import * as zod from "zod";
 
@@ -45,6 +45,55 @@ export const LoginResponse = zod.object({
   ),
   departmentIds: zod.array(zod.number()),
   source: zod.enum(["LOCAL", "LDAP", "KERBEROS"]),
+});
+
+/**
+ * @summary Start Microsoft AD FS OpenID Connect login
+ */
+export const StartAdfsLoginQueryParams = zod.object({
+  returnTo: zod.coerce
+    .string()
+    .optional()
+    .describe("Strictly local application path to return to after login."),
+});
+
+/**
+ * @summary Complete Microsoft AD FS OpenID Connect login
+ */
+export const AdfsCallbackQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+  error: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary Issue a session-bound CSRF token for AD FS settings changes
+ */
+export const GetAuthCsrfTokenResponse = zod.object({
+  token: zod.string(),
+});
+
+/**
+ * @summary Public login configuration
+ */
+export const GetPublicAuthConfigResponse = zod.object({
+  appName: zod.string(),
+  logoDataUrl: zod.string().nullish(),
+  ldap: zod.object({
+    enabled: zod.boolean(),
+    kerberosEnabled: zod.boolean(),
+  }),
+  adfs: zod.object({
+    enabled: zod.boolean(),
+    displayName: zod.string(),
+  }),
+});
+
+/**
+ * @summary Log out
+ */
+export const LogoutResponse = zod.object({
+  ok: zod.boolean(),
 });
 
 /**
@@ -3274,6 +3323,21 @@ export const GetSettingsResponse = zod.object({
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
     groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),
+  adfs: zod.object({
+    enabled: zod.boolean(),
+    displayName: zod.string(),
+    issuer: zod.string().nullish(),
+    authority: zod.string().nullish(),
+    discoveryUrl: zod.string().nullish(),
+    clientId: zod.string().nullish(),
+    clientSecretSet: zod.boolean(),
+    redirectUri: zod.string().nullish(),
+    scopes: zod.string(),
+    usernameClaim: zod.string(),
+    emailClaim: zod.string(),
+    displayNameClaim: zod.string(),
+    caPemSet: zod.boolean(),
+  }),
   smtp: zod.object({
     enabled: zod.boolean(),
     host: zod.string().nullish(),
@@ -3379,6 +3443,23 @@ export const UpdateSettingsBody = zod.object({
       groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
     })
     .optional(),
+  adfs: zod
+    .object({
+      enabled: zod.boolean().nullish(),
+      displayName: zod.string().nullish(),
+      issuer: zod.string().nullish(),
+      authority: zod.string().nullish(),
+      discoveryUrl: zod.string().nullish(),
+      clientId: zod.string().nullish(),
+      clientSecret: zod.string().nullish(),
+      redirectUri: zod.string().nullish(),
+      scopes: zod.string().nullish(),
+      usernameClaim: zod.string().nullish(),
+      emailClaim: zod.string().nullish(),
+      displayNameClaim: zod.string().nullish(),
+      caPem: zod.string().nullish(),
+    })
+    .optional(),
   smtp: zod
     .object({
       enabled: zod.boolean().nullish(),
@@ -3448,6 +3529,21 @@ export const UpdateSettingsResponse = zod.object({
     servicePrincipalName: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
     groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
+  }),
+  adfs: zod.object({
+    enabled: zod.boolean(),
+    displayName: zod.string(),
+    issuer: zod.string().nullish(),
+    authority: zod.string().nullish(),
+    discoveryUrl: zod.string().nullish(),
+    clientId: zod.string().nullish(),
+    clientSecretSet: zod.boolean(),
+    redirectUri: zod.string().nullish(),
+    scopes: zod.string(),
+    usernameClaim: zod.string(),
+    emailClaim: zod.string(),
+    displayNameClaim: zod.string(),
+    caPemSet: zod.boolean(),
   }),
   smtp: zod.object({
     enabled: zod.boolean(),

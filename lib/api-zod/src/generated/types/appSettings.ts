@@ -3,8 +3,9 @@
  * Do not edit manually.
  * Api
  * InvestFlow API
- * OpenAPI spec version: 1.0.9
+ * OpenAPI spec version: 1.1.0
  */
+import type { AdfsSettings } from "./adfsSettings";
 import type { AppSettingsNotifications } from "./appSettingsNotifications";
 import type { LdapsSettings } from "./ldapsSettings";
 import type { SmtpSettings } from "./smtpSettings";
@@ -36,6 +37,7 @@ export interface AppSettings {
   tauxAmortissementList: number[];
   tauxTvaList: number[];
   ldap: LdapsSettings;
+  adfs: AdfsSettings;
   smtp: SmtpSettings;
   /** Minutes between automated notification batch sends */
   notificationIntervalMinutes: number;

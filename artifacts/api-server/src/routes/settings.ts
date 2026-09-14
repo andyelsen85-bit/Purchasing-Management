@@ -24,6 +24,7 @@ import { requireAuth, requireRole, getUser } from "../middlewares/auth";
 import { getSettings, toPublicSettings, updateSettingsRecord } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { resolveGroupMemberEmails } from "../lib/ldap";
+import { validateAdfsCsrf } from "../lib/adfs";
 
 const router: IRouter = Router();
 
@@ -42,6 +43,20 @@ router.patch(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
+    // AD FS configuration contains redirect/authentication material and is
+    // the one settings mutation that must carry the session-bound CSRF
+    // token. Existing non-ADFS settings mutations retain their historical
+    // contract so local/LDAP/Kerberos administration is not disrupted.
+    if (parsed.data.adfs !== undefined) {
+      const header = req.get("x-csrf-token");
+      const cookie = req.cookies?.investflow_csrf ?? req.get("cookie")?.match(
+        /(?:^|;\s*)investflow_csrf=([^;]+)/,
+      )?.[1];
+      if (!validateAdfsCsrf(header, cookie, req.session.adfsCsrfToken)) {
+        res.status(403).json({ error: "CSRF token required" });
+        return;
+      }
+    }
     // Map the OpenAPI input shape to the stored shape: zod nullish() turns
     // missing values into `null`, but the persisted record uses `undefined`
     // for "not set" (so the merge in updateSettingsRecord skips the key).
@@ -58,6 +73,7 @@ router.patch(
     const {
       smtp,
       ldap,
+      adfs,
       gtInvestRecipients,
       budgetPositions,
       livreIExceptions,
@@ -93,6 +109,7 @@ router.patch(
       ...(tauxAmortissementList ? { tauxAmortissementList } : {}),
       ...(tauxTvaList ? { tauxTvaList } : {}),
       ...(ldap ? { ldap: dropNulls(ldap) } : {}),
+      ...(adfs ? { adfs: adfs as never } : {}),
       ...(smtp
         ? {
             smtp: {

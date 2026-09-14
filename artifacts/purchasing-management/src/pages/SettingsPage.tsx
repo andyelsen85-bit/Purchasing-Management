@@ -72,6 +72,9 @@ import {
   useUpdateNotificationRule,
   useSyncNotificationRulesFromAd,
   getListNotificationRulesQueryKey,
+  useGetAuthCsrfToken,
+  setCsrfToken,
+  type AdfsSettingsInput,
 } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, RefreshCw } from "lucide-react";
@@ -159,6 +162,7 @@ const TAB_VALUES = [
   "departments",
   "roles",
   "ldap",
+  "adfs",
   "smtp",
   "gt",
   "aa",
@@ -248,6 +252,9 @@ export function SettingsPage() {
           <TabsTrigger value="ldap" data-testid="tab-ldap">
             LDAP
           </TabsTrigger>
+          <TabsTrigger value="adfs" data-testid="tab-adfs">
+            AD FS
+          </TabsTrigger>
           <TabsTrigger value="smtp" data-testid="tab-smtp">
             SMTP
           </TabsTrigger>
@@ -291,6 +298,9 @@ export function SettingsPage() {
             <LdapTestPanel />
             <GroupMappingPanel />
           </div>
+        </TabsContent>
+        <TabsContent value="adfs">
+          <AdfsSettingsPanel />
         </TabsContent>
         <TabsContent value="smtp">
           <SmtpSettingsPanel />
@@ -1586,6 +1596,162 @@ function useCountdown(nextSendAt: string | null) {
   const m = Math.floor(remaining / 60);
   const s = remaining % 60;
   return m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
+}
+
+function AdfsSettingsPanel() {
+  const { data: s, isLoading, error: settingsError } = useGetSettings();
+  const { data: csrf, error: csrfError } = useGetAuthCsrfToken();
+  const save = useSaveSettings();
+  const [enabled, setEnabled] = useState(false);
+  const [displayName, setDisplayName] = useState("AD FS");
+  const [issuer, setIssuer] = useState("");
+  const [discoveryUrl, setDiscoveryUrl] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [secretAction, setSecretAction] = useState<"keep" | "replace" | "clear">("keep");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [scopes, setScopes] = useState("openid profile email");
+  const [usernameClaim, setUsernameClaim] = useState("preferred_username");
+  const [emailClaim, setEmailClaim] = useState("email");
+  const [displayNameClaim, setDisplayNameClaim] = useState("name");
+  const [caPem, setCaPem] = useState("");
+  const [caAction, setCaAction] = useState<"keep" | "replace" | "clear">("keep");
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (csrf?.token) setCsrfToken(csrf.token);
+    return () => setCsrfToken(null);
+  }, [csrf?.token]);
+
+  useEffect(() => {
+    if (!s) return;
+    setEnabled(s.adfs.enabled);
+    setDisplayName(s.adfs.displayName || "AD FS");
+    setIssuer(s.adfs.issuer ?? "");
+    setDiscoveryUrl(s.adfs.discoveryUrl ?? "");
+    setClientId(s.adfs.clientId ?? "");
+    setClientSecret("");
+    setSecretAction("keep");
+    setRedirectUri(s.adfs.redirectUri ?? "");
+    setScopes(s.adfs.scopes || "openid profile email");
+    setUsernameClaim(s.adfs.usernameClaim || "preferred_username");
+    setEmailClaim(s.adfs.emailClaim || "email");
+    setDisplayNameClaim(s.adfs.displayNameClaim || "name");
+    setCaPem("");
+    setCaAction("keep");
+  }, [s]);
+
+  function readCaFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result ?? "");
+      setCaPem(value);
+      setCaAction("replace");
+    };
+    reader.onerror = () => setValidationError("Impossible de lire le fichier PEM.");
+    reader.readAsText(file);
+  }
+
+  function saveAdfs() {
+    setValidationError(null);
+    setSaveError(null);
+    if (!/\bopenid\b/.test(scopes.trim().replace(/\s+/g, " "))) {
+      setValidationError("Le scope openid est obligatoire.");
+      return;
+    }
+    if (caAction === "replace" && caPem.trim() &&
+        !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(caPem)) {
+      setValidationError("Le certificat CA doit être un PEM valide.");
+      return;
+    }
+    const adfs: AdfsSettingsInput = {
+      enabled,
+      displayName: displayName.trim() || "AD FS",
+      issuer: issuer.trim() || null,
+      discoveryUrl: discoveryUrl.trim() || null,
+      clientId: clientId.trim() || null,
+      redirectUri: redirectUri.trim() || null,
+      scopes: scopes.trim(),
+      usernameClaim: usernameClaim.trim() || "preferred_username",
+      emailClaim: emailClaim.trim() || "email",
+      displayNameClaim: displayNameClaim.trim() || "name",
+    };
+    if (secretAction === "replace") adfs.clientSecret = clientSecret;
+    if (secretAction === "clear") adfs.clientSecret = null;
+    if (caAction === "replace") adfs.caPem = caPem.trim() || null;
+    if (caAction === "clear") adfs.caPem = null;
+    save.mutate({ data: { adfs } }, {
+      onSuccess: () => {
+        setClientSecret("");
+        setSecretAction("keep");
+        setCaPem("");
+        setCaAction("keep");
+      },
+      onError: (error) => setSaveError(extractErrorMessage(error)),
+    });
+  }
+
+  if (isLoading) {
+    return <Card><CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground" data-testid="status-adfs-loading"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</CardContent></Card>;
+  }
+  if (settingsError) {
+    return <Alert variant="destructive" data-testid="alert-adfs-error"><AlertDescription>{extractErrorMessage(settingsError)}</AlertDescription></Alert>;
+  }
+  const configured = s?.adfs;
+  return (
+    <Card data-testid="card-adfs-settings">
+      <CardHeader><CardTitle>Administration AD FS</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        {(csrfError || saveError || validationError) && (
+          <Alert variant="destructive" data-testid="alert-adfs-save-error">
+            <AlertDescription>{validationError || saveError || extractErrorMessage(csrfError)}</AlertDescription>
+          </Alert>
+        )}
+        <div className="flex items-center justify-between rounded-md border p-3">
+          <div><Label>Activer AD FS</Label><p className="text-xs text-muted-foreground">Le bouton apparaît sur la page de connexion uniquement quand AD FS est activé.</p></div>
+          <Switch checked={enabled} onCheckedChange={setEnabled} data-testid="switch-adfs-enabled" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1"><Label>Libellé du bouton</Label><Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} data-testid="input-adfs-display-name" /></div>
+          <div className="space-y-1"><Label>Client ID</Label><Input value={clientId} onChange={(e) => setClientId(e.target.value)} data-testid="input-adfs-client-id" /></div>
+          <div className="space-y-1 sm:col-span-2"><Label>Issuer</Label><Input value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://adfs.example/adfs" data-testid="input-adfs-issuer" /></div>
+          <div className="space-y-1 sm:col-span-2"><Label>URL de découverte</Label><Input value={discoveryUrl} onChange={(e) => setDiscoveryUrl(e.target.value)} placeholder="https://adfs.example/adfs/.well-known/openid-configuration" data-testid="input-adfs-discovery-url" /></div>
+          <div className="space-y-1 sm:col-span-2"><Label>Redirect URI</Label><Input value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Laisser vide pour l’URL de rappel calculée par le serveur" data-testid="input-adfs-redirect-uri" /><p className="text-xs text-muted-foreground">Enregistrez cette URI exactement dans AD FS, ou laissez vide pour utiliser l’URL publique du serveur suivie de /api/auth/adfs/callback.</p></div>
+          <div className="space-y-1 sm:col-span-2"><Label>Scopes</Label><Input value={scopes} onChange={(e) => setScopes(e.target.value)} data-testid="input-adfs-scopes" /><p className="text-xs text-muted-foreground">Le scope openid est obligatoire.</p></div>
+          <div className="space-y-1"><Label>Claim utilisateur</Label><Input value={usernameClaim} onChange={(e) => setUsernameClaim(e.target.value)} data-testid="input-adfs-username-claim" /></div>
+          <div className="space-y-1"><Label>Claim e-mail</Label><Input value={emailClaim} onChange={(e) => setEmailClaim(e.target.value)} data-testid="input-adfs-email-claim" /></div>
+          <div className="space-y-1"><Label>Claim nom affiché</Label><Input value={displayNameClaim} onChange={(e) => setDisplayNameClaim(e.target.value)} data-testid="input-adfs-display-name-claim" /></div>
+        </div>
+        <div className="space-y-2 rounded-md border p-3">
+          <Label>Secret client</Label>
+          <p className="text-xs text-muted-foreground" data-testid="status-adfs-secret">{configured?.clientSecretSet ? "Secret configuré (non affiché)." : "Aucun secret configuré."}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant={secretAction === "keep" ? "secondary" : "outline"} onClick={() => setSecretAction("keep")} data-testid="button-adfs-secret-keep">Conserver</Button>
+            <Button type="button" variant={secretAction === "replace" ? "secondary" : "outline"} onClick={() => setSecretAction("replace")} data-testid="button-adfs-secret-replace">Remplacer</Button>
+            {configured?.clientSecretSet && <Button type="button" variant={secretAction === "clear" ? "destructive" : "outline"} onClick={() => setSecretAction("clear")} data-testid="button-adfs-secret-clear">Supprimer</Button>}
+          </div>
+          {secretAction === "replace" && <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} autoComplete="new-password" placeholder="Nouveau secret (jamais affiché)" data-testid="input-adfs-client-secret" />}
+        </div>
+        <div className="space-y-2 rounded-md border p-3">
+          <Label>Certificat CA (PEM)</Label>
+          <p className="text-xs text-muted-foreground" data-testid="status-adfs-ca">{configured?.caPemSet ? "Certificat configuré (non affiché)." : "Aucun certificat CA configuré."}</p>
+          <Textarea value={caPem} onChange={(e) => { setCaPem(e.target.value); setCaAction("replace"); }} rows={5} className="font-mono text-xs" placeholder="-----BEGIN CERTIFICATE-----" data-testid="textarea-adfs-ca-pem" />
+          <input type="file" accept=".pem,.crt,text/plain" onChange={readCaFile} data-testid="input-adfs-ca-file" className="text-sm" />
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => { setCaPem(""); setCaAction("keep"); }} data-testid="button-adfs-ca-keep">Conserver</Button>
+            {configured?.caPemSet && <Button type="button" variant="outline" onClick={() => { setCaPem(""); setCaAction("clear"); }} data-testid="button-adfs-ca-clear">Supprimer</Button>}
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button onClick={saveAdfs} disabled={save.isPending || !!csrfError || !csrf?.token} data-testid="button-save-adfs">{save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Enregistrer</Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function SmtpSettingsPanel() {

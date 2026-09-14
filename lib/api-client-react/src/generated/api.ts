@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * InvestFlow API
- * OpenAPI spec version: 1.0.9
+ * OpenAPI spec version: 1.1.0
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AdfsCallbackParams,
   AdvanceWorkflowInput,
   ApiError,
   AppSettings,
@@ -48,6 +49,7 @@ import type {
   FinalizeServiceSignatureBody,
   FinalizeWorkflowSign200,
   FinalizeWorkflowSignBody,
+  GetAuthCsrfToken200,
   GtInvestDate,
   GtInvestDecisionInput,
   GtInvestResult,
@@ -69,6 +71,7 @@ import type {
   ListWorkflowsByStepParams,
   ListWorkflowsParams,
   LoginRequest,
+  Logout200,
   Note,
   NotificationBatchStatus,
   NotificationEntry,
@@ -80,12 +83,14 @@ import type {
   PrepareServiceSignature200,
   PrepareServiceSignatureBody,
   PrepareWorkflowSign200,
+  PublicAuthConfig,
   RejectWorkflowInput,
   ServiceSignature,
   SessionResponse,
   SessionUser,
   SmtpTestInput,
   SmtpTestResult,
+  StartAdfsLoginParams,
   SyncNotificationRulesFromAd200,
   SyncNotificationRulesFromAd400,
   UpdateInitialWorkflowRequest,
@@ -274,14 +279,352 @@ export const useLogin = <
 };
 
 /**
+ * @summary Start Microsoft AD FS OpenID Connect login
+ */
+export const getStartAdfsLoginUrl = (params?: StartAdfsLoginParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/auth/adfs/start?${stringifiedParams}`
+    : `/api/auth/adfs/start`;
+};
+
+export const startAdfsLogin = async (
+  params?: StartAdfsLoginParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getStartAdfsLoginUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getStartAdfsLoginQueryKey = (params?: StartAdfsLoginParams) => {
+  return [`/api/auth/adfs/start`, ...(params ? [params] : [])] as const;
+};
+
+export const getStartAdfsLoginQueryOptions = <
+  TData = Awaited<ReturnType<typeof startAdfsLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: StartAdfsLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof startAdfsLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getStartAdfsLoginQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof startAdfsLogin>>> = ({
+    signal,
+  }) => startAdfsLogin(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof startAdfsLogin>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type StartAdfsLoginQueryResult = NonNullable<
+  Awaited<ReturnType<typeof startAdfsLogin>>
+>;
+export type StartAdfsLoginQueryError = ErrorType<void>;
+
+/**
+ * @summary Start Microsoft AD FS OpenID Connect login
+ */
+
+export function useStartAdfsLogin<
+  TData = Awaited<ReturnType<typeof startAdfsLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: StartAdfsLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof startAdfsLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getStartAdfsLoginQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Complete Microsoft AD FS OpenID Connect login
+ */
+export const getAdfsCallbackUrl = (params?: AdfsCallbackParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/auth/adfs/callback?${stringifiedParams}`
+    : `/api/auth/adfs/callback`;
+};
+
+export const adfsCallback = async (
+  params?: AdfsCallbackParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getAdfsCallbackUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdfsCallbackQueryKey = (params?: AdfsCallbackParams) => {
+  return [`/api/auth/adfs/callback`, ...(params ? [params] : [])] as const;
+};
+
+export const getAdfsCallbackQueryOptions = <
+  TData = Awaited<ReturnType<typeof adfsCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: AdfsCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adfsCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getAdfsCallbackQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof adfsCallback>>> = ({
+    signal,
+  }) => adfsCallback(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adfsCallback>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdfsCallbackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adfsCallback>>
+>;
+export type AdfsCallbackQueryError = ErrorType<void>;
+
+/**
+ * @summary Complete Microsoft AD FS OpenID Connect login
+ */
+
+export function useAdfsCallback<
+  TData = Awaited<ReturnType<typeof adfsCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: AdfsCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adfsCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdfsCallbackQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Issue a session-bound CSRF token for AD FS settings changes
+ */
+export const getGetAuthCsrfTokenUrl = () => {
+  return `/api/auth/csrf`;
+};
+
+export const getAuthCsrfToken = async (
+  options?: RequestInit,
+): Promise<GetAuthCsrfToken200> => {
+  return customFetch<GetAuthCsrfToken200>(getGetAuthCsrfTokenUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAuthCsrfTokenQueryKey = () => {
+  return [`/api/auth/csrf`] as const;
+};
+
+export const getGetAuthCsrfTokenQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAuthCsrfToken>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthCsrfToken>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAuthCsrfTokenQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAuthCsrfToken>>
+  > = ({ signal }) => getAuthCsrfToken({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthCsrfToken>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAuthCsrfTokenQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAuthCsrfToken>>
+>;
+export type GetAuthCsrfTokenQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Issue a session-bound CSRF token for AD FS settings changes
+ */
+
+export function useGetAuthCsrfToken<
+  TData = Awaited<ReturnType<typeof getAuthCsrfToken>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthCsrfToken>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAuthCsrfTokenQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Public login configuration
+ */
+export const getGetPublicAuthConfigUrl = () => {
+  return `/api/auth/public-config`;
+};
+
+export const getPublicAuthConfig = async (
+  options?: RequestInit,
+): Promise<PublicAuthConfig> => {
+  return customFetch<PublicAuthConfig>(getGetPublicAuthConfigUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPublicAuthConfigQueryKey = () => {
+  return [`/api/auth/public-config`] as const;
+};
+
+export const getGetPublicAuthConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPublicAuthConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicAuthConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPublicAuthConfigQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPublicAuthConfig>>
+  > = ({ signal }) => getPublicAuthConfig({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicAuthConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPublicAuthConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPublicAuthConfig>>
+>;
+export type GetPublicAuthConfigQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Public login configuration
+ */
+
+export function useGetPublicAuthConfig<
+  TData = Awaited<ReturnType<typeof getPublicAuthConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicAuthConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPublicAuthConfigQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Log out
  */
 export const getLogoutUrl = () => {
   return `/api/auth/logout`;
 };
 
-export const logout = async (options?: RequestInit): Promise<void> => {
-  return customFetch<void>(getLogoutUrl(), {
+export const logout = async (options?: RequestInit): Promise<Logout200> => {
+  return customFetch<Logout200>(getLogoutUrl(), {
     ...options,
     method: "POST",
   });

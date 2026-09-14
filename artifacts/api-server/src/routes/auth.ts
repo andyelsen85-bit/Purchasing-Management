@@ -1,14 +1,39 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, usersTable, userDepartmentsTable } from "@workspace/db";
+import {
+  db,
+  externalIdentityMappingsTable,
+  usersTable,
+  userDepartmentsTable,
+} from "@workspace/db";
 import { LoginBody } from "@workspace/api-zod";
-import { verifyPassword, hashPassword } from "../lib/auth";
+import { verifyPassword, hashPassword, establishAuthenticatedSession } from "../lib/auth";
 import type { Role, SessionUser } from "../lib/auth";
 import { sql } from "drizzle-orm";
 import { ldapAuthenticate, lookupLdapGroups } from "../lib/ldap";
 import { getSettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { requireAuth } from "../middlewares/auth";
+import { randomBytes } from "node:crypto";
+import {
+  ADFS_PROVIDER,
+  ADFS_STATE_COOKIE,
+  adfsLoginMethodCookie,
+  clearAdfsLoginMethodCookie,
+  adfsClientSecret,
+  adfsRedirectUri,
+  authorizationUrl,
+  callbackUrlForRedirect,
+  createAdfsState,
+  exchangeAdfsCode,
+  getAdfsClient,
+  isAdfsReplay,
+  mapAdfsClaims,
+  resolveIdentityCandidate,
+  signAdfsState,
+  validateLocalReturnTarget,
+  verifyAdfsState,
+} from "../lib/adfs";
 import {
   mapGroupsToRoles,
   mapGroupsToDepartmentIds,
@@ -17,6 +42,44 @@ import {
 } from "../lib/groupMapping";
 
 const router: IRouter = Router();
+
+const consumedAdfsStates = new Map<string, number>();
+function parseCookies(header: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of (header ?? "").split(";")) {
+    const i = part.indexOf("=");
+    if (i <= 0) continue;
+    try {
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      // Ignore malformed cookie values.
+    }
+  }
+  return out;
+}
+
+function setAdfsStateCookie(res: import("express").Response, value: string, secure: boolean): void {
+  res.setHeader(
+    "Set-Cookie",
+    `${ADFS_STATE_COOKIE}=${encodeURIComponent(value)}; Max-Age=300; Path=/api/auth/adfs; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`,
+  );
+}
+
+function clearAdfsStateCookie(res: import("express").Response, secure: boolean): void {
+  res.append(
+    "Set-Cookie",
+    `${ADFS_STATE_COOKIE}=; Max-Age=0; Path=/api/auth/adfs; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`,
+  );
+}
+
+function redirectFailure(res: import("express").Response, secure: boolean, code = "adfs_failed"): void {
+  clearAdfsStateCookie(res, secure);
+  res.redirect(`/login?error=${encodeURIComponent(code)}`);
+}
+
+function isSecureRequest(req: import("express").Request): boolean {
+  return req.secure || req.headers["x-forwarded-proto"] === "https";
+}
 
 async function buildSessionUser(userId: number): Promise<SessionUser | null> {
   const [u] = await db
@@ -38,6 +101,193 @@ async function buildSessionUser(userId: number): Promise<SessionUser | null> {
     source: u.source,
   };
 }
+
+router.get("/auth/adfs/start", async (req, res): Promise<void> => {
+  const settings = await getSettings();
+  const cfg = settings.adfs ?? {};
+  const secure = isSecureRequest(req);
+  if (!cfg.enabled) {
+    redirectFailure(res, secure, "adfs_disabled");
+    return;
+  }
+  try {
+    const returnTo = validateLocalReturnTarget(req.query.returnTo ?? req.query.return_to);
+    const state = createAdfsState(returnTo);
+    const client = await getAdfsClient(settings, adfsClientSecret(settings));
+    const scopes = Array.from(
+      new Set((cfg.scopes ?? "openid profile email").split(/\s+/).filter(Boolean).concat("openid")),
+    ).join(" ");
+    const redirectUri = adfsRedirectUri(req, settings);
+    const url = await authorizationUrl(client, state, redirectUri, scopes);
+    setAdfsStateCookie(res, signAdfsState(state), secure);
+    res.redirect(url);
+  } catch {
+    // Discovery/configuration failures are intentionally indistinguishable
+    // from other login failures and contain no provider response details.
+    redirectFailure(res, secure, "adfs_unavailable");
+  }
+});
+
+router.get("/auth/adfs/callback", async (req, res): Promise<void> => {
+  const secure = isSecureRequest(req);
+  const cookies = parseCookies(req.headers.cookie);
+  const state = verifyAdfsState(cookies[ADFS_STATE_COOKIE]);
+  clearAdfsStateCookie(res, secure);
+  const now = Math.floor(Date.now() / 1000);
+  for (const [key, expiry] of consumedAdfsStates) {
+    if (expiry <= now) consumedAdfsStates.delete(key);
+  }
+  if (!state || isAdfsReplay(state.state) || consumedAdfsStates.has(state.state)) {
+    if (state) consumedAdfsStates.set(state.state, state.exp);
+    redirectFailure(res, secure, "adfs_state");
+    return;
+  }
+  consumedAdfsStates.set(state.state, state.exp);
+  const settings = await getSettings();
+  if (!settings.adfs?.enabled) {
+    redirectFailure(res, secure, "adfs_disabled");
+    return;
+  }
+  try {
+    const callbackUrl = callbackUrlForRedirect(
+      adfsRedirectUri(req, settings),
+      new URL(req.originalUrl, "https://callback.invalid").search,
+    );
+    const client = await getAdfsClient(settings, adfsClientSecret(settings));
+    const tokens = await exchangeAdfsCode(client, callbackUrl, state);
+    const claims = tokens.claims();
+    if (!claims || typeof claims.sub !== "string" || typeof claims.iss !== "string") {
+      redirectFailure(res, secure, "adfs_claims");
+      return;
+    }
+    const mapped = mapAdfsClaims(
+      claims as unknown as Record<string, unknown>,
+      claims.iss,
+      settings.adfs,
+    );
+    const [stable] = await db
+      .select()
+      .from(externalIdentityMappingsTable)
+      .where(
+        sql`${externalIdentityMappingsTable.provider} = ${ADFS_PROVIDER}
+          AND ${externalIdentityMappingsTable.issuer} = ${mapped.issuer}
+          AND ${externalIdentityMappingsTable.subject} = ${mapped.subject}`,
+      );
+    let userId: number | null = stable?.userId ?? null;
+    if (!userId) {
+      const usernameRows = await db
+        .select()
+        .from(usersTable)
+        .where(sql`lower(${usersTable.username}) = lower(${mapped.username})`);
+      const emailRows = mapped.email
+        ? await db
+            .select()
+            .from(usersTable)
+            .where(sql`lower(${usersTable.email}) = lower(${mapped.email})`)
+        : [];
+      const candidate = resolveIdentityCandidate(
+        usernameRows.map((row) => row.id),
+        emailRows.map((row) => row.id),
+      );
+      if (candidate.conflict) {
+        redirectFailure(res, secure, "adfs_identity_conflict");
+        return;
+      }
+      userId = candidate.userId;
+    }
+    if (!userId) {
+      const [created] = await db
+        .insert(usersTable)
+        .values({
+          username: mapped.username,
+          displayName: mapped.displayName,
+          email: mapped.email,
+          source: "ADFS",
+          roles: ["DEPT_USER"],
+        })
+        .returning({ id: usersTable.id });
+      userId = created?.id ?? null;
+    } else {
+      await db
+        .update(usersTable)
+        .set({
+          displayName: mapped.displayName,
+          ...(mapped.email ? { email: mapped.email } : {}),
+        })
+        .where(eq(usersTable.id, userId));
+    }
+    if (!userId) {
+      redirectFailure(res, secure, "adfs_provisioning");
+      return;
+    }
+    if (!stable) {
+      try {
+        await db.insert(externalIdentityMappingsTable).values({
+          provider: ADFS_PROVIDER,
+          issuer: mapped.issuer,
+          subject: mapped.subject,
+          userId,
+        });
+      } catch {
+        // A concurrent callback may have created the mapping. Never attach a
+        // subject to a different account.
+        const [race] = await db
+          .select()
+          .from(externalIdentityMappingsTable)
+          .where(
+            sql`${externalIdentityMappingsTable.provider} = ${ADFS_PROVIDER}
+              AND ${externalIdentityMappingsTable.issuer} = ${mapped.issuer}
+              AND ${externalIdentityMappingsTable.subject} = ${mapped.subject}`,
+          );
+        if (!race || race.userId !== userId) {
+          redirectFailure(res, secure, "adfs_identity_conflict");
+          return;
+        }
+      }
+    }
+    const user = await buildSessionUser(userId);
+    const scopedRoles: Role[] = [
+      "ADMIN",
+      "FINANCIAL_ALL",
+      "FINANCIAL_INVOICE",
+      "FINANCIAL_PAYMENT",
+      "GT_INVEST",
+      "GT_INVEST_NOTIFICATIONS",
+      "READ_ONLY_ALL",
+    ];
+    if (
+      !user ||
+      user.roles.length === 0 ||
+      (!user.roles.some((role) => scopedRoles.includes(role)) &&
+        user.departmentIds.length === 0)
+    ) {
+      redirectFailure(res, secure, "adfs_no_permission");
+      return;
+    }
+    // The ordinary express session is created only after openid-client has
+    // validated state, nonce, issuer, audience, signature, and expiry.
+    await establishAuthenticatedSession(req, user);
+    res.append(
+      "Set-Cookie",
+      adfsLoginMethodCookie(secure),
+    );
+    res.redirect(validateLocalReturnTarget(state.returnTo));
+  } catch {
+    redirectFailure(res, secure, "adfs_failed");
+  }
+});
+
+router.get("/auth/csrf", requireAuth, async (req, res): Promise<void> => {
+  const token = req.session.adfsCsrfToken ?? randomBytes(32).toString("base64url");
+  req.session.adfsCsrfToken = token;
+  res.cookie("investflow_csrf", token, {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: isSecureRequest(req),
+    maxAge: 60 * 60 * 1000,
+  });
+  res.json({ token });
+});
 
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
@@ -152,7 +402,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  req.session.user = user;
+  await establishAuthenticatedSession(req, user);
   await audit(user.id, "LOGIN", "user", user.id, undefined, req.ip);
   res.json(user);
 });
@@ -310,7 +560,7 @@ router.get("/auth/negotiate", async (req, res): Promise<void> => {
       res.status(500).json({ error: "Failed to load user" });
       return;
     }
-    req.session.user = sessionUser;
+    await establishAuthenticatedSession(req, sessionUser);
     await audit(
       sessionUser.id,
       "LOGIN",
@@ -364,6 +614,10 @@ router.get("/auth/public-config", async (_req, res): Promise<void> => {
     ldap: {
       enabled: !!s.ldap?.enabled,
       kerberosEnabled: !!s.ldap?.kerberosEnabled,
+    },
+    adfs: {
+      enabled: !!s.adfs?.enabled,
+      displayName: s.adfs?.displayName ?? "AD FS",
     },
   });
 });
@@ -435,7 +689,7 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
     res.status(500).json({ error: "Failed to load created user." });
     return;
   }
-  req.session.user = sessionUser;
+  await establishAuthenticatedSession(req, sessionUser);
   await audit(
     sessionUser.id,
     "SETUP_ADMIN",
@@ -451,6 +705,11 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
   const userId = req.session?.user?.id;
   await new Promise<void>((resolve) => req.session.destroy(() => resolve()));
   if (userId) await audit(userId, "LOGOUT", "user", userId);
+  res.append(
+    "Set-Cookie",
+    clearAdfsLoginMethodCookie(isSecureRequest(req)),
+  );
+  res.clearCookie("investflow_csrf", { path: "/" });
   res.json({ ok: true });
 });
 

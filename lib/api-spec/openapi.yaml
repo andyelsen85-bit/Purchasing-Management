@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Api
-  version: 1.0.9
+  version: 1.1.0
   description: InvestFlow API
 servers:
   - url: /api
@@ -58,13 +58,71 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiError" }
+  /auth/adfs/start:
+    get:
+      operationId: startAdfsLogin
+      tags: [auth]
+      summary: Start Microsoft AD FS OpenID Connect login
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string }
+          description: Strictly local application path to return to after login.
+      responses:
+        "302": { description: Redirect to AD FS authorization endpoint or safe login failure }
+  /auth/adfs/callback:
+    get:
+      operationId: adfsCallback
+      tags: [auth]
+      summary: Complete Microsoft AD FS OpenID Connect login
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        "302": { description: Redirect to the local application }
+  /auth/csrf:
+    get:
+      operationId: getAuthCsrfToken
+      tags: [auth]
+      summary: Issue a session-bound CSRF token for AD FS settings changes
+      responses:
+        "200":
+          description: CSRF token (also set as a non-HttpOnly cookie)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token: { type: string }
+  /auth/public-config:
+    get:
+      operationId: getPublicAuthConfig
+      tags: [auth]
+      summary: Public login configuration
+      responses:
+        "200":
+          description: Non-sensitive login options
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicAuthConfig" }
   /auth/logout:
     post:
       operationId: logout
       tags: [auth]
       summary: Log out
       responses:
-        "204": { description: Logged out }
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
   /auth/session:
     get:
       operationId: getSession
@@ -1589,6 +1647,25 @@ components:
         error: { type: string }
       required: [error]
 
+    PublicAuthConfig:
+      type: object
+      properties:
+        appName: { type: string }
+        logoDataUrl: { type: ["string", "null"] }
+        ldap:
+          type: object
+          required: [enabled, kerberosEnabled]
+          properties:
+            enabled: { type: boolean }
+            kerberosEnabled: { type: boolean }
+        adfs:
+          type: object
+          required: [enabled, displayName]
+          properties:
+            enabled: { type: boolean }
+            displayName: { type: string }
+      required: [appName, ldap, adfs]
+
     Role:
       type: string
       enum:
@@ -2301,6 +2378,43 @@ components:
         skipTlsVerify: { type: boolean }
       required: [enabled, passwordSet, secure, skipTlsVerify]
 
+    AdfsSettings:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        displayName: { type: string }
+        issuer: { type: ["string", "null"] }
+        authority: { type: ["string", "null"] }
+        discoveryUrl: { type: ["string", "null"] }
+        clientId: { type: ["string", "null"] }
+        clientSecretSet: { type: boolean }
+        redirectUri: { type: ["string", "null"] }
+        scopes: { type: string }
+        usernameClaim: { type: string }
+        emailClaim: { type: string }
+        displayNameClaim: { type: string }
+        caPemSet: { type: boolean }
+      required:
+        [enabled, displayName, clientSecretSet, scopes, usernameClaim, emailClaim, displayNameClaim, caPemSet]
+
+    AdfsSettingsInput:
+      type: object
+      properties:
+        enabled: { type: ["boolean", "null"] }
+        displayName: { type: ["string", "null"] }
+        issuer: { type: ["string", "null"] }
+        authority: { type: ["string", "null"] }
+        discoveryUrl: { type: ["string", "null"] }
+        clientId: { type: ["string", "null"] }
+        # Omitted preserves the encrypted secret; null or empty explicitly clears it.
+        clientSecret: { type: ["string", "null"] }
+        redirectUri: { type: ["string", "null"] }
+        scopes: { type: ["string", "null"] }
+        usernameClaim: { type: ["string", "null"] }
+        emailClaim: { type: ["string", "null"] }
+        displayNameClaim: { type: ["string", "null"] }
+        caPem: { type: ["string", "null"] }
+
     ArchiveAttachmentsInput:
       type: object
       properties:
@@ -2403,6 +2517,7 @@ components:
           type: array
           items: { type: number }
         ldap: { $ref: "#/components/schemas/LdapsSettings" }
+        adfs: { $ref: "#/components/schemas/AdfsSettings" }
         smtp: { $ref: "#/components/schemas/SmtpSettings" }
         notificationIntervalMinutes: { type: integer, description: "Minutes between automated notification batch sends" }
         notificationLastSentAt: { type: ["string", "null"], format: date-time, description: "ISO timestamp of the last batch flush" }
@@ -2434,6 +2549,7 @@ components:
         - tauxAmortissementList
         - tauxTvaList
         - ldap
+        - adfs
         - smtp
         - notificationIntervalMinutes
         - notifications
@@ -2540,6 +2656,7 @@ components:
             groupDepartmentMap:
               type: object
               additionalProperties: { type: string }
+        adfs: { $ref: "#/components/schemas/AdfsSettingsInput" }
         smtp:
           type: object
           properties:

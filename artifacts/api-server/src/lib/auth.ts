@@ -1,5 +1,6 @@
 import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
+import type { Request } from "express";
 
 const scryptAsync = promisify(scrypt);
 
@@ -44,8 +45,28 @@ export interface SessionUser {
   source: string;
 }
 
+/**
+ * Rotate the express-session identifier before attaching authentication state.
+ * Regenerate and save are both callback APIs, so keep them in one helper to
+ * prevent any login path from accidentally assigning a user to a pre-auth
+ * session or responding before the new session is durable.
+ */
+export async function establishAuthenticatedSession(
+  req: Request,
+  user: SessionUser,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    req.session.regenerate((error) => (error ? reject(error) : resolve()));
+  });
+  req.session.user = user;
+  await new Promise<void>((resolve, reject) => {
+    req.session.save((error) => (error ? reject(error) : resolve()));
+  });
+}
+
 declare module "express-session" {
   interface SessionData {
     user?: SessionUser;
+    adfsCsrfToken?: string;
   }
 }

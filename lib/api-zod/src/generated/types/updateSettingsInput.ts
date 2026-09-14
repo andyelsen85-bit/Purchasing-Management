@@ -3,8 +3,9 @@
  * Do not edit manually.
  * Api
  * InvestFlow API
- * OpenAPI spec version: 1.0.9
+ * OpenAPI spec version: 1.1.0
  */
+import type { AdfsSettingsInput } from "./adfsSettingsInput";
 import type { UpdateSettingsInputLdap } from "./updateSettingsInputLdap";
 import type { UpdateSettingsInputNotifications } from "./updateSettingsInputNotifications";
 import type { UpdateSettingsInputSmtp } from "./updateSettingsInputSmtp";
@@ -46,5 +47,6 @@ export interface UpdateSettingsInput {
   tauxAmortissementList?: number[];
   tauxTvaList?: number[];
   ldap?: UpdateSettingsInputLdap;
+  adfs?: AdfsSettingsInput;
   smtp?: UpdateSettingsInputSmtp;
 }

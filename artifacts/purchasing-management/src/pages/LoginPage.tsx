@@ -1,55 +1,60 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { Loader2, Lock, ShieldCheck, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useLogin, getGetSessionQueryKey } from "@/lib/api";
+import {
+  useGetPublicAuthConfig,
+  useLogin,
+  getGetSessionQueryKey,
+  getStartAdfsLoginUrl,
+} from "@/lib/api";
 import { extractErrorMessage } from "@/lib/utils";
-
-interface PublicConfig {
-  appName: string;
-  logoDataUrl: string | null;
-}
+import {
+  clearAdfsReauthGuard,
+  clearAdfsLoginPreference,
+  getCurrentSafeReturnTarget,
+  getSafeNextPath,
+  markAdfsLoginStarted,
+} from "@/lib/auth-flow";
 
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 const LOGO_URL = `${import.meta.env.BASE_URL ?? "/"}logo-chdn.png`;
 
-// Read `?next=<path>` from the current URL and return it only when it
-// is a same-app, relative path (must start with "/" and not "//" — the
-// latter would resolve to an external host). Anything else falls back
-// to the dashboard so we cannot be tricked into an open redirect.
-function getSafeNextPath(): string {
-  if (typeof window === "undefined") return "/";
-  const raw = new URLSearchParams(window.location.search).get("next");
-  if (!raw) return "/";
-  try {
-    const decoded = decodeURIComponent(raw);
-    if (!decoded.startsWith("/") || decoded.startsWith("//")) return "/";
-    return decoded;
-  } catch {
-    return "/";
-  }
-}
+const ADFS_ERROR_MESSAGES: Record<string, string> = {
+  adfs_disabled: "L’authentification AD FS n’est pas activée.",
+  adfs_unavailable: "AD FS est momentanément indisponible. Contactez un administrateur.",
+  adfs_state: "La session AD FS a expiré. Veuillez réessayer.",
+  adfs_claims: "Votre compte AD FS ne contient pas les informations requises.",
+  adfs_identity_conflict: "Votre identité AD FS correspond à plusieurs comptes.",
+  adfs_provisioning: "Votre compte AD FS n’a pas pu être créé.",
+  adfs_no_permission: "Votre compte AD FS n’est pas autorisé à accéder à cette application.",
+  adfs_failed: "La connexion AD FS a échoué. Veuillez réessayer.",
+};
 
 export function LoginPage() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
 
-  const [settings, setSettings] = useState<PublicConfig | null>(null);
-  useEffect(() => {
-    fetch(`${API_BASE}/api/auth/public-config`, { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: PublicConfig | null) => setSettings(j))
-      .catch(() => setSettings(null));
-  }, []);
+  const { data: settings } = useGetPublicAuthConfig();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const adfs = settings?.adfs;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code && ADFS_ERROR_MESSAGES[code]) setError(ADFS_ERROR_MESSAGES[code]);
+    // A callback that reached this page successfully means a previous
+    // automatic re-auth attempt must not block future expiry handling.
+    if (!code) clearAdfsReauthGuard();
+  }, []);
 
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   useEffect(() => {
@@ -69,8 +74,9 @@ export function LoginPage() {
   const login = useLogin({
     mutation: {
       onSuccess: (res) => {
+        clearAdfsLoginPreference();
         qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user: res });
-        setLocation(getSafeNextPath());
+        setLocation(getSafeNextPath(typeof window === "undefined" ? "" : window.location.search));
       },
       onError: (err) => {
         setError(extractErrorMessage(err));
@@ -82,6 +88,16 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
     login.mutate({ data: { username, password } });
+  }
+
+  function startAdfs() {
+    markAdfsLoginStarted();
+    window.location.assign(
+      `${API_BASE}${getStartAdfsLoginUrl({
+        returnTo:
+          getSafeNextPath(window.location.search) || getCurrentSafeReturnTarget(),
+      })}`,
+    );
   }
 
   async function onSetupSubmit(e: React.FormEvent) {
@@ -114,8 +130,9 @@ export function LoginPage() {
         return;
       }
       const user = await r.json();
+      clearAdfsLoginPreference();
       qc.setQueryData(getGetSessionQueryKey(), { authenticated: true, user });
-      setLocation(getSafeNextPath());
+      setLocation(getSafeNextPath(typeof window === "undefined" ? "" : window.location.search));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -285,6 +302,28 @@ export function LoginPage() {
                   )}
                   Se connecter
                 </Button>
+                {adfs?.enabled && (
+                  <>
+                    <div className="relative my-1">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-card px-2 text-muted-foreground">ou</span>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={startAdfs}
+                      data-testid="button-login-adfs"
+                    >
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      {adfs.displayName?.trim() || "AD FS"}
+                    </Button>
+                  </>
+                )}
               </form>
             )}
           </CardContent>

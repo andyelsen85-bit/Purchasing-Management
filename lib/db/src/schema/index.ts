@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   index,
   varchar,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 
 // ---------------- USERS ----------------
@@ -33,6 +34,39 @@ export const usersTable = pgTable(
   (t) => [uniqueIndex("users_username_uniq").on(t.username)],
 );
 export type DbUser = typeof usersTable.$inferSelect;
+
+// Stable OIDC identity links.  The provider/issuer/subject tuple is the
+// identity key; usernames and email addresses are only migration/fallback
+// matching hints and must never be used as the durable OIDC identifier.
+export const externalIdentityMappingsTable = pgTable(
+  "external_identity_mappings",
+  {
+    id: serial("id").primaryKey(),
+    provider: text("provider").notNull(),
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    userId: integer("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("external_identity_provider_issuer_subject_uniq").on(
+      t.provider,
+      t.issuer,
+      t.subject,
+    ),
+    index("external_identity_user_idx").on(t.userId),
+    foreignKey({
+      columns: [t.userId],
+      foreignColumns: [usersTable.id],
+      name: "external_identity_mappings_user_id_fk",
+    }).onDelete("cascade"),
+  ],
+);
+export type DbExternalIdentityMapping = typeof externalIdentityMappingsTable.$inferSelect;
 
 // ---------------- DEPARTMENTS ----------------
 export const departmentsTable = pgTable(

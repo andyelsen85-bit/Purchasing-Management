@@ -11,6 +11,7 @@ import streamValues from "stream-json/streamers/stream-values.js";
 import {
   db,
   usersTable,
+  externalIdentityMappingsTable,
   departmentsTable,
   userDepartmentsTable,
   companiesTable,
@@ -51,6 +52,7 @@ const upload = multer({
 // so a future schema change has to come back through this file.
 const TABLES = [
   { name: "users", t: usersTable, hasSerial: true },
+  { name: "external_identity_mappings", t: externalIdentityMappingsTable, hasSerial: true },
   { name: "departments", t: departmentsTable, hasSerial: true },
   { name: "user_departments", t: userDepartmentsTable, hasSerial: false },
   { name: "companies", t: companiesTable, hasSerial: true },

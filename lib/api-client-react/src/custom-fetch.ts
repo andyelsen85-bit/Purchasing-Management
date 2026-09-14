@@ -17,6 +17,16 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _csrfToken: string | null = null;
+
+/**
+ * Configure a session-bound CSRF token for state-changing requests.  This is
+ * intentionally in-memory only: tokens must never be persisted in storage or
+ * included in application logs.
+ */
+export function setCsrfToken(token: string | null): void {
+  _csrfToken = token;
+}
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -356,6 +366,14 @@ export async function customFetch<T = unknown>(
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
+  }
+
+  if (
+    _csrfToken &&
+    !headers.has("x-csrf-token") &&
+    !["GET", "HEAD", "OPTIONS"].includes(method)
+  ) {
+    headers.set("x-csrf-token", _csrfToken);
   }
 
   const requestInfo = { method, url: resolveUrl(input) };

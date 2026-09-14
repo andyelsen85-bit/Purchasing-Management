@@ -1,5 +1,6 @@
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { encryptAdfsClientSecret, invalidateAdfsDiscoveryCache } from "./adfs";
 
 export type LdapEncryption = "ldaps" | "starttls" | "plain";
 export type LdapDirectoryType = "ad" | "generic";
@@ -92,6 +93,26 @@ export interface SmtpConfigStored {
   from?: string | null;
   senderName?: string | null;
   skipTlsVerify?: boolean;
+}
+
+export interface AdfsConfigStored {
+  enabled?: boolean;
+  displayName?: string | null;
+  issuer?: string | null;
+  /** Alias accepted for AD FS terminology; issuer takes precedence. */
+  authority?: string | null;
+  discoveryUrl?: string | null;
+  clientId?: string | null;
+  clientSecretEncrypted?: string | null;
+  redirectUri?: string | null;
+  scopes?: string | null;
+  usernameClaim?: string | null;
+  emailClaim?: string | null;
+  displayNameClaim?: string | null;
+  caPem?: string | null;
+  /** Internal precedence markers; never exposed by toPublicSettings. */
+  __clientSecretExplicit?: boolean;
+  __caPemExplicit?: boolean;
 }
 
 /**
@@ -201,6 +222,7 @@ export interface AppSettings {
    */
   tauxTvaList: number[];
   ldap: LdapConfigStored;
+  adfs: AdfsConfigStored;
   smtp: SmtpConfigStored;
   /**
    * How many minutes between automated notification batch sends.
@@ -284,6 +306,7 @@ const DEFAULT: AppSettings = {
     groupRoleMap: {},
     groupDepartmentMap: {},
   },
+  adfs: {},
   smtp: {
     enabled: false,
     host: null,
@@ -326,12 +349,37 @@ export async function isNotificationEventEnabled(
 }
 
 export async function getSettings(): Promise<AppSettings> {
+  const envAdfs: AdfsConfigStored = {
+    enabled: /^(1|true|yes)$/i.test(process.env.ADFS_ENABLED ?? ""),
+    displayName: process.env.ADFS_DISPLAY_NAME ?? "AD FS",
+    issuer: process.env.ADFS_ISSUER ?? process.env.ADFS_AUTHORITY ?? null,
+    authority: process.env.ADFS_AUTHORITY ?? null,
+    discoveryUrl: process.env.ADFS_DISCOVERY_URL ?? null,
+    clientId: process.env.ADFS_CLIENT_ID ?? null,
+    redirectUri: process.env.ADFS_REDIRECT_URI ?? null,
+    scopes: process.env.ADFS_SCOPES ?? "openid profile email",
+    usernameClaim: process.env.ADFS_USERNAME_CLAIM ?? "preferred_username",
+    emailClaim: process.env.ADFS_EMAIL_CLAIM ?? "email",
+    displayNameClaim: process.env.ADFS_DISPLAY_NAME_CLAIM ?? "name",
+    caPem: process.env.ADFS_CA_PEM ?? null,
+  };
   const [row] = await db.select().from(settingsTable).limit(1);
   if (!row) {
-    await db.insert(settingsTable).values({ data: DEFAULT });
-    return DEFAULT;
+    const initial = { ...DEFAULT, adfs: envAdfs };
+    await db.insert(settingsTable).values({ data: initial });
+    return initial;
   }
   const merged = { ...DEFAULT, ...((row.data as Partial<AppSettings>) ?? {}) };
+  const savedAdfs = ((row.data as Partial<AppSettings>)?.adfs ?? {}) as AdfsConfigStored;
+  merged.adfs = { ...envAdfs, ...savedAdfs };
+  merged.adfs.__clientSecretExplicit =
+    Object.prototype.hasOwnProperty.call(savedAdfs, "clientSecretEncrypted");
+  merged.adfs.__caPemExplicit = Object.prototype.hasOwnProperty.call(savedAdfs, "caPem");
+  // `authority` is an accepted AD FS alias. A persisted alias must override
+  // an ADFS_ISSUER fallback rather than being shadowed by it.
+  if (!Object.prototype.hasOwnProperty.call(savedAdfs, "issuer") && savedAdfs.authority) {
+    merged.adfs.issuer = savedAdfs.authority;
+  }
   // Migrate only the two historical built-in labels; operator-customized
   // branding must remain untouched.
   if (merged.appName === "Purchasing Management" || merged.appName === "Gestion des Achats") {
@@ -369,6 +417,10 @@ export function derivePublicationTier(
 }
 
 export function toPublicSettings(s: AppSettings) {
+  const hasStoredAdfsSecret =
+    !!s.adfs?.__clientSecretExplicit ||
+    Object.prototype.hasOwnProperty.call(s.adfs ?? {}, "clientSecretEncrypted");
+  const hasStoredAdfsCa = !!s.adfs?.__caPemExplicit;
   return {
     appName: s.appName,
     logoDataUrl: s.logoDataUrl ?? null,
@@ -410,6 +462,23 @@ export function toPublicSettings(s: AppSettings) {
       groupRoleMap: s.ldap?.groupRoleMap ?? {},
       groupDepartmentMap: s.ldap?.groupDepartmentMap ?? {},
     },
+    adfs: {
+      enabled: !!s.adfs?.enabled,
+      displayName: s.adfs?.displayName ?? "AD FS",
+      issuer: s.adfs?.issuer ?? s.adfs?.authority ?? null,
+      authority: s.adfs?.authority ?? null,
+      discoveryUrl: s.adfs?.discoveryUrl ?? null,
+      clientId: s.adfs?.clientId ?? null,
+      clientSecretSet: hasStoredAdfsSecret
+        ? !!s.adfs?.clientSecretEncrypted
+        : !!process.env.ADFS_CLIENT_SECRET,
+      redirectUri: s.adfs?.redirectUri ?? null,
+      scopes: s.adfs?.scopes ?? "openid profile email",
+      usernameClaim: s.adfs?.usernameClaim ?? "preferred_username",
+      emailClaim: s.adfs?.emailClaim ?? "email",
+      displayNameClaim: s.adfs?.displayNameClaim ?? "name",
+      caPemSet: hasStoredAdfsCa ? !!s.adfs?.caPem : !!process.env.ADFS_CA_PEM,
+    },
     smtp: {
       enabled: !!s.smtp?.enabled,
       host: s.smtp?.host ?? null,
@@ -445,10 +514,44 @@ export async function updateSettingsRecord(
   patch: DeepPartial<AppSettings>,
 ): Promise<AppSettings> {
   const current = await getSettings();
+  const rawAdfs = patch.adfs as (AdfsConfigStored & { clientSecret?: string | null }) | undefined;
+  let adfsPatch: AdfsConfigStored | undefined;
+  if (rawAdfs) {
+    adfsPatch = { ...rawAdfs };
+    for (const key of ["issuer", "authority", "discoveryUrl", "redirectUri"] as const) {
+      const value = adfsPatch[key];
+      if (value) {
+        let parsed: URL;
+        try {
+          parsed = new URL(value);
+        } catch {
+          throw new Error(`Invalid AD FS ${key}`);
+        }
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          throw new Error(`AD FS ${key} must use HTTP(S)`);
+        }
+      }
+    }
+    if (adfsPatch.scopes) {
+      const scopes = Array.from(
+        new Set(adfsPatch.scopes.split(/\s+/).filter(Boolean).concat("openid")),
+      );
+      adfsPatch.scopes = scopes.join(" ");
+    }
+    if (Object.prototype.hasOwnProperty.call(rawAdfs, "clientSecret")) {
+      const supplied = rawAdfs.clientSecret;
+      delete (adfsPatch as { clientSecret?: string | null }).clientSecret;
+      adfsPatch.clientSecretEncrypted =
+        supplied === null || supplied === "" || supplied === undefined
+          ? null
+          : encryptAdfsClientSecret(supplied);
+    }
+  }
   const merged: AppSettings = {
     ...current,
     ...patch,
     ldap: { ...current.ldap, ...(patch.ldap ?? {}) },
+    adfs: { ...current.adfs, ...(adfsPatch ?? {}) },
     smtp: { ...current.smtp, ...(patch.smtp ?? {}) },
     notifications: {
       ...current.notifications,
@@ -459,6 +562,20 @@ export async function updateSettingsRecord(
       },
     },
   } as AppSettings;
+  if (rawAdfs && Object.prototype.hasOwnProperty.call(rawAdfs, "clientSecret")) {
+    merged.adfs.__clientSecretExplicit = true;
+  }
+  if (rawAdfs && Object.prototype.hasOwnProperty.call(rawAdfs, "caPem")) {
+    merged.adfs.__caPemExplicit = true;
+  }
+  if (rawAdfs && Object.prototype.hasOwnProperty.call(rawAdfs, "caPem")) {
+    const pem = rawAdfs.caPem;
+    if (pem) {
+      // Validation is intentionally performed before writing settings.
+      const { validateCaPem } = await import("./adfs");
+      validateCaPem(pem);
+    }
+  }
   // If bindPassword/password/caCert is empty string in patch, treat as "unset"
   const [row] = await db.select().from(settingsTable).limit(1);
   if (!row) {
@@ -469,5 +586,6 @@ export async function updateSettingsRecord(
       .set({ data: merged })
       .where(eq(settingsTable.id, row.id));
   }
+  if (rawAdfs) invalidateAdfsDiscoveryCache();
   return merged;
 }

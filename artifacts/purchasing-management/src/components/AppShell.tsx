@@ -47,6 +47,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@/components/AuthGate";
 import { STEP_LABEL, PRIORITY_TONE } from "@/lib/steps";
 import { useDepartmentFilter } from "@/lib/department-filter";
+import { clearAdfsLoginPreference } from "@/lib/auth-flow";
 
 // Version affichée dans la barre latérale. À incrémenter de 0.0.1
 // pour chaque nouvel ajout fonctionnel livré.
@@ -224,6 +225,7 @@ export function AppShell({ user, children }: Props) {
   function doLogout() {
     logout.mutate(undefined, {
       onSuccess: () => {
+        clearAdfsLoginPreference();
         qc.setQueryData(getGetSessionQueryKey(), null);
         qc.clear();
         setLocation("/login");

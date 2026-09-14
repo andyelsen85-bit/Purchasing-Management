@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * InvestFlow API
- * OpenAPI spec version: 1.0.9
+ * OpenAPI spec version: 1.1.0
  */
 export interface HealthStatus {
   status: string;
@@ -11,6 +11,24 @@ export interface HealthStatus {
 
 export interface ApiError {
   error: string;
+}
+
+export type PublicAuthConfigLdap = {
+  enabled: boolean;
+  kerberosEnabled: boolean;
+};
+
+export type PublicAuthConfigAdfs = {
+  enabled: boolean;
+  displayName: string;
+};
+
+export interface PublicAuthConfig {
+  appName: string;
+  /** @nullable */
+  logoDataUrl?: string | null;
+  ldap: PublicAuthConfigLdap;
+  adfs: PublicAuthConfigAdfs;
 }
 
 export type Role = (typeof Role)[keyof typeof Role];
@@ -950,6 +968,56 @@ export interface SmtpSettings {
   skipTlsVerify: boolean;
 }
 
+export interface AdfsSettings {
+  enabled: boolean;
+  displayName: string;
+  /** @nullable */
+  issuer?: string | null;
+  /** @nullable */
+  authority?: string | null;
+  /** @nullable */
+  discoveryUrl?: string | null;
+  /** @nullable */
+  clientId?: string | null;
+  clientSecretSet: boolean;
+  /** @nullable */
+  redirectUri?: string | null;
+  scopes: string;
+  usernameClaim: string;
+  emailClaim: string;
+  displayNameClaim: string;
+  caPemSet: boolean;
+}
+
+export interface AdfsSettingsInput {
+  /** @nullable */
+  enabled?: boolean | null;
+  /** @nullable */
+  displayName?: string | null;
+  /** @nullable */
+  issuer?: string | null;
+  /** @nullable */
+  authority?: string | null;
+  /** @nullable */
+  discoveryUrl?: string | null;
+  /** @nullable */
+  clientId?: string | null;
+  /** @nullable */
+  clientSecret?: string | null;
+  /** @nullable */
+  redirectUri?: string | null;
+  /** @nullable */
+  scopes?: string | null;
+  /** @nullable */
+  usernameClaim?: string | null;
+  /** @nullable */
+  emailClaim?: string | null;
+  /** @nullable */
+  displayNameClaim?: string | null;
+  /** @nullable */
+  caPem?: string | null;
+}
+
 export interface ArchiveAttachmentsInput {
   /**
    * Workflows whose `created_at` is strictly older than `now - olderThanDays`
@@ -1019,6 +1087,7 @@ export interface AppSettings {
   tauxAmortissementList: number[];
   tauxTvaList: number[];
   ldap: LdapsSettings;
+  adfs: AdfsSettings;
   smtp: SmtpSettings;
   /** Minutes between automated notification batch sends */
   notificationIntervalMinutes: number;
@@ -1190,6 +1259,7 @@ export interface UpdateSettingsInput {
   tauxAmortissementList?: number[];
   tauxTvaList?: number[];
   ldap?: UpdateSettingsInputLdap;
+  adfs?: AdfsSettingsInput;
   smtp?: UpdateSettingsInputSmtp;
 }
 
@@ -1473,6 +1543,27 @@ export interface NotificationEntry {
   sentAt?: string | null;
   createdAt: string;
 }
+
+export type StartAdfsLoginParams = {
+  /**
+   * Strictly local application path to return to after login.
+   */
+  returnTo?: string;
+};
+
+export type AdfsCallbackParams = {
+  code?: string;
+  state?: string;
+  error?: string;
+};
+
+export type GetAuthCsrfToken200 = {
+  token: string;
+};
+
+export type Logout200 = {
+  ok: boolean;
+};
 
 export type ListWorkflowsParams = {
   departmentId?: number;

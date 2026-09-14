@@ -2,6 +2,15 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useGetSession, getGetSessionQueryKey } from "@/lib/api";
+import { getStartAdfsLoginUrl } from "@/lib/api";
+import {
+  getCurrentSafeReturnTarget,
+  getRememberedLoginMethod,
+  clearAdfsReauthGuard,
+  shouldStartAdfsReauth,
+} from "@/lib/auth-flow";
+
+const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 export interface SessionUser {
   id: number;
@@ -24,20 +33,42 @@ export function AuthGate({ children }: Props) {
   });
 
   useEffect(() => {
-    if (!isLoading && (isError || !data?.user) && location !== "/login") {
+    const isLoginPath =
+      location === "/login" ||
+      (typeof window !== "undefined" && window.location.pathname.endsWith("/login"));
+    if (data?.user) {
+      // A successful callback or local login releases the one-shot loop guard.
+      // The login-method preference intentionally remains for AD FS sessions.
+      clearAdfsReauthGuard();
+      return;
+    }
+    if (!isLoading && (isError || !data?.user) && !isLoginPath) {
+      if (
+        shouldStartAdfsReauth(getRememberedLoginMethod()) &&
+        typeof window !== "undefined"
+      ) {
+        window.location.assign(
+          `${API_BASE}${getStartAdfsLoginUrl({ returnTo: getCurrentSafeReturnTarget() })}`,
+        );
+        return;
+      }
       // Preserve the destination (path + query + hash) so the user
       // lands back on the page they originally requested — typically
       // a workflow detail page reached from a notification email.
-      const search = typeof window !== "undefined" ? window.location.search : "";
-      const hash = typeof window !== "undefined" ? window.location.hash : "";
-      const dest = `${location}${search}${hash}`;
+      const dest =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+          : location;
       const next =
         dest && dest !== "/" ? `?next=${encodeURIComponent(dest)}` : "";
       setLocation(`/login${next}`);
     }
   }, [isLoading, isError, data, location, setLocation]);
 
-  if (location === "/login") {
+  if (
+    location === "/login" ||
+    (typeof window !== "undefined" && window.location.pathname.endsWith("/login"))
+  ) {
     return <>{children({} as SessionUser)}</>;
   }
 

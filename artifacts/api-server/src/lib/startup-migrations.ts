@@ -13,6 +13,69 @@ import { logger } from "./logger";
  */
 export async function runStartupMigrations(): Promise<void> {
   try {
+    // OIDC identities are deliberately kept separate from users so a
+    // username/email rename cannot silently attach an account to another
+    // subject.  This is idempotent for existing installations and mirrors
+    // the Drizzle schema definition.
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS external_identity_mappings (
+        id SERIAL PRIMARY KEY,
+        provider TEXT NOT NULL,
+        issuer TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+            FROM external_identity_mappings
+           GROUP BY provider, issuer, subject
+          HAVING COUNT(DISTINCT user_id) > 1
+        ) THEN
+          RAISE EXCEPTION 'Conflicting external identity mappings require administrator review';
+        END IF;
+        DELETE FROM external_identity_mappings a
+         USING external_identity_mappings b
+         WHERE a.id > b.id
+           AND a.provider = b.provider
+           AND a.issuer = b.issuer
+           AND a.subject = b.subject;
+      END $$;
+    `);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS external_identity_provider_issuer_subject_uniq
+        ON external_identity_mappings (provider, issuer, subject)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS external_identity_user_idx
+        ON external_identity_mappings (user_id)
+    `);
+    // Clean up impossible legacy rows before adding the FK. This keeps the
+    // migration safe for installations that briefly ran without referential
+    // integrity and makes retries idempotent.
+    await db.execute(sql`
+      DELETE FROM external_identity_mappings e
+       WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = e.user_id)
+    `);
+    await db.execute(sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+           WHERE conname = 'external_identity_mappings_user_id_fk'
+        ) THEN
+          ALTER TABLE external_identity_mappings
+            ADD CONSTRAINT external_identity_mappings_user_id_fk
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
+
     // Add investment_form JSONB column if it doesn't exist yet
     // (idempotent — IF NOT EXISTS makes it safe to run on every boot).
     await db.execute(

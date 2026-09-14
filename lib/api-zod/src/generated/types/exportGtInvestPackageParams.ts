@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * InvestFlow API
- * OpenAPI spec version: 1.0.9
+ * OpenAPI spec version: 1.1.0
  */
 
 export type ExportGtInvestPackageParams = {
