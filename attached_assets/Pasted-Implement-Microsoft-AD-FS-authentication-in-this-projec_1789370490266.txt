@@ -1,0 +1,430 @@
+Implement Microsoft AD FS authentication in this project while preserving every existing authentication method and existing user accounts.
+
+Work autonomously: inspect the project’s architecture, authentication code, database schema, frontend routing, API conventions, deployment setup, and tests before making changes. Adapt the implementation to the project instead of blindly copying files from another repository.
+
+## Main requirements
+
+Add Microsoft AD FS authentication using OpenID Connect Authorization Code Flow with PKCE.
+
+Existing local, LDAP, SSO, or other authentication methods must continue working unless I explicitly state otherwise.
+
+Use the project’s existing session, cookie, CSRF, user, role, and permission systems. Do not replace the application session with persisted AD FS tokens.
+
+## AD FS authorization flow
+
+Implement a secure OIDC authorization-code flow with:
+
+- AD FS OpenID Connect discovery
+- Authorization Code Flow
+- PKCE using S256
+- Cryptographically secure state
+- Signed, HTTP-only, short-lived state cookie
+- Nonce generation and validation
+- Authorization-code exchange
+- JWKS signature validation
+- Issuer validation
+- Audience/client ID validation
+- Token expiry and time validation
+- Secure handling of authentication errors
+- Protection against replay, login CSRF, open redirects, and token substitution
+
+The callback must only create an application session after the ID token has passed all required validation.
+
+Do not persist access tokens, refresh tokens, or ID tokens. After authentication, create the project’s normal application session.
+
+## Public and confidential AD FS clients
+
+Support both AD FS client types:
+
+1. Public PKCE client:
+   - Client secret is empty or absent
+   - Do not send a client_secret during token exchange
+
+2. Confidential client:
+   - Client secret is configured
+   - Send it securely during token exchange
+
+The client secret must be optional.
+
+## AD FS configuration
+
+Add administrator-managed AD FS settings through the application’s existing administration/settings interface.
+
+Support these settings where appropriate:
+
+- Enabled
+- Display name/button label
+- AD FS issuer or authority URL
+- OIDC discovery URL, if the project needs it separately
+- Client ID
+- Optional client secret
+- Redirect URI, preferably derived safely from the application’s configured public URL
+- Scopes
+- Username/identity claim
+- Email claim
+- Display-name claim
+- Optional internal CA certificate in PEM format
+
+Use these defaults unless the project has a reason to use different ones:
+
+- Scopes: openid profile email
+- Username claim: upn
+- Email claim: email
+- Display-name claim: name
+
+The openid scope is mandatory. Do not request user_impersonation because this application does not need to call a separate AD FS-protected Web API.
+
+Stored database settings must override environment variables. Environment variables should remain available as deployment fallbacks.
+
+Use suitable environment names such as:
+
+- ADFS_ENABLED
+- ADFS_ISSUER
+- ADFS_DISCOVERY_URL
+- ADFS_CLIENT_ID
+- ADFS_CLIENT_SECRET
+- ADFS_REDIRECT_URI
+- ADFS_SCOPES
+- ADFS_USERNAME_CLAIM
+- ADFS_EMAIL_CLAIM
+- ADFS_DISPLAY_NAME_CLAIM
+- ADFS_CA_CERT_PEM
+
+Adapt these names if the project already has an established configuration convention.
+
+## Secret storage
+
+If the project stores AD FS settings in its database:
+
+- Encrypt the client secret before storing it
+- Use an existing server-side encryption facility if one exists
+- Never return the stored secret to the browser
+- Never log it
+- Never expose it in API responses
+- Allow administrators to leave the secret field unchanged
+- Allow administrators to replace or explicitly clear it
+- Show only whether a secret is currently configured
+
+Use the project’s secret or session encryption key rather than introducing a hard-coded key.
+
+## Internal AD FS CA certificate
+
+Some installations use an internal certificate authority.
+
+Allow an administrator to:
+
+- Upload a PEM certificate file
+- Paste PEM certificate text
+- See whether a custom certificate is configured
+- Replace or remove the certificate
+
+Validate that the supplied value contains a valid PEM certificate before saving it.
+
+The CA certificate is public certificate material, not a private key. Do not treat it as an application secret, but do not send the complete stored PEM back to the browser unnecessarily.
+
+Apply the configured CA dynamically to all server-side AD FS HTTPS requests, including:
+
+- OIDC discovery
+- Token exchange
+- JWKS retrieval
+
+The custom CA must extend Node.js’s normal trusted CA roots, not replace them. A custom AD FS CA must not break HTTPS requests to public services.
+
+Do not globally disable TLS certificate validation. Never use NODE_TLS_REJECT_UNAUTHORIZED=0 or an equivalent insecure workaround.
+
+Invalidate any relevant discovery/JWKS/HTTP-client cache when AD FS authority or CA settings change.
+
+## User resolution and provisioning
+
+Map AD FS claims to the project’s existing user model.
+
+Preferred matching order:
+
+1. Stable identity mapping if the project already supports external identity records
+2. Normalized username or UPN
+3. Normalized email address
+
+Prevent duplicate accounts caused by casing differences.
+
+Do not silently merge two different existing users when identifiers conflict. Fail safely and provide an actionable error.
+
+If the project supports automatic user provisioning, create the user using verified claims and the project’s safe default role. Never grant administrator privileges merely because the user authenticated through AD FS.
+
+If automatic provisioning is inappropriate for this project, require the AD FS identity to match an existing enabled account.
+
+Respect existing disabled, deleted, locked, or inactive user behavior.
+
+Recommended AD FS issuance mappings are:
+
+- UPN
+- Email address
+- Display name
+
+AD FS provides the sub claim needed by OIDC.
+
+## Login interface
+
+Add an AD FS login button to the existing login screen when AD FS is enabled and sufficiently configured.
+
+Requirements:
+
+- Preserve all existing login options
+- Show a clear configuration-independent label such as “Sign in with AD FS,” or use the configured display name
+- Display safe, user-friendly authentication failures
+- Do not expose raw tokens, secrets, certificate contents, or sensitive upstream responses
+- Log enough server-side context for administrators to diagnose failures without logging credentials or tokens
+
+## Application session and login preference
+
+After successful AD FS authentication:
+
+- Create the project’s normal application session
+- Use its existing secure cookie configuration
+- Preserve existing CSRF protections
+- Set a non-sensitive login preference cookie indicating that AD FS was the last login method
+
+Use a cookie similar to:
+
+- Name: cm_login_method or an application-specific equivalent
+- Value: adfs
+- Lifetime: approximately one year
+- SameSite: Lax
+- Secure in production
+- Path: /
+- It does not need to be HTTP-only if the frontend must use it to initiate automatic reauthentication
+
+The main authenticated application session should retain its existing lifetime. If no clear lifetime exists, use 12 hours.
+
+When the application session expires and the login preference says AD FS:
+
+- Automatically initiate AD FS authentication once per browser tab
+- Preserve the current page as the return destination
+- Prevent redirect loops using sessionStorage or equivalent tab-scoped state
+- Let AD FS decide whether authentication is silent based on its own SSO session
+- Do not use insecure hidden-iframe authentication
+
+On explicit logout:
+
+- End the application session
+- Clear the AD FS login preference
+- Do not immediately start AD FS again
+- Preserve the project’s existing logout semantics
+
+## Deep-link preservation
+
+Preserve direct links and email links through every login method.
+
+Examples:
+
+- /changes/123
+- /requests/456?tab=history
+- Any other protected local application route
+
+Required behavior:
+
+1. An unauthenticated user opens a protected local URL.
+2. The application redirects to login without losing the original path, query string, or fragment.
+3. AD FS, local, LDAP, or another successful login returns the user to the original route.
+4. Automatic AD FS reauthentication after session expiration also returns to the current route.
+
+For the AD FS flow:
+
+- Include the local return target in the signed, short-lived AD FS state
+- Do not trust an unsigned returnTo query parameter in the callback
+- Validate the return target both before starting authentication and before redirecting after authentication
+- Default to / when the value is absent or invalid
+
+Only local application paths are allowed.
+
+Reject:
+
+- Absolute URLs
+- Protocol-relative URLs beginning with //
+- Backslashes
+- javascript: or other schemes
+- Control characters
+- CRLF/header-injection values
+- URLs pointing to another origin
+- Malformed encoded values
+
+Do not create an open redirect.
+
+Check the frontend router carefully. Confirm whether its location hook includes query strings and whether /login?returnTo=... is still recognized as the login route without causing a redirect loop.
+
+## CSRF requirements
+
+Keep the project’s existing CSRF model intact.
+
+Ensure that all generated or custom frontend requests which mutate AD FS settings:
+
+- Include browser credentials
+- Include the project’s CSRF token/header
+- Work in the production deployment, not only in development
+
+Do not exempt the general settings API from CSRF protection.
+
+The OIDC callback should use signed state and the state cookie rather than weakening application-wide CSRF handling.
+
+## Database and API work
+
+If persistent settings or external identity mappings require schema changes:
+
+- Use the project’s existing migration system
+- Do not modify production data destructively
+- Make migrations safe for existing installations
+- Keep existing authentication records valid
+- Update shared API schemas and generated clients where the project uses them
+- Do not manually edit generated files if the project provides a generator
+
+Make saved-setting behavior clear:
+
+- Stored values override environment fallbacks
+- An omitted secret means “leave the existing secret unchanged”
+- Explicit secret removal must be distinguishable from omission
+- The API returns only secretConfigured or an equivalent boolean
+- For the CA, return only whether a custom CA is configured unless administrators genuinely need the PEM text for editing
+
+## Documentation
+
+Add project-specific setup documentation covering:
+
+- Required AD FS version and OIDC support
+- AD FS application/client registration
+- Redirect URI
+- Public PKCE client configuration
+- Confidential client configuration
+- Required scopes: openid, with profile and email recommended
+- Why user_impersonation is not needed
+- Recommended issuance transform rules or claims:
+  - UPN
+  - Email
+  - Display name
+- Environment-variable fallbacks
+- Stored-settings precedence
+- Internal CA certificate setup through the GUI and environment
+- Login behavior
+- Automatic reauthentication behavior
+- Explicit logout behavior
+- Deep-link return behavior
+- Troubleshooting discovery, TLS, JWKS, issuer, audience, nonce, state, and claim errors
+- Kubernetes/deployment notes if this project uses Kubernetes
+
+Update the project’s example environment file without adding real credentials or certificates.
+
+## Security constraints
+
+Do not:
+
+- Disable TLS verification
+- Accept unsigned ID tokens
+- Decode a JWT without verifying it
+- Skip issuer, audience, nonce, or state validation
+- Store AD FS tokens in localStorage
+- Return the client secret to the frontend
+- Log authorization codes, tokens, secrets, or full sensitive claims
+- Allow external return URLs
+- Remove or weaken existing authentication methods
+- Grant elevated permissions solely because AD FS authentication succeeded
+- Hard-code deployment hostnames, client IDs, secrets, or certificates
+
+Use well-maintained OIDC/JWT libraries compatible with this project rather than implementing cryptographic verification manually.
+
+## Tests and verification
+
+Add focused automated tests for at least:
+
+- Valid signed state
+- Invalid or expired state
+- State-cookie mismatch
+- Nonce mismatch
+- Invalid issuer
+- Invalid audience
+- Expired token
+- JWKS/signature failure
+- Public client token exchange without client_secret
+- Confidential client token exchange with client_secret
+- Claim mapping
+- Existing-user matching
+- Disabled-user rejection
+- Client-secret redaction
+- PEM certificate validation
+- Custom CA trust extending normal system trust
+- Valid local deep-link paths
+- Query-string and fragment preservation
+- Absolute external URL rejection
+- Protocol-relative URL rejection
+- Backslash and control-character rejection
+- Safe fallback to /
+- Explicit logout clearing the login preference
+- Automatic reauthentication loop prevention
+- Settings mutations including CSRF credentials and headers
+
+Then run the project’s relevant:
+
+- Unit tests
+- Authentication tests
+- API typecheck
+- Frontend typecheck
+- Production frontend build
+- Database/schema validation
+- Linting, if configured
+
+Restart the affected development services once after implementation and inspect their startup and browser logs.
+
+Do not claim success if checks fail. Clearly distinguish failures introduced by this work from unrelated existing failures.
+
+## Deployment and repository delivery
+
+If the project has an existing GitHub repository and container pipeline:
+
+- Commit the completed changes
+- Push them using the project’s established clean-sync approach
+- Build all affected container images
+- Wait for the CI jobs to finish
+- Report the commit, workflow URL, image names, and conclusions
+- Tell me which images must be mirrored to Nexus
+- State whether a database migration is required
+- Provide the Kubernetes rollout commands appropriate to that project
+
+Do not publish or overwrite an unrelated repository.
+
+## Project-specific information
+
+Project name:
+[ENTER PROJECT NAME]
+
+Existing authentication methods that must remain available:
+[ENTER METHODS, FOR EXAMPLE LOCAL AND LDAP]
+
+Public application URL:
+[ENTER PRODUCTION URL, OR SAY TO DERIVE IT FROM EXISTING CONFIGURATION]
+
+GitHub repository:
+[ENTER REPOSITORY URL, OR SAY NONE]
+
+Container registry and image names:
+[ENTER DETAILS, OR SAY TO INSPECT EXISTING CI]
+
+Kubernetes namespace and deployment:
+[ENTER DETAILS, OR SAY NOT APPLICABLE]
+
+User-provisioning policy:
+[CHOOSE: MATCH EXISTING USERS ONLY / AUTO-PROVISION WITH DEFAULT ROLE / INSPECT CURRENT BEHAVIOR]
+
+Any project-specific AD FS claim names:
+[ENTER CLAIMS, OR USE UPN, EMAIL, AND NAME]
+
+## Completion report
+
+When finished, provide:
+
+1. A concise summary of the implementation
+2. Files or architectural areas changed
+3. Database migrations required
+4. Environment variables supported
+5. AD FS setup instructions
+6. Tests and builds run with their results
+7. Any existing unrelated failures
+8. Security decisions and protections
+9. GitHub commit and CI run, if applicable
+10. Container images to mirror and Kubernetes rollout commands, if applicable
