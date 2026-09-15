@@ -30,7 +30,8 @@ jobs:
         id: image
         shell: bash
         run: |
-          image="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/purchasing-management-app"
           echo "name=$image" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
