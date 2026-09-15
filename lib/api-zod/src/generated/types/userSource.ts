@@ -11,4 +11,5 @@ export type UserSource = (typeof UserSource)[keyof typeof UserSource];
 export const UserSource = {
   LOCAL: "LOCAL",
   LDAP: "LDAP",
+  ADFS: "ADFS",
 } as const;

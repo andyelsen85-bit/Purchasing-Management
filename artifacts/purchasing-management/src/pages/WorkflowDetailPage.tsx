@@ -103,6 +103,7 @@ import {
   type QuoteEntry,
   type InvestmentForm,
   type AaEntry,
+  ensureCsrfToken,
 } from "@/lib/api";
 import { StepProgress } from "@/components/StepProgress";
 import { STEP_LABEL, type Step, fileToBase64, formatBytes } from "@/lib/steps";
@@ -3730,12 +3731,18 @@ function InvoiceValidationPanel({
       // 2. Server prepares the PDF + ByteRange placeholder.
       //    We pass the cert CN so the visible signature block shows the
       //    certificate holder's name, not the web-app login name.
+      const csrfTokenForPrepare = await ensureCsrfToken();
       const prep = await fetch(
         `${base}api/workflows/${wf.id}/sign-prepare`,
         {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(csrfTokenForPrepare
+              ? { "X-CSRF-Token": csrfTokenForPrepare }
+              : {}),
+          },
           body: JSON.stringify({ certSubject: certCn }),
         },
       );
@@ -3768,12 +3775,18 @@ function InvoiceValidationPanel({
       if (!signatureB64) return "L'agent de signature n'a renvoyé aucune signature.";
 
       // 4. Server embeds and archives the signed PDF
+      const csrfToken = await ensureCsrfToken();
       const fin = await fetch(
         `${base}api/workflows/${wf.id}/sign-finalize`,
         {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(csrfToken
+              ? { "X-CSRF-Token": csrfToken }
+              : {}),
+          },
           body: JSON.stringify({ nonce, pkcs7B64: signatureB64 }),
         },
       );

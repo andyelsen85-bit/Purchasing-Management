@@ -34,6 +34,7 @@ import {
   type InvestmentForm,
   type Workflow,
   type QuoteEntry,
+  ensureCsrfToken,
 } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError } from "@/lib/api-error";
@@ -1037,10 +1038,14 @@ export function NewWorkflowPage() {
         fd.append("file", file);
         fd.append("step", "DRAFT");
         fd.append("kind", docKindFor(label));
+        const csrfToken = await ensureCsrfToken();
         const r = await fetch(`/api/workflows/${savedId}/documents`, {
           method: "POST",
           body: fd,
           credentials: "include",
+          headers: csrfToken
+            ? { "X-CSRF-Token": csrfToken }
+            : undefined,
         });
         if (!r.ok) {
           await throwUploadError(r, `téléversement de « ${label} »`);
@@ -1099,8 +1104,14 @@ export function NewWorkflowPage() {
           fd.append("file", file);
           fd.append("step", "QUOTATION");
           fd.append("kind", docKindFor(label));
+          const csrfToken = await ensureCsrfToken();
           const response = await fetch(`/api/workflows/${editId}/initial-request/documents`, {
-            method: "POST", body: fd, credentials: "include",
+            method: "POST",
+            body: fd,
+            credentials: "include",
+            headers: csrfToken
+              ? { "X-CSRF-Token": csrfToken }
+              : undefined,
           });
           if (!response.ok) await throwUploadError(response, `téléversement de « ${label} »`);
           freshDocIds[label] = ((await response.json()) as { id: number }).id;
@@ -1157,8 +1168,14 @@ export function NewWorkflowPage() {
           fd.append("file", file);
           fd.append("step", "QUOTATION");
           fd.append("kind", "QUOTE");
+          const csrfToken = await ensureCsrfToken();
           const response = await fetch(`/api/workflows/${wf.id}/initial-request/documents`, {
-            method: "POST", body: fd, credentials: "include",
+            method: "POST",
+            body: fd,
+            credentials: "include",
+            headers: csrfToken
+              ? { "X-CSRF-Token": csrfToken }
+              : undefined,
           });
           if (!response.ok) await throwUploadError(response, "téléversement du devis");
           const uploaded = (await response.json()) as { id: number };
@@ -1188,10 +1205,14 @@ export function NewWorkflowPage() {
         fd.append("file", file);
         fd.append("step", "QUOTATION");
         fd.append("kind", docKindFor(label));
+        const csrfToken = await ensureCsrfToken();
         const r = await fetch(`/api/workflows/${wf.id}/documents`, {
           method: "POST",
           body: fd,
           credentials: "include",
+          headers: csrfToken
+            ? { "X-CSRF-Token": csrfToken }
+            : undefined,
         });
         if (!r.ok) {
           await throwUploadError(r, `téléversement de « ${label} »`);
@@ -1209,10 +1230,14 @@ export function NewWorkflowPage() {
           fd.append("file", quote.file);
           fd.append("step", "QUOTATION");
           fd.append("kind", "QUOTE");
+          const csrfToken = await ensureCsrfToken();
           const response = await fetch(`/api/workflows/${wf.id}/documents`, {
             method: "POST",
             body: fd,
             credentials: "include",
+            headers: csrfToken
+              ? { "X-CSRF-Token": csrfToken }
+              : undefined,
           });
           if (!response.ok) await throwUploadError(response, "téléversement du devis");
           const uploaded = (await response.json()) as { id: number };

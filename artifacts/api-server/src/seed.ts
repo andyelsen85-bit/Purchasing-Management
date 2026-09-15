@@ -45,6 +45,7 @@ async function main() {
         displayName: "System Administrator",
         email: "admin@example.com",
         passwordHash: adminHash,
+        mustChangePassword: true,
         roles: ["ADMIN", "FINANCIAL_ALL"],
         source: "LOCAL",
       },

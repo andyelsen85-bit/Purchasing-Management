@@ -1,6 +1,19 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { settingsTable } from "@workspace/db";
 import { logger } from "./logger";
+import { eq } from "drizzle-orm";
+import {
+  encryptSettingSecret,
+  isSettingSecretEnvelope,
+  readSettingSecret,
+} from "./secret-crypto";
+import {
+  decryptAdfsClientSecret,
+  encryptAdfsClientSecret,
+} from "./adfs";
+import type { AppSettings, AdfsConfigStored, LdapConfigStored, SmtpConfigStored } from "./settings";
+import { isDefaultBootstrapAdmin } from "./auth";
 
 /**
  * One-shot, idempotent data migrations that run on server boot.
@@ -13,6 +26,52 @@ import { logger } from "./logger";
  */
 export async function runStartupMigrations(): Promise<void> {
   try {
+    await migrateSettingsSecrets();
+    // Local temporary credentials are explicitly marked so an operator
+    // cannot accidentally leave a bootstrap password in service.  The
+    // column is additive and safe to repeat on every boot.
+    await db.execute(sql`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+
+    // Existing deployments may contain the original admin/admin bootstrap
+    // account from before the flag existed.  Verify the actual scrypt hash
+    // before flagging it: an operator who changed that account's password
+    // must not be forced through a temporary-password flow.  Never log the
+    // candidate account or password.
+    const bootstrapCandidates = (await db.execute(sql`
+      SELECT id, username, source, password_hash
+        FROM users
+       WHERE lower(username) = 'admin'
+         AND source = 'LOCAL'
+         AND password_hash IS NOT NULL
+         AND must_change_password = FALSE
+    `)) as {
+      rows?: Array<{
+        id: number;
+        username: string;
+        source: string;
+        password_hash: string | null;
+      }>;
+    };
+    for (const candidate of bootstrapCandidates.rows ?? []) {
+      if (
+        await isDefaultBootstrapAdmin(
+          candidate.username,
+          candidate.source,
+          candidate.password_hash,
+        )
+      ) {
+        await db.execute(sql`
+          UPDATE users
+             SET must_change_password = TRUE
+           WHERE id = ${candidate.id}
+             AND must_change_password = FALSE
+        `);
+      }
+    }
+
     // OIDC identities are deliberately kept separate from users so a
     // username/email rename cannot silently attach an account to another
     // subject.  This is idempotent for existing installations and mirrors
@@ -281,4 +340,64 @@ export async function runStartupMigrations(): Promise<void> {
     // Re-throw so the caller can decide whether to abort startup.
     throw err;
   }
+}
+
+/**
+ * Convert legacy settings secrets before the first request is served. The
+ * entire row update is one transaction: a decryption failure aborts without
+ * replacing or clearing any value.
+ */
+export async function migrateSettingsSecrets(): Promise<number> {
+  let migrated = 0;
+  await db.transaction(async (tx) => {
+    const [row] = await tx.select().from(settingsTable).limit(1);
+    if (!row) return;
+    const original = (row.data ?? {}) as Partial<AppSettings>;
+    const result = migrateSettingsData(original);
+    migrated += result.migrated;
+    if (result.migrated > 0) {
+      await tx
+        .update(settingsTable)
+        .set({ data: result.data })
+        .where(eq(settingsTable.id, row.id));
+    }
+  });
+  if (migrated > 0) {
+    logger.info({ migrated }, "Startup migration: encrypted legacy settings secrets");
+  }
+  return migrated;
+}
+
+export function migrateSettingsData(
+  original: Partial<AppSettings>,
+): { data: Partial<AppSettings>; migrated: number } {
+  const ldap = { ...((original.ldap ?? {}) as LdapConfigStored) };
+  const smtp = { ...((original.smtp ?? {}) as SmtpConfigStored) };
+  const adfs = { ...((original.adfs ?? {}) as AdfsConfigStored) };
+  let migrated = 0;
+  if (typeof ldap.bindPassword === "string" && ldap.bindPassword) {
+    const read = readSettingSecret(ldap.bindPassword, "ldap.bindPassword");
+    if (read.legacy) {
+      ldap.bindPassword = encryptSettingSecret(read.value!, "ldap.bindPassword");
+      migrated += 1;
+    }
+  }
+  if (typeof smtp.password === "string" && smtp.password) {
+    const read = readSettingSecret(smtp.password, "smtp.password");
+    if (read.legacy) {
+      smtp.password = encryptSettingSecret(read.value!, "smtp.password");
+      migrated += 1;
+    }
+  }
+  if (
+    typeof adfs.clientSecretEncrypted === "string" &&
+    adfs.clientSecretEncrypted &&
+    !isSettingSecretEnvelope(adfs.clientSecretEncrypted)
+  ) {
+    const legacy = decryptAdfsClientSecret(adfs.clientSecretEncrypted);
+    if (legacy === null) throw new Error("Stored AD FS client secret could not be migrated");
+    adfs.clientSecretEncrypted = encryptAdfsClientSecret(legacy);
+    migrated += 1;
+  }
+  return { data: { ...original, ldap, smtp, adfs }, migrated };
 }

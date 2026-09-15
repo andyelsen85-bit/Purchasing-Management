@@ -15,7 +15,6 @@ export interface ApiError {
 
 export type PublicAuthConfigLdap = {
   enabled: boolean;
-  kerberosEnabled: boolean;
 };
 
 export type PublicAuthConfigAdfs = {
@@ -89,6 +88,7 @@ export type UserSource = (typeof UserSource)[keyof typeof UserSource];
 export const UserSource = {
   LOCAL: "LOCAL",
   LDAP: "LDAP",
+  ADFS: "ADFS",
 } as const;
 
 export interface User {
@@ -100,6 +100,7 @@ export interface User {
   roles: Role[];
   departmentIds: number[];
   source: UserSource;
+  mustChangePassword: boolean;
   createdAt: string;
 }
 
@@ -853,7 +854,7 @@ export type SessionUserSource =
 export const SessionUserSource = {
   LOCAL: "LOCAL",
   LDAP: "LDAP",
-  KERBEROS: "KERBEROS",
+  ADFS: "ADFS",
 } as const;
 
 export interface SessionUser {
@@ -865,6 +866,7 @@ export interface SessionUser {
   roles: Role[];
   departmentIds: number[];
   source: SessionUserSource;
+  mustChangePassword: boolean;
 }
 
 export interface SessionResponse {
@@ -941,9 +943,6 @@ and attribute names.
   emailAttribute?: string | null;
   /** @nullable */
   groupMembershipAttribute?: string | null;
-  kerberosEnabled: boolean;
-  /** @nullable */
-  servicePrincipalName?: string | null;
   groupRoleMap?: LdapsSettingsGroupRoleMap;
   groupDepartmentMap?: LdapsSettingsGroupDepartmentMap;
 }
@@ -1190,10 +1189,6 @@ export type UpdateSettingsInputLdap = {
   emailAttribute?: string | null;
   /** @nullable */
   groupMembershipAttribute?: string | null;
-  /** @nullable */
-  kerberosEnabled?: boolean | null;
-  /** @nullable */
-  servicePrincipalName?: string | null;
   groupRoleMap?: UpdateSettingsInputLdapGroupRoleMap;
   groupDepartmentMap?: UpdateSettingsInputLdapGroupDepartmentMap;
 };
@@ -1739,4 +1734,15 @@ export type ImportKostenstelleBody = {
 export type ImportKostenstelle200 = {
   imported: number;
   kostenstelleList?: string[];
+};
+
+export type RestoreAdminBackupBody = {
+  file: Blob;
+  /** @minLength 12 */
+  passphrase: string;
+};
+
+export type RestoreAdminBackup200 = {
+  ok: boolean;
+  restoredRows: number;
 };

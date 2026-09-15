@@ -41,10 +41,6 @@ export type UpdateSettingsInputLdap = {
   emailAttribute?: string | null;
   /** @nullable */
   groupMembershipAttribute?: string | null;
-  /** @nullable */
-  kerberosEnabled?: boolean | null;
-  /** @nullable */
-  servicePrincipalName?: string | null;
   groupRoleMap?: UpdateSettingsInputLdapGroupRoleMap;
   groupDepartmentMap?: UpdateSettingsInputLdapGroupDepartmentMap;
 };

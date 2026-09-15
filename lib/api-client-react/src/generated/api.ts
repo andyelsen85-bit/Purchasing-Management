@@ -85,6 +85,8 @@ import type {
   PrepareWorkflowSign200,
   PublicAuthConfig,
   RejectWorkflowInput,
+  RestoreAdminBackup200,
+  RestoreAdminBackupBody,
   ServiceSignature,
   SessionResponse,
   SessionUser,
@@ -855,88 +857,6 @@ export const useChangePassword = <
 > => {
   return useMutation(getChangePasswordMutationOptions(options));
 };
-
-/**
- * Browsers send the user's Kerberos ticket via the
-`Authorization: Negotiate <base64-token>` header. When no header
-is present we reply with `401 WWW-Authenticate: Negotiate` to
-trigger the browser's automatic retry. When a token is present
-and the server has been provisioned with a keytab + SPN, we step
-through SPNEGO and create/upgrade the matching local user.
-
- * @summary Kerberos / SPNEGO single-sign-on handshake
- */
-export const getKerberosNegotiateUrl = () => {
-  return `/api/auth/negotiate`;
-};
-
-export const kerberosNegotiate = async (
-  options?: RequestInit,
-): Promise<SessionUser> => {
-  return customFetch<SessionUser>(getKerberosNegotiateUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getKerberosNegotiateQueryKey = () => {
-  return [`/api/auth/negotiate`] as const;
-};
-
-export const getKerberosNegotiateQueryOptions = <
-  TData = Awaited<ReturnType<typeof kerberosNegotiate>>,
-  TError = ErrorType<ApiError>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof kerberosNegotiate>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getKerberosNegotiateQueryKey();
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof kerberosNegotiate>>
-  > = ({ signal }) => kerberosNegotiate({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof kerberosNegotiate>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type KerberosNegotiateQueryResult = NonNullable<
-  Awaited<ReturnType<typeof kerberosNegotiate>>
->;
-export type KerberosNegotiateQueryError = ErrorType<ApiError>;
-
-/**
- * @summary Kerberos / SPNEGO single-sign-on handshake
- */
-
-export function useKerberosNegotiate<
-  TData = Awaited<ReturnType<typeof kerberosNegotiate>>,
-  TError = ErrorType<ApiError>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof kerberosNegotiate>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getKerberosNegotiateQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
 
 export const getListUsersUrl = () => {
   return `/api/users`;
@@ -7739,4 +7659,168 @@ export const useArchiveAttachments = <
   TContext
 > => {
   return useMutation(getArchiveAttachmentsMutationOptions(options));
+};
+
+/**
+ * @summary Stream an authenticated encrypted database backup
+ */
+export const getDownloadAdminBackupUrl = () => {
+  return `/api/admin/backup`;
+};
+
+export const downloadAdminBackup = async (
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadAdminBackupUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDownloadAdminBackupQueryKey = () => {
+  return [`/api/admin/backup`] as const;
+};
+
+export const getDownloadAdminBackupQueryOptions = <
+  TData = Awaited<ReturnType<typeof downloadAdminBackup>>,
+  TError = ErrorType<ApiError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof downloadAdminBackup>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getDownloadAdminBackupQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof downloadAdminBackup>>
+  > = ({ signal }) => downloadAdminBackup({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof downloadAdminBackup>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DownloadAdminBackupQueryResult = NonNullable<
+  Awaited<ReturnType<typeof downloadAdminBackup>>
+>;
+export type DownloadAdminBackupQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Stream an authenticated encrypted database backup
+ */
+
+export function useDownloadAdminBackup<
+  TData = Awaited<ReturnType<typeof downloadAdminBackup>>,
+  TError = ErrorType<ApiError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof downloadAdminBackup>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDownloadAdminBackupQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Restore a password-protected encrypted database backup
+ */
+export const getRestoreAdminBackupUrl = () => {
+  return `/api/admin/restore`;
+};
+
+export const restoreAdminBackup = async (
+  restoreAdminBackupBody: RestoreAdminBackupBody,
+  options?: RequestInit,
+): Promise<RestoreAdminBackup200> => {
+  const formData = new FormData();
+  formData.append(`file`, restoreAdminBackupBody.file);
+  formData.append(`passphrase`, restoreAdminBackupBody.passphrase);
+
+  return customFetch<RestoreAdminBackup200>(getRestoreAdminBackupUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getRestoreAdminBackupMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreAdminBackup>>,
+    TError,
+    { data: BodyType<RestoreAdminBackupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreAdminBackup>>,
+  TError,
+  { data: BodyType<RestoreAdminBackupBody> },
+  TContext
+> => {
+  const mutationKey = ["restoreAdminBackup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreAdminBackup>>,
+    { data: BodyType<RestoreAdminBackupBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return restoreAdminBackup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreAdminBackupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreAdminBackup>>
+>;
+export type RestoreAdminBackupMutationBody = BodyType<RestoreAdminBackupBody>;
+export type RestoreAdminBackupMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Restore a password-protected encrypted database backup
+ */
+export const useRestoreAdminBackup = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreAdminBackup>>,
+    TError,
+    { data: BodyType<RestoreAdminBackupBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreAdminBackup>>,
+  TError,
+  { data: BodyType<RestoreAdminBackupBody> },
+  TContext
+> => {
+  return useMutation(getRestoreAdminBackupMutationOptions(options));
 };

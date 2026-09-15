@@ -1,6 +1,16 @@
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { encryptAdfsClientSecret, invalidateAdfsDiscoveryCache } from "./adfs";
+import {
+  decryptAdfsClientSecret,
+  encryptAdfsClientSecret,
+  invalidateAdfsDiscoveryCache,
+} from "./adfs";
+import { ldapTlsPolicy } from "./ldap";
+import {
+  encryptSettingSecret,
+  isSettingSecretEnvelope,
+  readSettingSecret,
+} from "./secret-crypto";
 
 export type LdapEncryption = "ldaps" | "starttls" | "plain";
 export type LdapDirectoryType = "ad" | "generic";
@@ -65,13 +75,11 @@ export interface LdapConfigStored {
   emailAttribute?: string | null;
   /** Multi-valued attribute listing group DNs (`memberOf` in AD). */
   groupMembershipAttribute?: string | null;
-  kerberosEnabled?: boolean;
-  servicePrincipalName?: string | null;
   /**
    * Optional AD group → app role mapping. Keys are case-insensitive
    * substrings matched against each `memberOf` DN (or the leftmost CN
    * component); values are app role names (`ADMIN`, `FINANCIAL_ALL`, ...).
-   * Mapping is applied on every LDAP / Kerberos login so AD remains the
+   * Mapping is applied on every LDAP login so AD remains the
    * source of truth and removing a user from a group revokes the role.
    */
   groupRoleMap?: Record<string, string> | null;
@@ -301,8 +309,6 @@ const DEFAULT: AppSettings = {
     displayNameAttribute: AD_DEFAULTS.displayNameAttribute,
     emailAttribute: AD_DEFAULTS.emailAttribute,
     groupMembershipAttribute: AD_DEFAULTS.groupMembershipAttribute,
-    kerberosEnabled: false,
-    servicePrincipalName: null,
     groupRoleMap: {},
     groupDepartmentMap: {},
   },
@@ -370,8 +376,43 @@ export async function getSettings(): Promise<AppSettings> {
     return initial;
   }
   const merged = { ...DEFAULT, ...((row.data as Partial<AppSettings>) ?? {}) };
+  const savedLdap = ((row.data as Partial<AppSettings>)?.ldap ?? {}) as LdapConfigStored;
+  const savedSmtp = ((row.data as Partial<AppSettings>)?.smtp ?? {}) as SmtpConfigStored;
   const savedAdfs = ((row.data as Partial<AppSettings>)?.adfs ?? {}) as AdfsConfigStored;
   merged.adfs = { ...envAdfs, ...savedAdfs };
+  // Migrate the historical AD FS/session-key envelope when the independent
+  // settings key is available. Decryption failures remain redacted.
+  if (
+    typeof savedAdfs.clientSecretEncrypted === "string" &&
+    savedAdfs.clientSecretEncrypted &&
+    !isSettingSecretEnvelope(savedAdfs.clientSecretEncrypted)
+  ) {
+    const legacySecret = decryptAdfsClientSecret(savedAdfs.clientSecretEncrypted);
+    if (legacySecret !== null) {
+      const migrated = encryptAdfsClientSecret(legacySecret);
+      merged.adfs.clientSecretEncrypted = migrated;
+      await db
+        .update(settingsTable)
+        .set({
+          data: {
+            ...((row.data as Partial<AppSettings>) ?? {}),
+            adfs: { ...savedAdfs, clientSecretEncrypted: migrated },
+          },
+        })
+        .where(eq(settingsTable.id, row.id));
+    }
+  }
+  // Secret fields are decrypted only inside the server process. Legacy
+  // plaintext values are accepted for compatibility and re-encrypted on the
+  // next write; production refuses them when the independent key is absent.
+  merged.ldap = {
+    ...merged.ldap,
+    bindPassword: readSettingSecret(savedLdap.bindPassword, "ldap.bindPassword").value,
+  };
+  merged.smtp = {
+    ...merged.smtp,
+    password: readSettingSecret(savedSmtp.password, "smtp.password").value,
+  };
   merged.adfs.__clientSecretExplicit =
     Object.prototype.hasOwnProperty.call(savedAdfs, "clientSecretEncrypted");
   merged.adfs.__caPemExplicit = Object.prototype.hasOwnProperty.call(savedAdfs, "caPem");
@@ -384,7 +425,28 @@ export async function getSettings(): Promise<AppSettings> {
   // branding must remain untouched.
   if (merged.appName === "Purchasing Management" || merged.appName === "Gestion des Achats") {
     merged.appName = "InvestFlow";
-    await db.update(settingsTable).set({ data: merged }).where(eq(settingsTable.id, row.id));
+    await db
+      .update(settingsTable)
+      .set({
+        data: {
+          ...merged,
+          ldap: {
+            ...merged.ldap,
+            bindPassword:
+              merged.ldap.bindPassword == null
+                ? null
+                : encryptSettingSecret(merged.ldap.bindPassword, "ldap.bindPassword"),
+          },
+          smtp: {
+            ...merged.smtp,
+            password:
+              merged.smtp.password == null
+                ? null
+                : encryptSettingSecret(merged.smtp.password, "smtp.password"),
+          },
+        },
+      })
+      .where(eq(settingsTable.id, row.id));
   }
   // Keep legacy `limitX` and the new `quoteThresholdStandard` mirrored
   // both ways so old saved settings (which only have limitX) seed the
@@ -451,14 +513,14 @@ export function toPublicSettings(s: AppSettings) {
       bindDn: s.ldap?.bindDn ?? null,
       bindPasswordSet: !!s.ldap?.bindPassword,
       skipVerify: !!s.ldap?.skipVerify,
+      insecureTlsWarning: ldapTlsPolicy(s.ldap ?? {}).warning,
+      insecureTlsConfigurable: process.env.NODE_ENV !== "production",
       caCertSet: !!s.ldap?.caCert,
       userFilter: s.ldap?.userFilter ?? null,
       usernameAttribute: s.ldap?.usernameAttribute ?? null,
       displayNameAttribute: s.ldap?.displayNameAttribute ?? null,
       emailAttribute: s.ldap?.emailAttribute ?? null,
       groupMembershipAttribute: s.ldap?.groupMembershipAttribute ?? null,
-      kerberosEnabled: !!s.ldap?.kerberosEnabled,
-      servicePrincipalName: s.ldap?.servicePrincipalName ?? null,
       groupRoleMap: s.ldap?.groupRoleMap ?? {},
       groupDepartmentMap: s.ldap?.groupDepartmentMap ?? {},
     },
@@ -576,14 +638,39 @@ export async function updateSettingsRecord(
       validateCaPem(pem);
     }
   }
+  if (patch.ldap) {
+    const ldapPolicy = ldapTlsPolicy(merged.ldap);
+    if (!ldapPolicy.allowed) {
+      throw new Error(ldapPolicy.warning ?? "LDAP TLS policy rejected this configuration");
+    }
+  }
+  // Never persist a secret in plaintext. This also lazily migrates legacy
+  // plaintext settings and old callers which pass a decrypted current value.
+  const encryptedLdapPassword =
+    merged.ldap.bindPassword == null
+      ? null
+      : isSettingSecretEnvelope(merged.ldap.bindPassword)
+        ? merged.ldap.bindPassword
+        : encryptSettingSecret(merged.ldap.bindPassword, "ldap.bindPassword");
+  const encryptedSmtpPassword =
+    merged.smtp.password == null
+      ? null
+      : isSettingSecretEnvelope(merged.smtp.password)
+        ? merged.smtp.password
+        : encryptSettingSecret(merged.smtp.password, "smtp.password");
+  const persisted: AppSettings = {
+    ...merged,
+    ldap: { ...merged.ldap, bindPassword: encryptedLdapPassword },
+    smtp: { ...merged.smtp, password: encryptedSmtpPassword },
+  };
   // If bindPassword/password/caCert is empty string in patch, treat as "unset"
   const [row] = await db.select().from(settingsTable).limit(1);
   if (!row) {
-    await db.insert(settingsTable).values({ data: merged });
+    await db.insert(settingsTable).values({ data: persisted });
   } else {
     await db
       .update(settingsTable)
-      .set({ data: merged })
+      .set({ data: persisted })
       .where(eq(settingsTable.id, row.id));
   }
   if (rawAdfs) invalidateAdfsDiscoveryCache();

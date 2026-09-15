@@ -12,5 +12,5 @@ export type SessionUserSource =
 export const SessionUserSource = {
   LOCAL: "LOCAL",
   LDAP: "LDAP",
-  KERBEROS: "KERBEROS",
+  ADFS: "ADFS",
 } as const;

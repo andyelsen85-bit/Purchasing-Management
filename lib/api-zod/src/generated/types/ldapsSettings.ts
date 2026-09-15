@@ -44,9 +44,6 @@ and attribute names.
   emailAttribute?: string | null;
   /** @nullable */
   groupMembershipAttribute?: string | null;
-  kerberosEnabled: boolean;
-  /** @nullable */
-  servicePrincipalName?: string | null;
   groupRoleMap?: LdapsSettingsGroupRoleMap;
   groupDepartmentMap?: LdapsSettingsGroupDepartmentMap;
 }

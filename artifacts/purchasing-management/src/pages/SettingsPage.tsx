@@ -74,6 +74,7 @@ import {
   getListNotificationRulesQueryKey,
   useGetAuthCsrfToken,
   setCsrfToken,
+  ensureCsrfToken,
   type AdfsSettingsInput,
 } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -574,8 +575,8 @@ function useSaveSettings() {
  * a transaction, replays the dump, and forces every active session to
  * re-authenticate.
  */
-/** 2 GiB — must match the server-side multer limit in backup.ts */
-const MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024;
+/** 512 MiB — must match the server-side multer limit in backup.ts */
+const MAX_RESTORE_BYTES = 512 * 1024 * 1024;
 
 function fmtBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024)
@@ -593,14 +594,25 @@ function BackupRestorePanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [restorePassphrase, setRestorePassphrase] = useState("");
 
   async function downloadBackup() {
+    const passphrase = window.prompt(
+      "Entrez une phrase de passe de sauvegarde (12 caractères minimum). Elle ne sera jamais enregistrée.",
+    );
+    if (!passphrase) return;
+    const confirmation = window.prompt("Confirmez la phrase de passe de sauvegarde.");
+    if (passphrase !== confirmation) {
+      setError("Les phrases de passe ne correspondent pas.");
+      return;
+    }
     setBusy("download");
     setError(null);
     setSuccess(null);
     try {
       const r = await fetch(`${apiBase}/api/admin/backup`, {
         credentials: "include",
+        headers: { "x-backup-passphrase": passphrase },
       });
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { error?: string };
@@ -650,6 +662,10 @@ function BackupRestorePanel() {
 
   async function uploadRestore() {
     if (!pendingFile) return;
+    if (restorePassphrase.length < 12) {
+      setError("Une phrase de passe de 12 caractères minimum est requise.");
+      return;
+    }
     setBusy("upload");
     setError(null);
     setSuccess(null);
@@ -657,9 +673,14 @@ function BackupRestorePanel() {
     try {
       const fd = new FormData();
       fd.append("file", pendingFile);
+      fd.append("passphrase", restorePassphrase);
+      const csrfToken = await ensureCsrfToken();
       const r = await fetch(`${apiBase}/api/admin/restore`, {
         method: "POST",
         credentials: "include",
+        headers: csrfToken
+          ? { "X-CSRF-Token": csrfToken }
+          : undefined,
         body: fd,
       });
       const j = (await r.json().catch(() => ({}))) as {
@@ -671,6 +692,7 @@ function BackupRestorePanel() {
         `Restauration réussie : ${j.restoredRows ?? 0} lignes importées. Vous allez être déconnecté — veuillez vous reconnecter.`,
       );
       setPendingFile(null);
+      setRestorePassphrase("");
       // Server already destroyed our session; redirect to login after a
       // short delay so the success message is visible.
       setTimeout(() => {
@@ -734,7 +756,7 @@ function BackupRestorePanel() {
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="file"
-              accept="application/json,.json"
+               accept=".backup,application/octet-stream,application/json,.json"
               onChange={pickFile}
               disabled={busy !== null}
               data-testid="input-restore-file"
@@ -749,6 +771,18 @@ function BackupRestorePanel() {
                 ({fmtBytes(pendingFile.size)}). Cliquez sur Restaurer
                 pour écraser toutes les données.
               </p>
+               <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                 <Label htmlFor="restore-passphrase">Phrase de passe</Label>
+                 <Input
+                   id="restore-passphrase"
+                   type="password"
+                   value={restorePassphrase}
+                   onChange={(e) => setRestorePassphrase(e.target.value)}
+                   placeholder="12 caractères minimum"
+                   autoComplete="off"
+                   data-testid="input-restore-passphrase"
+                 />
+               </div>
               <div className="flex gap-2">
                 <Button
                   variant="destructive"
@@ -1202,8 +1236,8 @@ function LdapSettingsPanel() {
   const [skipVerify, setSkipVerify] = useState(false);
   const [caCert, setCaCert] = useState("");
   const [caCertSet, setCaCertSet] = useState(false);
-  const [kerberos, setKerberos] = useState(false);
-  const [spn, setSpn] = useState("");
+  const [insecureTlsConfigurable, setInsecureTlsConfigurable] = useState(true);
+  const [insecureTlsWarning, setInsecureTlsWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!s) return;
@@ -1234,14 +1268,18 @@ function LdapSettingsPanel() {
     setSkipVerify(s.ldap.skipVerify);
     setCaCert("");
     setCaCertSet(s.ldap.caCertSet);
-    setKerberos(s.ldap.kerberosEnabled);
-    setSpn(s.ldap.servicePrincipalName ?? "");
+    const policy = s.ldap as typeof s.ldap & {
+      insecureTlsConfigurable?: boolean;
+      insecureTlsWarning?: string | null;
+    };
+    setInsecureTlsConfigurable(policy.insecureTlsConfigurable !== false);
+    setInsecureTlsWarning(policy.insecureTlsWarning ?? null);
   }, [s]);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>LDAPS / Kerberos</CardTitle>
+        <CardTitle>LDAP</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between rounded-md border p-3">
@@ -1293,7 +1331,7 @@ function LdapSettingsPanel() {
                 <SelectItem value="starttls">
                   StartTLS — upgrade plain 389 to TLS
                 </SelectItem>
-                <SelectItem value="plain">
+                <SelectItem value="plain" disabled={!insecureTlsConfigurable}>
                   Plain LDAP — no encryption (diagnostic only)
                 </SelectItem>
               </SelectContent>
@@ -1404,14 +1442,25 @@ function LdapSettingsPanel() {
             </p>
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-md border p-3">
+         <div className="flex items-center justify-between rounded-md border p-3">
           <Label>Skip TLS verification</Label>
           <Switch
             checked={skipVerify}
             onCheckedChange={setSkipVerify}
+             disabled={!insecureTlsConfigurable}
             data-testid="switch-skip-verify"
           />
         </div>
+         {!insecureTlsConfigurable && (
+           <Alert variant="destructive">
+             <AlertDescription>
+               Production requires certificate verification. Install the
+               issuing CA PEM; temporary insecure transport exceptions are
+               controlled by deployment configuration and expiry, not this UI.
+               {insecureTlsWarning ? ` ${insecureTlsWarning}` : ""}
+             </AlertDescription>
+           </Alert>
+         )}
         <div className="space-y-1">
           <Label>CA certificate (PEM)</Label>
           <Textarea
@@ -1504,35 +1553,6 @@ function LdapSettingsPanel() {
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-md border p-3">
-          <div>
-            <Label>Activer Kerberos / GSSAPI</Label>
-            <p className="text-xs text-muted-foreground">
-              Authentification SSO silencieuse pour les postes Windows du domaine
-            </p>
-          </div>
-          <Switch
-            checked={kerberos}
-            onCheckedChange={setKerberos}
-            data-testid="switch-kerberos"
-          />
-        </div>
-        {kerberos && (
-          <div className="space-y-3 rounded-md border p-3">
-            <div className="space-y-1">
-              <Label>Service Principal Name (SPN)</Label>
-              <Input
-                value={spn}
-                onChange={(e) => setSpn(e.target.value)}
-                placeholder="HTTP/serveur.hopital.chdn.lan@HOPITAL.CHDN.LAN"
-                data-testid="input-spn"
-              />
-              <p className="text-xs text-muted-foreground">
-                Format : <code>HTTP/hostname.domaine@DOMAINE.LAN</code>
-              </p>
-            </div>
-          </div>
-        )}
         <div className="flex justify-end">
           <Button
             onClick={() =>
@@ -1554,9 +1574,7 @@ function LdapSettingsPanel() {
                     displayNameAttribute: displayNameAttr.trim() || null,
                     emailAttribute: emailAttr.trim() || null,
                     groupMembershipAttribute: groupAttr.trim() || null,
-                    kerberosEnabled: kerberos,
-                    servicePrincipalName: spn.trim() || null,
-                  },
+                  } as never,
                 },
               })
             }
@@ -3080,10 +3098,14 @@ function BudgetPositionsPanel() {
                 try {
                   const fd = new FormData();
                   fd.append("file", file);
+                  const csrfToken = await ensureCsrfToken();
                   const resp = await fetch("/api/settings/budget-positions/import", {
                     method: "POST",
                     body: fd,
                     credentials: "include",
+                    headers: csrfToken
+                      ? { "X-CSRF-Token": csrfToken }
+                      : undefined,
                   });
                   if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
@@ -3249,10 +3271,14 @@ function KostenstellePanel() {
                 try {
                   const fd = new FormData();
                   fd.append("file", file);
+                  const csrfToken = await ensureCsrfToken();
                   const resp = await fetch("/api/settings/kostenstelle/import", {
                     method: "POST",
                     body: fd,
                     credentials: "include",
+                    headers: csrfToken
+                      ? { "X-CSRF-Token": csrfToken }
+                      : undefined,
                   });
                   if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));

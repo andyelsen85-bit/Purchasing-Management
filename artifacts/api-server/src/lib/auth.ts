@@ -3,6 +3,30 @@ import { promisify } from "node:util";
 import type { Request } from "express";
 
 const scryptAsync = promisify(scrypt);
+// A valid, fixed-shape scrypt record used for nonexistent-user verification.
+// Its value is intentionally not a real account password.
+export const DUMMY_PASSWORD_HASH =
+  "00000000000000000000000000000000:" +
+  "0".repeat(128);
+
+export function passwordHashForVerification(
+  passwordHash: string | null | undefined,
+): string {
+  return passwordHash && passwordHash.includes(":")
+    ? passwordHash
+    : DUMMY_PASSWORD_HASH;
+}
+
+export async function isDefaultBootstrapAdmin(
+  username: string,
+  source: string,
+  passwordHash: string | null | undefined,
+): Promise<boolean> {
+  if (username.trim().toLowerCase() !== "admin" || source !== "LOCAL") {
+    return false;
+  }
+  return verifyPassword("admin", passwordHashForVerification(passwordHash));
+}
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -43,6 +67,7 @@ export interface SessionUser {
   roles: Role[];
   departmentIds: number[];
   source: string;
+  mustChangePassword: boolean;
 }
 
 /**
@@ -58,6 +83,10 @@ export async function establishAuthenticatedSession(
   await new Promise<void>((resolve, reject) => {
     req.session.regenerate((error) => (error ? reject(error) : resolve()));
   });
+  // The CSRF token is part of the regenerated session and is deliberately
+  // unrelated to the session id.  It is copied to a readable cookie by the
+  // central middleware when the response is sent.
+  req.session.csrfToken = randomBytes(32).toString("base64url");
   req.session.user = user;
   await new Promise<void>((resolve, reject) => {
     req.session.save((error) => (error ? reject(error) : resolve()));
@@ -67,6 +96,6 @@ export async function establishAuthenticatedSession(
 declare module "express-session" {
   interface SessionData {
     user?: SessionUser;
-    adfsCsrfToken?: string;
+    csrfToken?: string;
   }
 }

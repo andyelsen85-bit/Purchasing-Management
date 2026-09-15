@@ -24,7 +24,6 @@ import { requireAuth, requireRole, getUser } from "../middlewares/auth";
 import { getSettings, toPublicSettings, updateSettingsRecord } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { resolveGroupMemberEmails } from "../lib/ldap";
-import { validateAdfsCsrf } from "../lib/adfs";
 
 const router: IRouter = Router();
 
@@ -42,20 +41,6 @@ router.patch(
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.message });
       return;
-    }
-    // AD FS configuration contains redirect/authentication material and is
-    // the one settings mutation that must carry the session-bound CSRF
-    // token. Existing non-ADFS settings mutations retain their historical
-    // contract so local/LDAP/Kerberos administration is not disrupted.
-    if (parsed.data.adfs !== undefined) {
-      const header = req.get("x-csrf-token");
-      const cookie = req.cookies?.investflow_csrf ?? req.get("cookie")?.match(
-        /(?:^|;\s*)investflow_csrf=([^;]+)/,
-      )?.[1];
-      if (!validateAdfsCsrf(header, cookie, req.session.adfsCsrfToken)) {
-        res.status(403).json({ error: "CSRF token required" });
-        return;
-      }
     }
     // Map the OpenAPI input shape to the stored shape: zod nullish() turns
     // missing values into `null`, but the persisted record uses `undefined`
@@ -108,7 +93,18 @@ router.patch(
       ...(siteList ? { siteList } : {}),
       ...(tauxAmortissementList ? { tauxAmortissementList } : {}),
       ...(tauxTvaList ? { tauxTvaList } : {}),
-      ...(ldap ? { ldap: dropNulls(ldap) } : {}),
+      ...(ldap
+        ? {
+            ldap: {
+              ...dropNulls(ldap),
+              // A secret's explicit null means clear it; omission means
+              // preserve it. Do not collapse those two states.
+              ...("bindPassword" in ldap
+                ? { bindPassword: ldap.bindPassword ?? null }
+                : {}),
+            },
+          }
+        : {}),
       ...(adfs ? { adfs: adfs as never } : {}),
       ...(smtp
         ? {
@@ -124,6 +120,9 @@ router.patch(
               }),
               ...(smtp.fromAddress != null ? { from: smtp.fromAddress } : {}),
               ...(smtp.senderName != null ? { senderName: smtp.senderName } : {}),
+              ...("password" in smtp
+                ? { password: smtp.password ?? null }
+                : {}),
             },
           }
         : {}),

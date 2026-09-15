@@ -9,10 +9,19 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
+import { csrfProtection } from "./middlewares/csrf";
+import { assertSettingsEncryptionKey } from "./lib/secret-crypto";
 
 const PgStore = ConnectPgSimple(session);
 
+// Validate the independent settings key before the process can expose an API
+// listener. Development retains the encrypted deterministic fallback.
+assertSettingsEncryptionKey();
 const app: Express = express();
+// The deployment has one known reverse-proxy hop (the Replit/dev proxy and
+// production ingress).  Express must be the sole authority for interpreting
+// forwarded client IP/protocol headers so req.ip is safe for abuse controls.
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
@@ -73,21 +82,18 @@ const corsAllowlist = (process.env.CORS_ORIGINS ?? "")
 // header even on same-origin POSTs/fetch (`https://app.example.com`
 // hitting `https://app.example.com/api/…`), so a naive "no Origin =
 // same-origin" check is not enough — we must compare the Origin's host
-// to the request's effective host (X-Forwarded-Host first, then Host).
+// to the request's effective host.
 const corsMiddleware = cors((req, cb) => {
   const origin = req.headers.origin;
   if (process.env.NODE_ENV !== "production") {
     return cb(null, { credentials: true, origin: true });
   }
   if (!origin) return cb(null, { credentials: true, origin: true });
-  // Same-origin: Origin host == request host (honour X-Forwarded-Host
-  // because we sit behind nginx/Caddy/etc. on commande.hostzone.lu).
-  const fwdHost =
-    (req.headers["x-forwarded-host"] as string | undefined) ??
-    (req.headers.host as string | undefined);
+  // Same-origin: Origin host == the effective Express request host.
+  const requestHost = req.headers.host;
   try {
     const originHost = new URL(origin).host;
-    if (fwdHost && originHost === fwdHost) {
+    if (requestHost && originHost === requestHost) {
       return cb(null, { credentials: true, origin: true });
     }
   } catch {
@@ -124,7 +130,6 @@ app.use(
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    proxy: true, // trust X-Forwarded-Proto for "secure" cookie decisions
     cookie: {
       httpOnly: true,
       sameSite: "lax",
@@ -142,7 +147,7 @@ app.use(
   }),
 );
 
-app.use("/api", corsMiddleware, router);
+app.use("/api", corsMiddleware, csrfProtection, router);
 
 // API errors must remain machine-readable. Express otherwise renders thrown
 // async/multipart errors as a generic HTML page, which hides the actual cause

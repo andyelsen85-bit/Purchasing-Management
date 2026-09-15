@@ -1,276 +1,162 @@
-# Pointing the app at a customer Active Directory
+# Active Directory and AD FS
 
-This document explains how to wire the Purchasing Management app to a real
-Active Directory for both LDAPS form login and silent Kerberos / SPNEGO
-single sign-on.
+This guide covers the supported identity integrations for Purchasing
+Management:
 
-What hot-reloads vs. what needs a server restart:
+1. **AD FS OIDC is the primary SSO method** for production. It uses
+   Authorization Code + PKCE (S256).
+2. **LDAPS or LDAP StartTLS form authentication** is available when an
+   organization needs directory password authentication or AD group mapping.
 
-- **Hot-reloaded** (no restart): everything saved through **Settings →
-  LDAP** — host, port, base/bind DN, bind password, CA cert, skip-verify
-  toggle, Kerberos enable, SPN, user filter, and group → role /
-  department mapping. The auth backend reads the persisted settings on
-  every sign-in (`getSettings()` runs inside both `POST /api/auth/login`
-  and `GET /api/auth/negotiate`), so saving the LDAP tab is enough to
-  roll out a config change to the next user that signs in.
-- **Requires restart / redeploy**: the host-level Kerberos prerequisites
-  in §4 — installing `libkrb5` and the optional `kerberos` npm package,
-  changes to `/etc/krb5.conf`, and the `KRB5_KEYTAB` / `KRB5_SPN`
-  environment variables. These are read once at process start (env
-  vars) or by the dynamically-loaded native module, so the API server
-  needs to be restarted after any of them change. Replacing the keytab
-  *file* on disk does **not** require a restart — see §6.
+The browser and API never trust a client-supplied role or department. On every
+directory sign-in, the API authenticates the user, resolves the configured
+groups, and applies the server-side group-to-role and group-to-department
+maps. Local accounts remain a restricted break-glass path.
 
----
+## 1. AD FS OIDC (primary SSO)
 
-## 1. Prerequisites on the customer side
+Register an Authorization Code OIDC application in AD FS 2016, 2019, or 2022.
+Enable PKCE with S256 and register this exact callback URI:
 
-Ask the customer's AD administrator for the following. None of these are
-secrets the app generates — they all come from their directory.
+```text
+https://<InvestFlow-host>/api/auth/adfs/callback
+```
 
-| Field | Example | Notes |
+Configure the provider and claims in **Settings → Authentication → AD FS**, or
+provide deployment fallbacks using the `ADFS_*` variables in `.env.example`:
+
+| Variable | Purpose |
+| --- | --- |
+| `ADFS_ENABLED` | Enables the AD FS button and flow when no persisted setting overrides it. |
+| `ADFS_ISSUER` / `ADFS_AUTHORITY` | The issuer/authority URL from AD FS metadata. |
+| `ADFS_DISCOVERY_URL` | Optional non-standard discovery document URL. |
+| `ADFS_CLIENT_ID` | Registered OIDC application/client identifier. |
+| `ADFS_CLIENT_SECRET` | Optional confidential-client secret; provide via a secret manager. |
+| `ADFS_REDIRECT_URI` | Optional explicit callback URI; otherwise derived from the app base URL. |
+| `ADFS_SCOPES` | Space-separated scopes; `openid` is required. |
+| `ADFS_USERNAME_CLAIM` | Username/UPN claim (default `preferred_username`). |
+| `ADFS_EMAIL_CLAIM` | Email claim (default `email`). |
+| `ADFS_DISPLAY_NAME_CLAIM` | Display-name claim (default `name`). |
+| `ADFS_CA_PEM` | Optional PEM CA for a private AD FS PKI. |
+
+Persisted Settings values take precedence over environment fallbacks. The
+client secret and private CA are encrypted before storage and are never
+returned by the API. Production requires `SETTINGS_ENCRYPTION_KEY`, which is
+independent from `SESSION_SECRET`.
+
+The ID token is accepted only after issuer, audience, signature/JWKS, nonce,
+and expiry validation. The callback state is one-time, HttpOnly, and short
+lived; return targets must be local paths. An identity is keyed by provider,
+issuer, and OIDC subject before safe username/email matching is considered.
+Newly provisioned identities receive a non-administrative role and existing
+roles/departments are retained.
+
+See [`docs/adfs-oidc.md`](../../../docs/adfs-oidc.md) for provider
+registration, claim mapping, logout, and troubleshooting details.
+
+## 2. LDAPS form authentication
+
+Ask the directory administrator for:
+
+| Setting | Example | Notes |
 | --- | --- | --- |
-| LDAPS host | `dc01.corp.example.com` | A domain controller reachable from the app server on TCP/636. |
-| LDAPS port | `636` | Default LDAPS. `3269` for the global catalog over TLS. |
-| Base DN | `DC=corp,DC=example,DC=com` | Root of the user search. May also be an OU like `OU=Employees,DC=corp,…`. |
-| Service / bind account | `CN=svc-purchasing,OU=Service Accounts,DC=corp,…` | A read-only account used to look up users by `sAMAccountName`. Plain user works; "managed service account" works too. |
-| Bind password | `••••••••` | Stored encrypted-at-rest in the app's settings table. |
-| AD CA certificate (PEM) | `-----BEGIN CERTIFICATE-----…` | Required when the DC's LDAPS cert is signed by a private/internal CA. |
-| Kerberos realm | `CORP.EXAMPLE.COM` | Upper-case DNS name of the AD domain. |
-| Service Principal Name | `HTTP/purchasing.corp.example.com@CORP.EXAMPLE.COM` | The SPN that the app will present to clients during the SPNEGO handshake. |
+| Host | `dc01.corp.example.com` | Must be reachable from the API server. |
+| Port | `636` | Use `3269` for an AD global catalog over TLS where appropriate. |
+| Base DN | `DC=corp,DC=example,DC=com` | Root of the user search. |
+| Bind DN | `CN=svc-purchasing,OU=Service Accounts,DC=corp,DC=example,DC=com` | Read-only service identity used to search users. |
+| Bind password | supplied out of band | Stored encrypted; never commit it or put it in logs. |
+| Directory CA | PEM certificate chain | Required when the directory uses a private CA. |
 
-The AD admin must register the SPN against the service account, e.g.:
+In **Settings → LDAP**:
 
-```powershell
-setspn -S HTTP/purchasing.corp.example.com svc-purchasing
-```
+1. Enable LDAP and select `ldaps` (preferred) or `starttls`.
+2. Enter the host, port, base DN, bind DN, and bind password.
+3. Paste the issuing CA certificate as PEM when the directory is private PKI.
+4. Keep certificate verification enabled in production. A temporary
+   production exception requires the audited, time-boxed exception variables
+   documented in `DEPLOY.md`.
+5. Use the **Test connection** action, then save.
 
----
+The bind password is used only to locate and authenticate the user. The
+user's password is never stored by the application. LDAP search filters
+contain `{username}` and the server escapes the supplied username before
+substitution; do not construct filters by string concatenation.
 
-## 2. Filling in **Settings → LDAP**
+### User filter and attributes
 
-Sign in as an `ADMIN` user, open **Settings → LDAP**, and fill in:
+The Active Directory defaults are:
 
-1. **LDAP enabled** — toggle on.
-2. **Host** — the domain controller hostname (must match the cert's CN/SAN).
-3. **Port** — `636` for LDAPS, `3269` for global catalog.
-4. **Base DN** — the search root (typically the domain DN).
-5. **Bind DN** — the full DN of the read-only service account.
-6. **Bind password** — paste once. Re-saving with this field empty keeps
-   the previously stored password (the value is never sent back to the
-   browser; the form just shows whether one is set).
-7. **Skip TLS verification** — leave **off** in production. Only useful
-   for a one-off connectivity smoke test against a self-signed test DC.
-8. **CA certificate (PEM)** — paste the full PEM chain that signed the
-   DC's LDAPS certificate. Same "leave empty to keep" semantics as the
-   bind password.
-9. **Enable Kerberos / GSSAPI** — toggle on if you want silent SSO from
-   domain-joined Windows clients.
-10. **Service principal name** — the SPN registered in step 1
-    (e.g. `HTTP/purchasing.corp.example.com`).
-
-Hit **Save**. The next sign-in attempt will use the new config.
-
-### Optional user filter
-
-The default user filter is `(sAMAccountName={username})`, which matches
-the typed username against the AD logon name. To accept email addresses
-or to scope the search to a specific OU, set a custom filter via the API
-(`PATCH /api/settings` with `ldap.userFilter`). Some customer-friendly
-examples:
-
-```
+```text
 (&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))
-(|(sAMAccountName={username})(userPrincipalName={username}))
 ```
 
-The `{username}` placeholder is RFC 4515-escaped before substitution, so
-operators don't have to worry about LDAP injection.
+The filter must contain `{username}`. A deployment may use a scoped OU or
+UPN-aware filter, for example:
 
----
+```text
+(&(objectCategory=person)(objectClass=user)
+  (|(sAMAccountName={username})(userPrincipalName={username})))
+```
 
-## 3. Mapping AD groups to roles and departments
+The default attributes are `sAMAccountName`, `displayName`, `mail`, and
+`memberOf`. They can be changed for a compatible directory from the LDAP
+settings page.
 
-Open **Settings → LDAP** → **AD group mapping** panel.
+## 3. Group-to-role and department mapping
 
-- **Group → Role**: each row maps a group key (substring or CN) to one
-  of the app roles (`ADMIN`, `FINANCIAL_ALL`, `FINANCIAL_INVOICE`,
-  `FINANCIAL_PAYMENT`, `DEPT_MANAGER`, `DEPT_USER`, `GT_INVEST`,
-  `READ_ONLY_DEPT`, `READ_ONLY_ALL`). A user always gets `DEPT_USER` as
-  a baseline.
-- **Group → Department code**: maps an AD group to a department `code`
-  defined in **Settings → Departments**.
+Open **Settings → LDAP → AD group mapping**:
 
-The mapping is **authoritative on every sign-in** — removing a user from
-a mapped AD group will revoke the corresponding role/department on
-their next login. Manual department assignments survive only for
-tenants that have not configured a group→department map at all.
+- **Group → Role** maps a case-insensitive group key or CN substring to
+  `ADMIN`, `FINANCIAL_ALL`, `FINANCIAL_INVOICE`, `FINANCIAL_PAYMENT`,
+  `DEPT_MANAGER`, `DEPT_USER`, `GT_INVEST`, `READ_ONLY_DEPT`, or
+  `READ_ONLY_ALL`.
+- **Group → Department code** maps a directory group to a department code
+  already defined in **Settings → Departments**.
 
-### Nested group resolution
+When a role map is configured, it is authoritative at every sign-in. A user
+with no mapped role is denied access. When a department map is configured, it
+is also authoritative and removed memberships are revoked at the next sign-in.
+A user must have an applicable role and department scope (unless the role is
+all-departments).
 
-The backend uses Active Directory's `LDAP_MATCHING_RULE_IN_CHAIN`
-(`1.2.840.113556.1.4.1941`) to walk the entire group tree server-side
-in a single search. So if `alice` is in `CN=PurchasingApprovers` and
-`PurchasingApprovers` is in `CN=PurchasingAdmins`, mapping
-`PurchasingAdmins → ADMIN` is enough — alice picks up `ADMIN` even
-though she is only directly in the leaf group.
+Active Directory nested groups are expanded server-side using the matching
+rule-in-chain capability when available, with a bounded membership traversal
+fallback. Verify the resulting roles and departments through the admin audit
+log rather than granting privileges in the browser.
 
-If the DC refuses the extended match (rare; some appliances do), the
-app falls back to a client-side BFS over `memberOf`. Both paths return
-the same flattened group list.
+## 4. Connectivity and smoke tests
 
----
-
-## 4. Setting up Kerberos / SPNEGO on the app server
-
-Kerberos requires native bits that we don't ship in the default image.
-
-### 4a. Install the Kerberos library
+Run these from the API host, using an approved temporary test identity:
 
 ```bash
-# Ubuntu / Debian
-apt-get install -y libkrb5-3 libkrb5-dev krb5-user
+openssl s_client -connect dc01.corp.example.com:636 \
+  -CAfile /path/to/customer-ca.pem -showcerts < /dev/null
 
-# RHEL / Rocky
-dnf install -y krb5-libs krb5-workstation krb5-devel
-
-# Then, in the api-server package:
-pnpm --filter @workspace/api-server add kerberos
+ldapsearch -H ldaps://dc01.corp.example.com:636 \
+  -D 'CN=svc-purchasing,OU=Service Accounts,DC=corp,DC=example,DC=com' \
+  -W -b 'DC=corp,DC=example,DC=com' \
+  '(sAMAccountName=alice)' dn memberOf
 ```
 
-The `kerberos` npm package is loaded **dynamically** at request time —
-if it is missing, the `/api/auth/negotiate` endpoint returns
-`501 Kerberos native module is not installed on this server` instead
-of crashing the process. So the LDAP form login keeps working in
-environments where Kerberos cannot be built.
+The TLS test should report `Verify return code: 0 (ok)`. Then use the login
+form with the **Use LDAP / Active Directory** option, and confirm that the
+audit record and effective roles/departments match the configured maps.
 
-### 4b. Provision `/etc/krb5.conf`
+For AD FS, use the **Sign in with AD FS** button and verify the exact callback
+URI, issuer, claims, and PKCE registration if the flow fails. Do not place
+provider tokens, passwords, or client secrets in issue reports or logs.
 
-```ini
-[libdefaults]
-  default_realm = CORP.EXAMPLE.COM
-  rdns = false
-  dns_lookup_kdc = true
+## 5. Rotation and operations
 
-[realms]
-  CORP.EXAMPLE.COM = {
-    kdc = dc01.corp.example.com
-    admin_server = dc01.corp.example.com
-  }
-
-[domain_realm]
-  .corp.example.com = CORP.EXAMPLE.COM
-  corp.example.com = CORP.EXAMPLE.COM
-```
-
-### 4c. Drop the keytab and tell the app where to find it
-
-The AD admin produces the keytab on a domain-joined Windows machine:
-
-```powershell
-ktpass -princ HTTP/purchasing.corp.example.com@CORP.EXAMPLE.COM `
-       -mapuser CORP\svc-purchasing `
-       -pass * `
-       -ptype KRB5_NT_PRINCIPAL `
-       -crypto AES256-SHA1 `
-       -out purchasing.keytab
-```
-
-Copy `purchasing.keytab` to the app server (e.g. `/etc/krb5.keytab`),
-restrict it to the service user (`chmod 600`), and expose its path via
-the `KRB5_KEYTAB` environment variable (`KRB5_SPN` is optional — if
-unset the app uses the SPN from Settings):
-
-```
-KRB5_KEYTAB=/etc/krb5.keytab
-KRB5_SPN=HTTP/purchasing.corp.example.com
-```
-
-The `/api/auth/negotiate` endpoint refuses to start the SPNEGO exchange
-unless **both** `KRB5_KEYTAB` is set and `kerberosEnabled` is on with
-an SPN — so a half-configured deployment fails closed with a clear
-error instead of silently falling back to forms.
-
-### 4d. Configure browsers (intranet zone)
-
-For browsers to send a Negotiate token automatically:
-
-- **Chrome / Edge (Windows)** — add the app's hostname to **Internet
-  Options → Security → Local intranet → Sites → Advanced**.
-- **Firefox** — set `network.negotiate-auth.trusted-uris` to the app's
-  hostname in `about:config`.
-- **macOS** — run `kinit user@CORP.EXAMPLE.COM` to obtain a TGT first,
-  then Safari/Chrome will participate in the handshake.
-
-The login page silently calls `GET /api/auth/negotiate` once on load.
-If the browser has a TGT and the host is trusted, the user is signed in
-without ever seeing the form. Otherwise the form falls through.
-
----
-
-## 5. Smoke testing the configuration
-
-1. **LDAPS connectivity** (from the app server):
-
-   ```bash
-   openssl s_client -connect dc01.corp.example.com:636 \
-                    -CAfile /path/to/customer-ca.pem -showcerts < /dev/null
-   ```
-
-   You should see `Verify return code: 0 (ok)`.
-
-2. **Bind smoke test**:
-
-   ```bash
-   ldapsearch -H ldaps://dc01.corp.example.com:636 \
-              -D 'CN=svc-purchasing,OU=Service Accounts,DC=corp,DC=example,DC=com' \
-              -W -b 'DC=corp,DC=example,DC=com' \
-              '(sAMAccountName=alice)' dn memberOf
-   ```
-
-   It should return alice's DN and `memberOf` list.
-
-3. **Form login**: open the app, flip **Use LDAP / Active Directory** on,
-   sign in as `alice` with her domain password.
-
-4. **Group mapping**: in **Settings → Audit log** or via direct DB
-   inspection, confirm alice's `roles` and `departmentIds` reflect the
-   mapping.
-
-5. **Silent SSO**: from a domain-joined workstation, open the app's URL
-   in a browser configured per §4d. The login page should flash
-   "Trying single sign-on…" and land on the dashboard without prompting.
-
-   If it falls back to the form, check the server logs for the
-   `Kerberos negotiation failed` message — typical causes:
-   - SPN mismatch between keytab and DNS hostname
-   - Clock skew > 5 minutes between the app server and the DC
-   - Browser hostname not in the trusted intranet list
-
----
-
-## 6. Rotating credentials / certificates
-
-- **Bind password** — change it in AD, paste the new value in
-  **Settings → LDAP**, save. No restart.
-- **CA certificate** — paste the new PEM into the CA cert box, save.
-  Existing in-flight LDAP connections are unaffected; the next login
-  uses the new chain.
-- **Keytab** — replace the file on disk. The `kerberos` library reads
-  the keytab on every `initializeServer` call, so a new keytab is
-  picked up by the next negotiate request without restart.
-
----
-
-## 7. Troubleshooting reference
-
-| Symptom | Likely cause |
-| --- | --- |
-| `LDAP connection error` | Firewall / DNS / wrong port. Try `openssl s_client` first. |
-| `LDAP bind error` | Bind DN typo, locked-out service account, or expired password. |
-| `Invalid credentials` (form) | The user's typed password is wrong, *or* the user's account is disabled. The bind succeeds but the user-DN bind fails. |
-| `User not found` | `userFilter` doesn't match — usually a base-DN scoping issue. |
-| `Kerberos backend not configured` | Either `KRB5_KEYTAB` env var is missing or **Kerberos enabled** is off. |
-| `Kerberos native module is not installed` | `pnpm add kerberos` was never run, or the build failed because libkrb5-dev is missing. |
-| `Kerberos negotiation failed: …` | Clock skew, SPN mismatch, or stale keytab. Run `kinit -kt /etc/krb5.keytab HTTP/host@REALM` on the app server to verify the keytab is valid. |
-| Roles don't update after AD group change | Group mapping is empty in Settings, or the group key doesn't match the group's CN/DN. The match is a case-insensitive substring on either the full DN or the leftmost CN. |
+- Rotate the directory bind password in AD, update it in Settings, and test
+  the next sign-in. The value is not displayed back to the browser.
+- Replace a directory CA PEM in Settings before the old certificate expires.
+- Rotate `SETTINGS_ENCRYPTION_KEY` only through the organization's secret
+  process and re-save encrypted settings according to the deployment
+  runbook.
+- Review group maps and directory memberships whenever a role or department
+  changes.
+- Keep AD FS redirect URIs, scopes, claim names, and relying-party
+  configuration under change control.
+- Keep `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, and provider secrets out of
+  source control and routine logs.

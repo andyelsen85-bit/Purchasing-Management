@@ -11,7 +11,6 @@ import {
   mapAdfsClaims,
   signAdfsState,
   validateCaPem,
-  validateAdfsCsrf,
   validateLocalReturnTarget,
   verifyAdfsState,
   resolveIdentityCandidate,
@@ -83,12 +82,6 @@ test("callback URL keeps configured origin/path and copies only query", () => {
     "?code=abc&state=xyz",
   );
   assert.equal(callback.href, "https://registered.example.test/api/auth/adfs/callback?code=abc&state=xyz");
-});
-
-test("CSRF requires the same session, header, and cookie value", () => {
-  assert.equal(validateAdfsCsrf("safe", "safe", "safe"), true);
-  assert.equal(validateAdfsCsrf("safe", "other", "safe"), false);
-  assert.equal(validateAdfsCsrf(undefined, "safe", "safe"), false);
 });
 
 test("logout clears the AD FS preference cookie", () => {

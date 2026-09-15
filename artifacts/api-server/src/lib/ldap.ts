@@ -20,8 +20,6 @@ export interface LdapConfig {
   displayNameAttribute?: string | null;
   emailAttribute?: string | null;
   groupMembershipAttribute?: string | null;
-  kerberosEnabled?: boolean | null;
-  servicePrincipalName?: string | null;
 }
 
 /**
@@ -75,6 +73,43 @@ interface ResolvedTransport {
   tlsOptions: Record<string, unknown>;
 }
 
+export interface LdapTlsPolicy {
+  allowed: boolean;
+  warning: string | null;
+  exceptionReason: string | null;
+  exceptionExpiresAt: string | null;
+}
+
+/**
+ * Production permits an insecure LDAP transport only through a separately
+ * deployed, time-boxed exception. The exception is intentionally not a
+ * settings-row toggle, so an ordinary administrator cannot casually weaken
+ * transport security.
+ */
+export function ldapTlsPolicy(cfg: Pick<LdapConfig, "encryption" | "skipVerify">): LdapTlsPolicy {
+  const insecure = cfg.skipVerify === true || cfg.encryption === "plain";
+  if (!insecure || process.env.NODE_ENV !== "production") {
+    return { allowed: true, warning: null, exceptionReason: null, exceptionExpiresAt: null };
+  }
+  const reason = process.env.LDAP_TLS_INSECURE_EXCEPTION_REASON?.trim() ?? "";
+  const expiresAt = process.env.LDAP_TLS_INSECURE_EXCEPTION_EXPIRES_AT?.trim() ?? "";
+  const expiryMs = Date.parse(expiresAt);
+  if (!reason || !expiresAt || !Number.isFinite(expiryMs) || expiryMs <= Date.now()) {
+    return {
+      allowed: false,
+      warning: "Production requires verified LDAPS/StartTLS; no valid time-boxed exception is active.",
+      exceptionReason: null,
+      exceptionExpiresAt: null,
+    };
+  }
+  return {
+    allowed: true,
+    warning: `Temporary insecure LDAP exception active until ${new Date(expiryMs).toISOString()}: ${reason}`,
+    exceptionReason: reason,
+    exceptionExpiresAt: new Date(expiryMs).toISOString(),
+  };
+}
+
 /**
  * Pick the URL scheme + TLS options from the saved config.
  *
@@ -85,6 +120,14 @@ interface ResolvedTransport {
  * as a useless `read ECONNRESET` from Node's TLS layer.
  */
 function resolveTransport(cfg: LdapConfig): ResolvedTransport {
+  const policy = ldapTlsPolicy(cfg);
+  if (!policy.allowed) throw new Error(policy.warning ?? "LDAP TLS policy rejected this configuration");
+  if (policy.warning) {
+    logger.warn(
+      { expiresAt: policy.exceptionExpiresAt, reason: policy.exceptionReason },
+      "LDAP insecure transport exception is active",
+    );
+  }
   const port = cfg.port ?? (cfg.encryption === "ldaps" ? 636 : 389);
   const enc: LdapEncryption =
     cfg.encryption ?? (port === 389 ? "starttls" : "ldaps");

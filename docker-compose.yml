@@ -1,4 +1,7 @@
 services:
+  # Local development/test database only. Production uses the externally
+  # managed CHdN PostgreSQL service and should provide DATABASE_URL to `app`
+  # without starting this service.
   db:
     image: postgres:16-alpine
     restart: unless-stopped

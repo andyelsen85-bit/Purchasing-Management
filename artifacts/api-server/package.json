@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/lib/adfs.test.ts"
+    "test": "node --import tsx --test src/lib/*.test.ts src/middlewares/*.test.ts"
   },
   "dependencies": {
     "@signpdf/placeholder-pdf-lib": "^3.3.0",

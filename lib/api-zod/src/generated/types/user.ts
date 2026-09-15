@@ -17,5 +17,6 @@ export interface User {
   roles: Role[];
   departmentIds: number[];
   source: UserSource;
+  mustChangePassword: boolean;
   createdAt: Date;
 }

@@ -157,45 +157,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApiError" }
 
-  /auth/negotiate:
-    get:
-      operationId: kerberosNegotiate
-      tags: [auth]
-      summary: Kerberos / SPNEGO single-sign-on handshake
-      description: |
-        Browsers send the user's Kerberos ticket via the
-        `Authorization: Negotiate <base64-token>` header. When no header
-        is present we reply with `401 WWW-Authenticate: Negotiate` to
-        trigger the browser's automatic retry. When a token is present
-        and the server has been provisioned with a keytab + SPN, we step
-        through SPNEGO and create/upgrade the matching local user.
-      parameters:
-        - name: Authorization
-          in: header
-          required: false
-          schema: { type: string }
-          description: Negotiate token from the browser, base64-encoded.
-      responses:
-        "200":
-          description: Authenticated
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/SessionUser" }
-        "401":
-          description: Negotiate handshake required or token rejected.
-          headers:
-            WWW-Authenticate:
-              schema: { type: string }
-              description: Always `Negotiate`, optionally followed by the next token.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ApiError" }
-        "501":
-          description: Kerberos backend not configured on this server.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ApiError" }
-
   # ---------------- USERS ----------------
   /users:
     get:
@@ -1633,6 +1594,69 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApiError" }
 
+  /admin/backup:
+    get:
+      operationId: downloadAdminBackup
+      tags: [admin]
+      summary: Stream an authenticated encrypted database backup
+      parameters:
+        - name: X-Backup-Passphrase
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 12
+          description: Operator passphrase; never persisted or logged.
+      responses:
+        "200":
+          description: Versioned AES-256-GCM backup envelope
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Missing or invalid passphrase
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+
+  /admin/restore:
+    post:
+      operationId: restoreAdminBackup
+      tags: [admin]
+      summary: Restore a password-protected encrypted database backup
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, passphrase]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                passphrase:
+                  type: string
+                  minLength: 12
+      responses:
+        "200":
+          description: Restore completed and the caller session was revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, restoredRows]
+                properties:
+                  ok: { type: boolean }
+                  restoredRows: { type: integer }
+        "400":
+          description: Invalid, tampered, incomplete, or legacy-disallowed backup
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+
 components:
   schemas:
     HealthStatus:
@@ -1654,10 +1678,9 @@ components:
         logoDataUrl: { type: ["string", "null"] }
         ldap:
           type: object
-          required: [enabled, kerberosEnabled]
+          required: [enabled]
           properties:
             enabled: { type: boolean }
-            kerberosEnabled: { type: boolean }
         adfs:
           type: object
           required: [enabled, displayName]
@@ -1721,9 +1744,10 @@ components:
         departmentIds:
           type: array
           items: { type: integer }
-        source: { type: string, enum: [LOCAL, LDAP] }
+        source: { type: string, enum: [LOCAL, LDAP, ADFS] }
+        mustChangePassword: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, username, displayName, roles, departmentIds, source, createdAt]
+      required: [id, username, displayName, roles, departmentIds, source, createdAt, mustChangePassword]
 
     CreateUserInput:
       type: object
@@ -2313,8 +2337,9 @@ components:
         departmentIds:
           type: array
           items: { type: integer }
-        source: { type: string, enum: [LOCAL, LDAP, KERBEROS] }
-      required: [id, username, displayName, roles, departmentIds, source]
+        source: { type: string, enum: [LOCAL, LDAP, ADFS] }
+        mustChangePassword: { type: boolean }
+      required: [id, username, displayName, roles, departmentIds, source, mustChangePassword]
 
     SessionResponse:
       type: object
@@ -2354,15 +2379,13 @@ components:
         displayNameAttribute: { type: ["string", "null"] }
         emailAttribute: { type: ["string", "null"] }
         groupMembershipAttribute: { type: ["string", "null"] }
-        kerberosEnabled: { type: boolean }
-        servicePrincipalName: { type: ["string", "null"] }
         groupRoleMap:
           type: object
           additionalProperties: { type: string }
         groupDepartmentMap:
           type: object
           additionalProperties: { type: string }
-      required: [enabled, encryption, directoryType, bindPasswordSet, skipVerify, caCertSet, kerberosEnabled]
+      required: [enabled, encryption, directoryType, bindPasswordSet, skipVerify, caCertSet]
 
     SmtpSettings:
       type: object
@@ -2648,8 +2671,6 @@ components:
             displayNameAttribute: { type: ["string", "null"] }
             emailAttribute: { type: ["string", "null"] }
             groupMembershipAttribute: { type: ["string", "null"] }
-            kerberosEnabled: { type: ["boolean", "null"] }
-            servicePrincipalName: { type: ["string", "null"] }
             groupRoleMap:
               type: object
               additionalProperties: { type: string }

@@ -6,6 +6,8 @@
  * OpenAPI spec version: 1.1.0
  */
 
-export type PublicAuthConfigLdap = {
-  enabled: boolean;
+export type RestoreAdminBackupBody = {
+  file: Blob;
+  /** @minLength 12 */
+  passphrase: string;
 };

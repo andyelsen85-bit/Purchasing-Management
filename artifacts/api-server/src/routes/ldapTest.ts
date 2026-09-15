@@ -11,8 +11,22 @@ import {
   hasMapping,
 } from "../lib/groupMapping";
 import { audit } from "../lib/audit";
+import {
+  FixedWindowThrottle,
+  ProgressiveFailureLimiter,
+  normalizeLoginUsername,
+} from "../lib/rate-limit";
 
 const router: IRouter = Router();
+const ldapDiagnosticFailures = new ProgressiveFailureLimiter({
+  maxEntries: 10_000,
+  windowMs: 15 * 60_000,
+  lockSeconds: [10, 30, 60, 300, 900],
+});
+// This is deliberately separate from failure lockout: even successful
+// diagnostics are capped to prevent an admin browser/tab from generating an
+// unbounded stream of expensive directory searches.
+const ldapDiagnosticBaseline = new FixedWindowThrottle(1_000, 10_000);
 
 /**
  * POST /api/admin/ldap-test
@@ -53,7 +67,36 @@ router.post(
         ? String(req.body.password)
         : null;
 
+    const failureKeys = [
+      `ip:${req.ip}`,
+      ...(username
+        ? [`user:${normalizeLoginUsername(username)}`]
+        : []),
+    ];
+    const failureLimit = ldapDiagnosticFailures.check(failureKeys);
+    const baselineLimit = ldapDiagnosticBaseline.consume(`ip:${req.ip}`);
+    const retryAfterSeconds = Math.max(
+      failureLimit.retryAfterSeconds,
+      baselineLimit.retryAfterSeconds,
+    );
+    if (retryAfterSeconds > 0) {
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      res.status(429).json({
+        ok: false,
+        error: "LDAP diagnostic temporarily unavailable",
+        retryAfter: retryAfterSeconds,
+      });
+      return;
+    }
+
     const diag = await runLdapDiagnostics(cfg, username, password);
+    if (!diag.ok) {
+      ldapDiagnosticFailures.recordFailure(failureKeys);
+    } else if (username) {
+      // A successful bind proves this tested account only.  Do not clear the
+      // aggregate IP history, which protects against account spraying.
+      ldapDiagnosticFailures.reset([`user:${normalizeLoginUsername(username)}`]);
+    }
 
     const derivedRoles =
       diag.ok && diag.groups.length > 0 && hasMapping(cfg.groupRoleMap)

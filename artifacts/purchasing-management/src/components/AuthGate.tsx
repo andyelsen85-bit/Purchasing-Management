@@ -9,6 +9,7 @@ import {
   clearAdfsReauthGuard,
   shouldStartAdfsReauth,
 } from "@/lib/auth-flow";
+import { PasswordChangePage } from "@/pages/PasswordChangePage";
 
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -20,6 +21,7 @@ export interface SessionUser {
   roles: string[];
   departmentIds: number[];
   source: string;
+  mustChangePassword: boolean;
 }
 
 interface Props {
@@ -88,6 +90,10 @@ export function AuthGate({ children }: Props) {
 
   if (!data?.user) {
     return null;
+  }
+
+  if (data.user.mustChangePassword) {
+    return <PasswordChangePage user={data.user as SessionUser} />;
   }
 
   return <>{children(data.user as SessionUser)}</>;

@@ -104,6 +104,8 @@ export * from "./publicAuthConfigAdfs";
 export * from "./publicAuthConfigLdap";
 export * from "./quoteEntry";
 export * from "./rejectWorkflowInput";
+export * from "./restoreAdminBackup200";
+// [barrel-fix] removed conflicting type re-export: export * from "./restoreAdminBackupBody";
 export * from "./role";
 export * from "./serviceSignature";
 export * from "./serviceSignatureNotifiedRecipientsItem";

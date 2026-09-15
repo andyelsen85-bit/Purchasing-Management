@@ -1,5 +1,11 @@
 # Microsoft AD FS OpenID Connect
 
+AD FS OIDC is the intended primary SSO method for production deployments.
+Local credentials remain a restricted break-glass path, and LDAPS/Active
+Directory is available when explicitly configured for directory
+authentication or group mapping. Kerberos/SPNEGO is not a supported operator
+login method.
+
 InvestFlow supports the Authorization Code flow with PKCE (S256) against
 Microsoft AD FS 2016, 2019, and 2022 OIDC applications. Register the exact
 redirect URI shown in **Settings → Authentication → AD FS**:

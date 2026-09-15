@@ -18,6 +18,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _csrfToken: string | null = null;
+let _csrfBootstrap: Promise<string | null> | null = null;
 
 /**
  * Configure a session-bound CSRF token for state-changing requests.  This is
@@ -26,6 +27,13 @@ let _csrfToken: string | null = null;
  */
 export function setCsrfToken(token: string | null): void {
   _csrfToken = token;
+}
+
+export function clearCsrfToken(): void {
+  _csrfToken = null;
+  if (typeof document !== "undefined") {
+    document.cookie = "investflow_csrf=; Max-Age=0; Path=/; SameSite=Lax";
+  }
 }
 
 /**
@@ -99,6 +107,56 @@ function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
   }
 
   return headers;
+}
+
+function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = "investflow_csrf=";
+  const item = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+  if (!item) return null;
+  try {
+    return decodeURIComponent(item.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+/** Header helper for the few legacy multipart/download call sites that
+ * cannot use generated hooks. The generated client reads the same cookie
+ * through customFetch automatically. */
+export function getCsrfToken(): string | null {
+  return _csrfToken ?? readCsrfCookie();
+}
+
+async function bootstrapCsrfToken(): Promise<string | null> {
+  const existing = getCsrfToken();
+  if (existing) return existing;
+  // Native/token clients do not use the browser's session-cookie contract.
+  if (typeof document === "undefined") return null;
+  if (_csrfBootstrap) return _csrfBootstrap;
+  const endpoint = applyBaseUrl("/api/auth/csrf");
+  _csrfBootstrap = fetch(endpoint, { credentials: "include" })
+    .then(async (response) => {
+      if (!response.ok) return null;
+      const body = (await response.json().catch(() => null)) as
+        | { token?: unknown }
+        | null;
+      const token = typeof body?.token === "string" ? body.token : null;
+      if (token) _csrfToken = token;
+      return token;
+    })
+    .catch(() => null)
+    .finally(() => {
+      _csrfBootstrap = null;
+    });
+  return _csrfBootstrap;
+}
+
+export async function ensureCsrfToken(): Promise<string | null> {
+  return bootstrapCsrfToken();
 }
 
 function getMediaType(headers: Headers): string | null {
@@ -368,17 +426,47 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  const csrfExempt =
+    /\/api\/auth\/(?:login|setup)$/.test(resolveUrl(input).split("?", 1)[0]);
+  const csrfToken =
+    !csrfExempt && !["GET", "HEAD", "OPTIONS"].includes(method)
+      ? await bootstrapCsrfToken()
+      : getCsrfToken();
   if (
-    _csrfToken &&
+    csrfToken &&
     !headers.has("x-csrf-token") &&
     !["GET", "HEAD", "OPTIONS"].includes(method)
   ) {
-    headers.set("x-csrf-token", _csrfToken);
+    headers.set("x-csrf-token", csrfToken);
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const response = await fetch(input, {
+    ...init,
+    method,
+    headers,
+    // Session authentication is cookie based on the web client.  Keep this
+    // central so generated hooks and every custom caller share the same
+    // credential policy.
+    credentials: init.credentials ?? "include",
+  });
+
+  if (response.status === 401) {
+    clearCsrfToken();
+  } else if (
+    method === "POST" &&
+    /\/api\/auth\/logout(?:\?|$)/.test(resolveUrl(input))
+  ) {
+    clearCsrfToken();
+  } else if (
+    method === "POST" &&
+    /\/api\/auth\/(?:login|setup)(?:\?|$)/.test(resolveUrl(input))
+  ) {
+    // The session was regenerated.  The browser has processed Set-Cookie by
+    // the time the response is available, so discard the old in-memory token.
+    _csrfToken = readCsrfCookie();
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

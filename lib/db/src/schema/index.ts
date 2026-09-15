@@ -23,6 +23,7 @@ export const usersTable = pgTable(
     displayName: text("display_name").notNull(),
     email: text("email"),
     passwordHash: text("password_hash"),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
     source: text("source").notNull().default("LOCAL"),
     roles: text("roles").array().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -17,4 +17,5 @@ export interface SessionUser {
   roles: Role[];
   departmentIds: number[];
   source: SessionUserSource;
+  mustChangePassword: boolean;
 }

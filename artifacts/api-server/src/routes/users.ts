@@ -39,6 +39,7 @@ async function loadUserWithDepts(id: number) {
     displayName: u.displayName,
     email: u.email,
     source: u.source,
+    mustChangePassword: !!u.mustChangePassword,
     roles: u.roles,
     departments: depts,
     createdAt: u.createdAt,
@@ -81,6 +82,7 @@ router.post(
         displayName,
         email: email ?? null,
         passwordHash,
+        mustChangePassword: !!passwordHash,
         roles,
         source: "LOCAL",
       })
@@ -112,7 +114,10 @@ router.patch(
     if (displayName != null) update.displayName = displayName;
     if (email !== undefined) update.email = email;
     if (roles) update.roles = roles;
-    if (password) update.passwordHash = await hashPassword(password);
+    if (password) {
+      update.passwordHash = await hashPassword(password);
+      update.mustChangePassword = true;
+    }
     if (Object.keys(update).length > 0) {
       await db.update(usersTable).set(update).where(eq(usersTable.id, id));
     }

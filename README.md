@@ -10,8 +10,9 @@ versioning, and complete audit logging.
 
 > **Stack:** TypeScript end-to-end · React 19 + Vite + shadcn/ui · Express 5 ·
 > PostgreSQL + Drizzle ORM · OpenAPI-first contract with Orval-generated
-> React Query hooks · Docker Compose deployment · in-app HTTPS / certificate
-> management · LDAPS + Kerberos SSO · Windows local signing agent.
+> React Query hooks · Docker deployment · in-app HTTPS / certificate
+> management · AD FS OIDC + LDAPS/Active Directory · Windows local signing
+> agent.
 
 ---
 
@@ -70,8 +71,9 @@ versioning, and complete audit logging.
   directly in the Settings and Companies pages without leaving the page.
 - **Currency always €** — all amounts are displayed and stored in euros;
   no per-quote currency selector.
-- **LDAPS / Active Directory** integration with nested-group expansion,
-  optional CA import, and Kerberos SSO fallback to a login form.
+- **AD FS OIDC** as the intended primary SSO integration, with PKCE and
+  validated claims; LDAPS / Active Directory remains available for directory
+  authentication and group mapping.
 - **In-app HTTPS management** — generate CSR, import signed cert + chain,
   hot-reload TLS, expiry warnings — no shell access required.
 - **Windows local signing agent** — optional standalone Node.js `.exe`
@@ -88,10 +90,11 @@ versioning, and complete audit logging.
   bin (admin-only).
 - **Internal notes per step** — discussion thread scoped to each step.
 - **Resizable, persisted UI** — sidebar widths stored per user.
-- **In-app backup & restore** — admins can download a single self-contained
-  JSON dump of every persisted table (documents included as base64) and
-  restore it transactionally from the Settings page. Client-side and
-  server-side size limit: **2 GiB**.
+- **In-app backup & restore** — admins can download a single self-contained,
+  authenticated AES-256-GCM backup of every persisted table (documents
+  included as base64 inside the encrypted payload) and restore it
+  transactionally from the Settings page. The server-enforced restore-upload
+  limit is **512 MiB (536,870,912 bytes)**.
 
 ---
 
@@ -139,7 +142,7 @@ versioning, and complete audit logging.
 │   └── db/                     # Drizzle schema, migrations, push scripts
 ├── scripts/                    # Repo-wide utility scripts
 ├── docker/                     # Entrypoint + helpers used by the image
-├── Dockerfile                  # Multi-stage build (Node 24 slim)
+├── Dockerfile                  # Multi-stage build (Node 20 slim)
 ├── docker-compose.yml          # App + Postgres + named volumes
 ├── DEPLOY.md                   # Operator deployment guide
 ├── pnpm-workspace.yaml         # Workspace + version catalog
@@ -155,7 +158,7 @@ Workspace conventions are documented in detail in `replit.md`.
 
 | Layer      | Choice                                                                |
 | ---------- | --------------------------------------------------------------------- |
-| Runtime    | Node.js 24 (production) · pnpm 10                                     |
+| Runtime    | Node.js 20 (production and CI) · pnpm 10                               |
 | Language   | TypeScript 5.9 (strict, project references for libs)                  |
 | Frontend   | React 19, Vite 7, Tailwind CSS v4, shadcn/ui, wouter (router), TanStack Query 5, Framer Motion, lucide-react |
 | Backend    | Express 5, `express-session`, `passport`, `multer`, `nodemailer`, `pdf-lib`, `node-forge`, `ldapjs` |
@@ -172,8 +175,9 @@ Workspace conventions are documented in detail in `replit.md`.
 
 ### Prerequisites
 
-- **Node.js 24+**
-- **pnpm 10** (`corepack enable && corepack prepare pnpm@10.26.1 --activate`)
+- **Node.js 20+** (the production Docker image and CI use Node 20)
+- **pnpm 10.26.1** (`corepack enable && corepack install`, pinned by
+  `packageManager` in `package.json`)
 - **PostgreSQL 16** running locally _or_ Docker.
 
 ### 1. Install dependencies
@@ -213,7 +217,8 @@ Default seed credentials (created on first boot):
 - **username:** `admin`
 - **password:** `admin`
 
-Change the password immediately under **Paramètres → Utilisateurs**.
+Change the password immediately under **Paramètres → Utilisateurs** and before
+normal production use.
 
 ---
 
@@ -223,15 +228,21 @@ Change the password immediately under **Paramètres → Utilisateurs**.
 | ---------------- | :------: | ------- | --------------------------------------------------------------------------- |
 | `DATABASE_URL`   | ✅       | —       | PostgreSQL connection string.                                               |
 | `SESSION_SECRET` | ⚠️       | auto    | Cookie-session signing key. ≥32 chars. Auto-generated & persisted in Docker.|
+| `SETTINGS_ENCRYPTION_KEY` | ✅ production | — | 32-byte hex/base64url key for AES-256-GCM encryption of SMTP, LDAP, and AD FS secrets; keep independent from `SESSION_SECRET`. |
+| `CORS_ORIGINS` |          | same origin | Comma-separated production origin allowlist when the SPA and API are separated. |
 | `PORT`           |          | `80`    | Plain HTTP port (also used for the HTTP→HTTPS redirect).                    |
 | `HTTPS_PORT`     |          | `443`   | TLS port (active once a certificate has been imported in-app).              |
 | `NODE_ENV`       |          | `production` in image | Toggles dev tooling.                                                |
 | `WEB_DIST`       |          | `/app/web/dist` (image) | Path to the built SPA, served by the API.                              |
 | `STATE_DIR`      |          | `/app/state` (image) | Where uploads, certs and the secret-file live.                          |
+| `UPLOADS_DIR`     |          | `/app/state/uploads` (image) | Persistent uploaded document directory. |
+| `CERTS_DIR`       |          | `/app/state/certs` (image) | Persistent TLS certificate/private-key directory. |
 
 Runtime configuration (SMTP, LDAPS, Limite X, Logo, GT Invest recipients,
-signing toggle) is **stored in the database** and managed entirely from the
-**Paramètres** page — no environment variables required.
+signing toggle, and AD FS values) is **stored in the database** and managed
+from the **Paramètres** page. The `ADFS_*` variables in `.env.example` are
+safe deployment fallbacks; persisted AD FS settings take precedence. SMTP and
+LDAP passwords are encrypted with `SETTINGS_ENCRYPTION_KEY`.
 
 ---
 
@@ -257,7 +268,7 @@ Tables (Drizzle, schema file: `lib/db/src/schema/index.ts`):
 | `gt_invest_dates`      | Catalog of committee meeting dates (label + date).                 |
 | `gt_invest_results`    | Catalog of committee decision options.                             |
 | `settings`             | Singleton JSONB row holding all runtime configuration.             |
-| `sessions`             | `express-session` store (excluded from backup).                    |
+| `session`              | `connect-pg-simple` `express-session` store (excluded from backup and truncated transactionally on restore). |
 | `tls_state`            | Generated CSRs, private keys (encrypted), imported chain.          |
 
 The `investmentForm` JSONB column on `workflows` stores the entire
@@ -279,7 +290,8 @@ Highlights, grouped by resource:
 - `POST   /api/auth/login` — `login`
 - `POST   /api/auth/logout` — `logout`
 - `GET    /api/auth/session` — `getSession`
-- `POST   /api/auth/kerberos` — `kerberosNegotiate`
+- `GET    /api/auth/adfs/start` and `/api/auth/adfs/callback` — AD FS OIDC
+  Authorization Code + PKCE login
 - `POST   /api/auth/ldap/test` — `testLdap`
 
 ### Workflows (Commandes)
@@ -337,10 +349,12 @@ Highlights, grouped by resource:
 - `POST   /api/tls/reload` — `reloadCert`
 - `GET    /api/tls/info` — `getCertInfo`
 - `GET    /api/health` — `healthCheck`
-- `GET    /api/admin/backup` — full DB dump as JSON (admin-only).
-- `POST   /api/admin/restore` — multipart upload of a backup JSON (admin-only);
-  transactional truncate + re-seed; sequences bumped past restored ids;
-  caller's session destroyed on success. **2 GiB upload ceiling.**
+- `GET    /api/admin/backup` — encrypted full DB backup (admin-only);
+  requires `X-Backup-Passphrase`.
+- `POST   /api/admin/restore` — multipart upload of an encrypted backup and
+  passphrase (admin-only); transactional truncate + re-seed; sequences bumped
+  past restored ids; caller's session destroyed on success. **512 MiB
+  (536,870,912-byte) server upload ceiling.**
 - `POST   /api/admin/archive-attachments` — admin-only. Body
   `{ olderThanDays, dryRun? }`. Deletes binary attachments for workflows
   older than the cutoff while preserving workflow rows, notes, history,
@@ -448,7 +462,7 @@ questionnaire spread across 11 numbered sections stored as JSONB in
   - GT Invest (`/gt-invest`)
   - Sociétés (`/companies`)
   - Paramètres (`/settings`) — tabbed page covering Application, Utilisateurs,
-    Départements (inline edit code + name), GT Invest, HTTPS, LDAP/Kerberos,
+    Départements (inline edit code + name), GT Invest, HTTPS, LDAP/AD FS,
     SMTP, Agent de signature, **Sauvegarde / Restauration**, and **Journal
     d'audit**.
   - Login (`/login`)
@@ -490,15 +504,26 @@ imported, `HTTPS_PORT` becomes active and HTTP traffic is redirected.
 
 ## Authentication
 
-- **Local accounts** — bcrypt-hashed passwords stored in `users`.
-- **LDAPS / Active Directory** — bind with service account, recursive group
-  expansion, optional CA upload, optional skip-TLS-verify toggle.
-- **Kerberos SSO** — silent login on domain-joined Edge / Firefox via SPNEGO;
-  falls back to the LDAP login form on negotiation failure. Add the app URL to
-  the browser's Intranet Zone / trusted sites for SSO to fire automatically.
-- **Sessions** — `express-session` backed by Postgres (`sessions` table),
-  signed with `SESSION_SECRET` (auto-generated and persisted in Docker if not
-  provided).
+- **AD FS OIDC (intended primary SSO)** — Authorization Code + PKCE (S256)
+  against AD FS 2016, 2019, or 2022. The ID token's issuer, audience,
+  signature/JWKS, nonce, and expiry are validated before a session is created.
+  Register the exact callback
+  `https://<host>/api/auth/adfs/callback`; see
+  [`docs/adfs-oidc.md`](./docs/adfs-oidc.md).
+- **LDAPS / Active Directory** — optional directory login with service-account
+  bind, recursive group expansion, CA upload, and server-side role/department
+  mapping. Use a verified LDAPS or StartTLS connection in production.
+- **Local accounts** — passwords are hashed with Node.js `scrypt` and stored in
+  `users`; they are the controlled break-glass path. The seeded `admin`
+  account is flagged for a mandatory password change before other routes can
+  be used.
+- **Sessions** — `express-session` is backed by Postgres in production
+  (`session` table), uses HttpOnly/SameSite cookies, and is signed with
+  `SESSION_SECRET` (auto-generated and persisted in Docker only when not
+  explicitly supplied).
+
+AD FS is the reviewed SSO path for production. Kerberos/SPNEGO is retired from
+the operator workflow; do not configure or document it as a login method.
 
 ---
 
@@ -578,45 +603,65 @@ See `tools/signing-agent/README.md` for the full operator + build reference.
   it from `/api/workflows/deleted`.
 - **In-app database backup & restore** — admin-only, served from Paramètres →
   Sauvegarde & Restauration:
-  - **`GET /api/admin/backup`** dumps every persisted table to one JSON file
-    (`purchasing-backup-<iso-timestamp>.json`). Document blobs are stored
-    base64 in `documents` / `document_versions`, so the dump is fully
-    self-contained. Tables included (17 of 18 — `sessions` is excluded):
+  - **`GET /api/admin/backup`** dumps every persisted table and returns an
+    authenticated AES-256-GCM `.backup` envelope. The operator supplies the
+    passphrase in `X-Backup-Passphrase` (minimum 12 characters); it is never
+    stored. Inside the envelope, document blobs are base64 in
+    `documents` / `document_versions`, so the decrypted dump is
+    self-contained. Tables included (20 of 21 — the canonical `session` table
+     is excluded):
 
-        users, departments, user_departments, companies, contacts,
-        workflows, documents, document_versions, workflow_steps,
+        users, external_identity_mappings, notification_rules, departments, user_departments,
+        companies, contacts, workflows, service_signatures, documents, document_versions,
+        workflow_steps,
         notes, history, audit_log, settings, gt_invest_dates,
         gt_invest_results, notifications, tls_state
 
     All new form fields (e.g. `investmentForm` JSONB, company address/taxId/
-    notes) are captured automatically because the backup uses
-    `db.select().from(table)` — no code changes needed when columns or JSONB
-    keys are added.
+    notes) are captured automatically because each table is selected as part
+    of one repeatable-read snapshot — no code changes are needed when columns
+    or JSONB keys are added.
 
-  - **`POST /api/admin/restore`** uploads that JSON, validates the backup
-    version up front, then in a single transaction `TRUNCATE … RESTART
+  - **`POST /api/admin/restore`** uploads the encrypted `.backup` and its
+    passphrase, decrypts/authenticates it, validates the backup version up
+    front, then in a single transaction `TRUNCATE … RESTART
     IDENTITY CASCADE`s all backed-up tables, streams the dump table-by-table
     back into Postgres in 1 000-row batches, refuses partial dumps and unknown
     tables, and finally bumps each serial sequence past the largest restored
     id. Sessions are also cleared; the caller's own session is destroyed on
     success — every signed-in user must re-authenticate. Any failure rolls the
     whole transaction back, leaving the previous data intact.
+      Plaintext legacy JSON restores are development-only by default; a
+      production import requires a short-lived audited exception. Apply the
+      organisation's retention schedule to encrypted backup files and securely
+      destroy expired copies. Encrypted input and decrypted JSON are each
+      limited to the tested 512 MiB endpoint limit.
 
-  - **2 GiB size limit** — enforced both client-side (immediate feedback
-    before upload begins, with a human-readable size indicator) and
-    server-side (multer ceiling). Files are streamed to a temp directory
+  - **512 MiB (536,870,912-byte) server-side size limit** — enforced by the
+    multipart parser before restore processing. Files are streamed to a temp directory
     under `os.tmpdir()/purchasing-restore/` and parsed incrementally with
     `stream-json`, so the JSON is never materialised in memory. The temp file
     is cleaned up in a `finally` block whether restore succeeds or fails.
 
-- **Volume-level backup** — for OS-level recovery the `db-data` Docker volume
-  can still be snapshotted or `pg_dump`'d; see `DEPLOY.md`.
+- **Volume-level backup** — local Compose volumes can be snapshotted or
+  `pg_dump`'d for development/test recovery. Production backups belong to the
+  externally managed CHdN PostgreSQL service and its approved backup process;
+  see `DEPLOY.md`.
+
+Backup exports include sensitive rows and document blobs. The application
+wraps each export in an authenticated AES-256-GCM envelope using a
+per-export salt/nonce and an operator-supplied passphrase (minimum 12
+characters); the passphrase is never persisted. Store encrypted exports only
+in an approved destination, restrict access, and apply the organization's
+retention and deletion schedule.
 
 ---
 
 ## Deployment (Docker)
 
-The fastest path to production is `docker compose`:
+Docker Compose is a convenient local development/test stack. Production uses
+the published image and an externally managed CHdN PostgreSQL database; do not
+deploy the Compose `db` service as the production database.
 
 ```bash
 # Optional: provide your own SESSION_SECRET (else it is auto-generated)
@@ -626,9 +671,10 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-The compose file ships:
+The compose file ships (for development/test):
 
-- `db` — `postgres:16-alpine` with `pg_isready` healthcheck.
+- `db` — `postgres:16-alpine` with `pg_isready` healthcheck. This local
+  database is not the production data store.
 - `app` — multi-stage `Dockerfile` build that:
   1. Installs the workspace with `pnpm install --frozen-lockfile`.
   2. Builds composite libs (`tsc --build`).
@@ -646,10 +692,46 @@ Volumes:
 | `app-uploads` | `/app/state/uploads`  | Uploaded documents.                    |
 | `app-certs`   | `/app/state/certs`    | TLS material (private keys + chains).  |
 
-Default seeded admin: `admin` / `admin` — **change immediately**.
+Default seeded admin: `admin` / `admin` — **change immediately before normal
+use**. Production operators must also provide the externally managed
+`DATABASE_URL`, `SESSION_SECRET`, and `SETTINGS_ENCRYPTION_KEY`.
 
 See [`DEPLOY.md`](./DEPLOY.md) for the full operator guide and troubleshooting
 notes.
+
+### CI and container images
+
+Pull requests and pushes run `.github/workflows/ci.yml`: the workflow uses
+Node 20, the pinned pnpm version, a frozen lockfile, typechecking, API and
+frontend tests, the full build, and Docker build validation. Pushes to `main`
+and version tags run `.github/workflows/build-images.yml`, which publishes
+lowercase image names to GHCR using the repository `GITHUB_TOKEN`. Images have
+branch/version tags and an immutable `sha-<commit>` tag, OCI labels, Buildx
+cache, and provenance/SBOM attestations where GitHub supports them.
+
+The repository intentionally assumes **GHCR** because no Nexus registry
+configuration or credentials are present. An organization that requires
+Nexus should pull a chosen immutable GHCR tag, then mirror it with its own
+Nexus credentials:
+
+```bash
+export GHCR_IMAGE=ghcr.io/<lowercase-owner>/<repo>
+export NEXUS_REGISTRY=nexus.example.invalid
+export NEXUS_REPOSITORY=docker-hosted
+export IMAGE_TAG=sha-<commit>
+docker login ghcr.io
+docker pull "$GHCR_IMAGE:$IMAGE_TAG"
+docker tag "$GHCR_IMAGE:$IMAGE_TAG" \
+  "$NEXUS_REGISTRY/$NEXUS_REPOSITORY/purchasing-management:$IMAGE_TAG"
+docker login "$NEXUS_REGISTRY"  # use organization-managed credentials
+docker push "$NEXUS_REGISTRY/$NEXUS_REPOSITORY/purchasing-management:$IMAGE_TAG"
+```
+
+To make CI push directly to Nexus instead, an organization must change the
+registry/image destination and login step in `build-images.yml`, and add
+organization-managed `NEXUS_REGISTRY`, `NEXUS_USERNAME`, and `NEXUS_PASSWORD`
+repository secrets (or the equivalent secret-manager integration). No Nexus
+host, username, password, or credential names are assumed by this repository.
 
 ---
 

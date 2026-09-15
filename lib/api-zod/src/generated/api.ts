@@ -44,7 +44,8 @@ export const LoginResponse = zod.object({
     ]),
   ),
   departmentIds: zod.array(zod.number()),
-  source: zod.enum(["LOCAL", "LDAP", "KERBEROS"]),
+  source: zod.enum(["LOCAL", "LDAP", "ADFS"]),
+  mustChangePassword: zod.boolean(),
 });
 
 /**
@@ -81,7 +82,6 @@ export const GetPublicAuthConfigResponse = zod.object({
   logoDataUrl: zod.string().nullish(),
   ldap: zod.object({
     enabled: zod.boolean(),
-    kerberosEnabled: zod.boolean(),
   }),
   adfs: zod.object({
     enabled: zod.boolean(),
@@ -123,7 +123,8 @@ export const GetSessionResponse = zod.object({
         ]),
       ),
       departmentIds: zod.array(zod.number()),
-      source: zod.enum(["LOCAL", "LDAP", "KERBEROS"]),
+      source: zod.enum(["LOCAL", "LDAP", "ADFS"]),
+      mustChangePassword: zod.boolean(),
     })
     .nullish(),
 });
@@ -136,47 +137,6 @@ export const changePasswordBodyNewPasswordMin = 6;
 export const ChangePasswordBody = zod.object({
   currentPassword: zod.string(),
   newPassword: zod.string().min(changePasswordBodyNewPasswordMin),
-});
-
-/**
- * Browsers send the user's Kerberos ticket via the
-`Authorization: Negotiate <base64-token>` header. When no header
-is present we reply with `401 WWW-Authenticate: Negotiate` to
-trigger the browser's automatic retry. When a token is present
-and the server has been provisioned with a keytab + SPN, we step
-through SPNEGO and create/upgrade the matching local user.
-
- * @summary Kerberos / SPNEGO single-sign-on handshake
- */
-export const KerberosNegotiateHeader = zod.object({
-  Authorization: zod
-    .string()
-    .optional()
-    .describe("Negotiate token from the browser, base64-encoded."),
-});
-
-export const KerberosNegotiateResponse = zod.object({
-  id: zod.number(),
-  username: zod.string(),
-  displayName: zod.string(),
-  email: zod.string().nullish(),
-  roles: zod.array(
-    zod.enum([
-      "ADMIN",
-      "FINANCIAL_ALL",
-      "FINANCIAL_Achat",
-      "FINANCIAL_INVOICE",
-      "FINANCIAL_PAYMENT",
-      "DEPT_MANAGER",
-      "DEPT_USER",
-      "GT_INVEST",
-      "GT_INVEST_NOTIFICATIONS",
-      "READ_ONLY_DEPT",
-      "READ_ONLY_ALL",
-    ]),
-  ),
-  departmentIds: zod.array(zod.number()),
-  source: zod.enum(["LOCAL", "LDAP", "KERBEROS"]),
 });
 
 export const ListUsersResponseItem = zod.object({
@@ -200,7 +160,8 @@ export const ListUsersResponseItem = zod.object({
     ]),
   ),
   departmentIds: zod.array(zod.number()),
-  source: zod.enum(["LOCAL", "LDAP"]),
+  source: zod.enum(["LOCAL", "LDAP", "ADFS"]),
+  mustChangePassword: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
@@ -277,7 +238,8 @@ export const UpdateUserResponse = zod.object({
     ]),
   ),
   departmentIds: zod.array(zod.number()),
-  source: zod.enum(["LOCAL", "LDAP"]),
+  source: zod.enum(["LOCAL", "LDAP", "ADFS"]),
+  mustChangePassword: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
 
@@ -3318,8 +3280,6 @@ export const GetSettingsResponse = zod.object({
     displayNameAttribute: zod.string().nullish(),
     emailAttribute: zod.string().nullish(),
     groupMembershipAttribute: zod.string().nullish(),
-    kerberosEnabled: zod.boolean(),
-    servicePrincipalName: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
     groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),
@@ -3437,8 +3397,6 @@ export const UpdateSettingsBody = zod.object({
       displayNameAttribute: zod.string().nullish(),
       emailAttribute: zod.string().nullish(),
       groupMembershipAttribute: zod.string().nullish(),
-      kerberosEnabled: zod.boolean().nullish(),
-      servicePrincipalName: zod.string().nullish(),
       groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
       groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
     })
@@ -3525,8 +3483,6 @@ export const UpdateSettingsResponse = zod.object({
     displayNameAttribute: zod.string().nullish(),
     emailAttribute: zod.string().nullish(),
     groupMembershipAttribute: zod.string().nullish(),
-    kerberosEnabled: zod.boolean(),
-    servicePrincipalName: zod.string().nullish(),
     groupRoleMap: zod.record(zod.string(), zod.string()).optional(),
     groupDepartmentMap: zod.record(zod.string(), zod.string()).optional(),
   }),
@@ -4196,4 +4152,31 @@ export const ArchiveAttachmentsResponse = zod.object({
   bytesFreed: zod
     .number()
     .describe("Sum of `size_bytes` across every removed document and version."),
+});
+
+/**
+ * @summary Stream an authenticated encrypted database backup
+ */
+export const downloadAdminBackupHeaderXBackupPassphraseMin = 12;
+
+export const DownloadAdminBackupHeader = zod.object({
+  "X-Backup-Passphrase": zod
+    .string()
+    .min(downloadAdminBackupHeaderXBackupPassphraseMin)
+    .describe("Operator passphrase; never persisted or logged."),
+});
+
+/**
+ * @summary Restore a password-protected encrypted database backup
+ */
+export const restoreAdminBackupBodyPassphraseMin = 12;
+
+export const RestoreAdminBackupBody = zod.object({
+  file: zod.instanceof(File),
+  passphrase: zod.string().min(restoreAdminBackupBodyPassphraseMin),
+});
+
+export const RestoreAdminBackupResponse = zod.object({
+  ok: zod.boolean(),
+  restoredRows: zod.number(),
 });

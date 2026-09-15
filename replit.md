@@ -7,7 +7,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
+- **Node.js version**: 20 (matching the production Docker image and CI)
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
@@ -52,8 +52,9 @@ Internal web application to manage purchasing workflows from initial quote reque
 - Local user accounts + LDAPS/Active Directory users and nested groups
 - CA/Issuer certificate import in admin area for LDAPS TLS validation
 - Option to skip LDAPS certificate verification (toggle in settings)
-- Kerberos SSO (silent login for domain-joined machines on Edge/Firefox) with LDAP login form fallback
-- App URL must be added to browser Intranet Zone / trusted sites list for Kerberos to work
+- AD FS OIDC (Authorization Code + PKCE) is the intended primary SSO method
+- LDAPS/Active Directory remains available for directory authentication and
+  group-to-role/department mapping
 
 ---
 

@@ -26,27 +26,17 @@ import {
 } from "openid-client";
 import type { Request } from "express";
 import type { AppSettings, AdfsConfigStored } from "./settings";
+import {
+  decryptSettingSecret,
+  encryptSettingSecret,
+  isSettingSecretEnvelope,
+} from "./secret-crypto";
 
 export const ADFS_PROVIDER = "adfs";
 export const ADFS_STATE_COOKIE = "investflow_adfs_state";
 export const ADFS_LOGIN_COOKIE = "investflow_login_method";
 const STATE_TTL_SECONDS = 5 * 60;
 const MAX_RETURN_TARGET_LENGTH = 2048;
-
-export function validateAdfsCsrf(
-  header: unknown,
-  cookie: unknown,
-  sessionToken: unknown,
-): boolean {
-  return (
-    typeof header === "string" &&
-    typeof cookie === "string" &&
-    typeof sessionToken === "string" &&
-    header.length > 0 &&
-    header === cookie &&
-    header === sessionToken
-  );
-}
 
 export function adfsLoginMethodCookie(secure: boolean, maxAge = 31536000): string {
   return `${ADFS_LOGIN_COOKIE}=adfs; Max-Age=${maxAge}; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
@@ -82,13 +72,28 @@ function unb64url(value: string): Buffer {
 
 /** Authenticated encryption for the optional confidential-client secret. */
 export function encryptAdfsClientSecret(secret: string): string {
+  return encryptSettingSecret(secret, "adfs.clientSecret");
+  /*
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", secretKey(), iv);
   const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
   return `v1.${b64url(iv)}.${b64url(cipher.getAuthTag())}.${b64url(ciphertext)}`;
+  */
 }
 
 export function decryptAdfsClientSecret(encoded: string): string | null {
+  if (isSettingSecretEnvelope(encoded)) {
+    try {
+      return decryptSettingSecret(encoded, "adfs.clientSecret");
+    } catch {
+      return null;
+    }
+  }
+  if (process.env.NODE_ENV === "production" && !process.env.SETTINGS_ENCRYPTION_KEY?.trim()) {
+    return null;
+  }
+  // Compatibility with the historical v1 format, which was encrypted using
+  // the session signing key. New writes always use SETTINGS_ENCRYPTION_KEY.
   try {
     const [, ivText, tagText, ciphertextText] = encoded.split(".");
     if (!ivText || !tagText || !ciphertextText) return null;

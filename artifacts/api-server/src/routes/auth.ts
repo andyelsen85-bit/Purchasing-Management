@@ -7,14 +7,24 @@ import {
   userDepartmentsTable,
 } from "@workspace/db";
 import { LoginBody } from "@workspace/api-zod";
-import { verifyPassword, hashPassword, establishAuthenticatedSession } from "../lib/auth";
+import {
+  verifyPassword,
+  hashPassword,
+  establishAuthenticatedSession,
+  passwordHashForVerification,
+} from "../lib/auth";
 import type { Role, SessionUser } from "../lib/auth";
 import { sql } from "drizzle-orm";
-import { ldapAuthenticate, lookupLdapGroups } from "../lib/ldap";
+import { ldapAuthenticate } from "../lib/ldap";
 import { getSettings } from "../lib/settings";
 import { audit } from "../lib/audit";
 import { requireAuth } from "../middlewares/auth";
+import { issueCsrfCookie } from "../middlewares/csrf";
 import { randomBytes } from "node:crypto";
+import {
+  normalizeLoginUsername,
+  ProgressiveFailureLimiter,
+} from "../lib/rate-limit";
 import {
   ADFS_PROVIDER,
   ADFS_STATE_COOKIE,
@@ -44,6 +54,8 @@ import {
 const router: IRouter = Router();
 
 const consumedAdfsStates = new Map<string, number>();
+const loginLimiter = new ProgressiveFailureLimiter();
+const GENERIC_LOGIN_FAILURE = "Identifiants invalides";
 function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (header ?? "").split(";")) {
@@ -78,7 +90,7 @@ function redirectFailure(res: import("express").Response, secure: boolean, code 
 }
 
 function isSecureRequest(req: import("express").Request): boolean {
-  return req.secure || req.headers["x-forwarded-proto"] === "https";
+  return req.secure;
 }
 
 async function buildSessionUser(userId: number): Promise<SessionUser | null> {
@@ -99,6 +111,7 @@ async function buildSessionUser(userId: number): Promise<SessionUser | null> {
     roles: (u.roles as Role[]) ?? [],
     departmentIds: depts.map((d) => d.departmentId),
     source: u.source,
+    mustChangePassword: !!u.mustChangePassword,
   };
 }
 
@@ -267,6 +280,7 @@ router.get("/auth/adfs/callback", async (req, res): Promise<void> => {
     // The ordinary express session is created only after openid-client has
     // validated state, nonce, issuer, audience, signature, and expiry.
     await establishAuthenticatedSession(req, user);
+    issueCsrfCookie(req, res);
     res.append(
       "Set-Cookie",
       adfsLoginMethodCookie(secure),
@@ -278,8 +292,8 @@ router.get("/auth/adfs/callback", async (req, res): Promise<void> => {
 });
 
 router.get("/auth/csrf", requireAuth, async (req, res): Promise<void> => {
-  const token = req.session.adfsCsrfToken ?? randomBytes(32).toString("base64url");
-  req.session.adfsCsrfToken = token;
+  const token = req.session.csrfToken ?? randomBytes(32).toString("base64url");
+  req.session.csrfToken = token;
   res.cookie("investflow_csrf", token, {
     httpOnly: false,
     sameSite: "lax",
@@ -292,10 +306,18 @@ router.get("/auth/csrf", requireAuth, async (req, res): Promise<void> => {
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: GENERIC_LOGIN_FAILURE });
     return;
   }
   const { username, password } = parsed.data;
+  const normalizedUsername = normalizeLoginUsername(username);
+  const limiterKeys = [`ip:${req.ip}`, `user:${normalizedUsername}`];
+  const loginLimit = loginLimiter.check(limiterKeys);
+  if (!loginLimit.allowed) {
+    res.setHeader("Retry-After", String(loginLimit.retryAfterSeconds));
+    res.status(429).json({ error: "Identifiants invalides" });
+    return;
+  }
 
   const settings = await getSettings();
   const ldapConfigured = !!settings.ldap?.enabled && !!settings.ldap?.host;
@@ -317,8 +339,16 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       const useDeptMap = hasMapping(deptMap);
       const derivedRoles = useRoleMap ? mapGroupsToRoles(groups, roleMap) : null;
       if (useRoleMap && derivedRoles !== null && derivedRoles.length === 0) {
-        await audit(null, "LOGIN_FAILED", "user", undefined, `LDAP: ${username}`, req.ip);
-        res.status(401).json({ error: "Aucun groupe AD ne correspond à un rôle autorisé" });
+        loginLimiter.recordFailure(limiterKeys);
+        await audit(
+          null,
+          "LOGIN_FAILED",
+          "user",
+          undefined,
+          "LDAP group mapping denied",
+          req.ip,
+        );
+        res.status(401).json({ error: GENERIC_LOGIN_FAILURE });
         return;
       }
       const derivedDeptIds = useDeptMap
@@ -366,15 +396,19 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       .select()
       .from(usersTable)
       .where(eq(usersTable.username, username));
-    if (row?.passwordHash) {
-      const ok = await verifyPassword(password, row.passwordHash);
-      if (ok) user = await buildSessionUser(row.id);
+    const ok = await verifyPassword(
+      password,
+      passwordHashForVerification(row?.passwordHash),
+    );
+    if (row && ok) {
+      user = await buildSessionUser(row.id);
     }
   }
 
   if (!user) {
+    loginLimiter.recordFailure(limiterKeys);
     await audit(null, "LOGIN_FAILED", "user", undefined, username, req.ip);
-    res.status(401).json({ error: "Identifiants invalides" });
+    res.status(401).json({ error: GENERIC_LOGIN_FAILURE });
     return;
   }
 
@@ -394,187 +428,27 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const hasDept = user.departmentIds.length > 0;
 
   if (!hasAnyRole || (!hasAllDeptRole && !hasDept)) {
-    await audit(user.id, "LOGIN_FAILED", "user", user.id, "no-permission", req.ip);
-    res.status(403).json({
-      error:
-        "Accès refusé. Votre compte n'est associé à aucun département ni à aucun rôle. Contactez votre administrateur.",
-    });
-    return;
-  }
-
-  await establishAuthenticatedSession(req, user);
-  await audit(user.id, "LOGIN", "user", user.id, undefined, req.ip);
-  res.json(user);
-});
-
-/**
- * Kerberos / SPNEGO negotiate endpoint.
- *
- * On a domain-joined Windows host the browser will automatically attach an
- * `Authorization: Negotiate <base64-spnego>` header. When that header is
- * present we forward the token to the configured Kerberos backend (set up
- * via lib/auth.ts; in this environment the keytab is not provisioned, so
- * the call returns 501 with a clear hint).
- *
- * When the header is missing we reply with `401 WWW-Authenticate: Negotiate`,
- * which is the standard handshake that triggers the browser to retry with
- * its Kerberos ticket.
- */
-router.get("/auth/negotiate", async (req, res): Promise<void> => {
-  // Load settings first so we know whether to even issue the SPNEGO challenge.
-  // Sending WWW-Authenticate: Negotiate when Kerberos isn't configured causes
-  // the browser to attempt a full ticket exchange and potentially show an auth
-  // dialog — we must short-circuit before that happens.
-  const settings = await getSettings();
-
-  const spn = process.env.KRB5_SPN ?? settings.ldap?.servicePrincipalName ?? "";
-  const hasKeytab = Boolean(process.env.KRB5_KEYTAB);
-  const kerberosReady = !!settings.ldap?.kerberosEnabled && !!spn && hasKeytab;
-
-  const authHeader = req.headers["authorization"];
-  const hasToken = !!authHeader && /^Negotiate\s+/i.test(authHeader);
-
-  if (!hasToken) {
-    if (!kerberosReady) {
-      res.status(401).json({ error: "Kerberos not configured on this server" });
-      return;
-    }
-    res.setHeader("WWW-Authenticate", "Negotiate");
-    res.status(401).json({ error: "Negotiate required" });
-    return;
-  }
-
-  if (!kerberosReady) {
-    res.status(501).json({
-      error:
-        "Kerberos backend not configured on this server. Set KRB5_KEYTAB and configure the SPN in Settings → LDAP, or use the LDAP/local form login.",
-    });
-    return;
-  }
-
-  const header = authHeader;
-
-  // Try to dynamically load the optional `kerberos` native module. It is
-  // only present on hosts that have built it against libkrb5 — so we
-  // gracefully degrade when it is missing rather than blowing up at boot.
-  type KerberosCtx = {
-    step: (token: string) => Promise<string | null | undefined>;
-    username: string;
-  };
-  type KerberosModule = {
-    initializeServer: (spn: string) => Promise<KerberosCtx>;
-  };
-  let kerberosMod: KerberosModule | null = null;
-  try {
-    // The `kerberos` package has no bundled types and is intentionally
-    // optional, so we resolve it via a runtime-only specifier and then
-    // narrow it through our local interface.
-    const specifier = "kerberos";
-    const loaded: unknown = await import(/* @vite-ignore */ specifier);
-    kerberosMod = loaded as KerberosModule;
-  } catch {
-    res.status(501).json({
-      error:
-        "Kerberos native module is not installed on this server. Install the `kerberos` npm package (requires libkrb5 / MIT-Kerberos) and restart.",
-    });
-    return;
-  }
-
-  const token = header!.replace(/^Negotiate\s+/i, "").trim();
-  try {
-    const ctx = await kerberosMod!.initializeServer(spn);
-    const next = await ctx.step(token);
-    if (next) res.setHeader("WWW-Authenticate", `Negotiate ${next}`);
-    const principal = ctx.username; // user@REALM
-    const username = principal.split("@")[0];
-    if (!username) {
-      res.status(401).json({ error: "Empty principal" });
-      return;
-    }
-    // Find or create the user, mark source as KERBEROS.
-    const [existing] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.username, username));
-    // Apply AD group → role/department mapping. Kerberos doesn't expose
-    // group memberships, so we have to do a follow-up bind-only LDAP
-    // search. If LDAP isn't configured at all (no host/bind creds) we
-    // can't apply mapping and we leave existing roles/departments alone;
-    // when LDAP *is* configured the mapping becomes authoritative just
-    // like the LDAP login path — empty groups means "user is in nothing
-    // mapped" and we revoke accordingly.
-    const ldapCfg = settings.ldap ?? {};
-    const ldapAvailable =
-      !!ldapCfg.host && !!ldapCfg.bindDn && !!ldapCfg.bindPassword;
-    const kerbRoleMap = ldapCfg.groupRoleMap;
-    const kerbDeptMap = ldapCfg.groupDepartmentMap;
-    const useKerbRoleMap = ldapAvailable && hasMapping(kerbRoleMap);
-    const useKerbDeptMap = ldapAvailable && hasMapping(kerbDeptMap);
-    const kerbGroups =
-      useKerbRoleMap || useKerbDeptMap
-        ? await lookupLdapGroups(ldapCfg, username)
-        : [];
-    const kerbRoles = useKerbRoleMap
-      ? mapGroupsToRoles(kerbGroups, kerbRoleMap)
-      : null;
-    // When role mapping is configured, a user with no matching group has no
-    // authorised role and must not be allowed in.
-    if (useKerbRoleMap && kerbRoles !== null && kerbRoles.length === 0) {
-      await audit(null, "LOGIN_FAILED", "user", undefined, `KERBEROS: ${username}`, req.ip);
-      res.status(401).json({ error: "Aucun groupe AD ne correspond à un rôle autorisé" });
-      return;
-    }
-    const kerbDeptIds = useKerbDeptMap
-      ? await mapGroupsToDepartmentIds(kerbGroups, kerbDeptMap)
-      : null;
-    let userRow = existing;
-    if (!userRow) {
-      const [created] = await db
-        .insert(usersTable)
-        .values({
-          username,
-          displayName: username,
-          source: "KERBEROS",
-          roles: kerbRoles ?? ["DEPT_USER"],
-        })
-        .returning();
-      userRow = created;
-      if (created && kerbDeptIds !== null)
-        await syncUserDepartments(created.id, kerbDeptIds);
-    } else {
-      const update: Record<string, unknown> = {};
-      if (existing.source !== "KERBEROS") update.source = "KERBEROS";
-      if (kerbRoles !== null) update.roles = kerbRoles;
-      if (Object.keys(update).length > 0) {
-        await db.update(usersTable).set(update).where(eq(usersTable.id, existing.id));
-      }
-      if (kerbDeptIds !== null)
-        await syncUserDepartments(existing.id, kerbDeptIds);
-    }
-    if (!userRow) {
-      res.status(500).json({ error: "Failed to provision user" });
-      return;
-    }
-    const sessionUser = await buildSessionUser(userRow.id);
-    if (!sessionUser) {
-      res.status(500).json({ error: "Failed to load user" });
-      return;
-    }
-    await establishAuthenticatedSession(req, sessionUser);
+    loginLimiter.recordFailure(limiterKeys);
     await audit(
-      sessionUser.id,
-      "LOGIN",
+      user.id,
+      "LOGIN_FAILED",
       "user",
-      sessionUser.id,
-      "kerberos",
+      user.id,
+      "Authenticated account lacks login authorization",
       req.ip,
     );
-    res.json(sessionUser);
-  } catch (err) {
-    res.status(401).json({
-      error: `Kerberos negotiation failed: ${(err as Error).message}`,
-    });
+    res.status(401).json({ error: GENERIC_LOGIN_FAILURE });
+    return;
   }
+
+  // A successful account authentication proves only this username's
+  // credential; retain aggregate IP history so distributed account spraying
+  // cannot erase the IP-level signal.
+  loginLimiter.reset([`user:${normalizedUsername}`]);
+  await establishAuthenticatedSession(req, user);
+  issueCsrfCookie(req, res);
+  await audit(user.id, "LOGIN", "user", user.id, undefined, req.ip);
+  res.json(user);
 });
 
 /**
@@ -599,7 +473,7 @@ router.get("/auth/setup-status", async (_req, res): Promise<void> => {
 
 /**
  * Public, unauthenticated subset of the app settings needed by the
- * login page (logo, app name, whether AD/LDAP and Kerberos are
+ * login page (logo, app name, whether AD/LDAP and AD FS are
  * enabled). The full GET /settings endpoint requires auth, but the
  * login form must know whether to show the "Use Active Directory"
  * toggle and the SSO probe before the user has signed in. Only
@@ -613,7 +487,6 @@ router.get("/auth/public-config", async (_req, res): Promise<void> => {
     logoDataUrl: s.logoDataUrl ?? null,
     ldap: {
       enabled: !!s.ldap?.enabled,
-      kerberosEnabled: !!s.ldap?.kerberosEnabled,
     },
     adfs: {
       enabled: !!s.adfs?.enabled,
@@ -663,6 +536,7 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
         displayName,
         email,
         passwordHash,
+          mustChangePassword: true,
         roles: ["ADMIN", "FINANCIAL_ALL"],
         source: "LOCAL",
       })
@@ -690,6 +564,7 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
     return;
   }
   await establishAuthenticatedSession(req, sessionUser);
+  issueCsrfCookie(req, res);
   await audit(
     sessionUser.id,
     "SETUP_ADMIN",
@@ -719,7 +594,7 @@ router.post(
   async (req, res): Promise<void> => {
     const sessionUser = req.session!.user!;
 
-    // LDAP / Kerberos accounts are managed by the directory — they cannot
+    // LDAP accounts are managed by the directory — they cannot
     // change their password through this app.
     if (sessionUser.source !== "LOCAL") {
       res.status(403).json({
@@ -768,8 +643,9 @@ router.post(
     const newHash = await hashPassword(newPassword);
     await db
       .update(usersTable)
-      .set({ passwordHash: newHash })
+      .set({ passwordHash: newHash, mustChangePassword: false })
       .where(eq(usersTable.id, sessionUser.id));
+    req.session.user = { ...sessionUser, mustChangePassword: false };
     await audit(
       sessionUser.id,
       "CHANGE_PASSWORD",
