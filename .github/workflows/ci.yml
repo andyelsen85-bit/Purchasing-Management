@@ -38,6 +38,11 @@ jobs:
 
       - name: API tests
         run: pnpm --filter @workspace/api-server test
+        env:
+          # Unit tests import the DB package for schema/query objects but never
+          # connect. CI has no provisioned database, so provide a non-secret,
+          # intentionally unreachable URL to satisfy module initialization.
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
 
       - name: Frontend tests
         run: pnpm --filter @workspace/purchasing-management test
