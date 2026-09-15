@@ -228,13 +228,13 @@ normal production use.
 | ---------------- | :------: | ------- | --------------------------------------------------------------------------- |
 | `DATABASE_URL`   | ✅       | —       | PostgreSQL connection string.                                               |
 | `SESSION_SECRET` | ⚠️       | auto    | Cookie-session signing key. ≥32 chars. Auto-generated & persisted in Docker.|
-| `SETTINGS_ENCRYPTION_KEY` | ✅ production | — | 32-byte hex/base64url key for AES-256-GCM encryption of SMTP, LDAP, and AD FS secrets; keep independent from `SESSION_SECRET`. |
+| `SETTINGS_ENCRYPTION_KEY` | override | auto | 32-byte hex/base64url key for AES-256-GCM encryption of SMTP, LDAP, and AD FS secrets; generated in persistent `STATE_DIR` when omitted. |
 | `CORS_ORIGINS` |          | same origin | Comma-separated production origin allowlist when the SPA and API are separated. |
 | `PORT`           |          | `80`    | Plain HTTP port (also used for the HTTP→HTTPS redirect).                    |
 | `HTTPS_PORT`     |          | `443`   | TLS port (active once a certificate has been imported in-app).              |
 | `NODE_ENV`       |          | `production` in image | Toggles dev tooling.                                                |
 | `WEB_DIST`       |          | `/app/web/dist` (image) | Path to the built SPA, served by the API.                              |
-| `STATE_DIR`      |          | `/app/state` (image) | Where uploads, certs and the secret-file live.                          |
+| `STATE_DIR`      |          | `/app/state` (image) | Persistent location for generated runtime keys and other state.        |
 | `UPLOADS_DIR`     |          | `/app/state/uploads` (image) | Persistent uploaded document directory. |
 | `CERTS_DIR`       |          | `/app/state/certs` (image) | Persistent TLS certificate/private-key directory. |
 
@@ -688,13 +688,14 @@ Volumes:
 | Volume        | Mounted at            | Purpose                                |
 | ------------- | --------------------- | -------------------------------------- |
 | `db-data`     | `/var/lib/postgresql` | PostgreSQL data dir.                   |
-| `app-state`   | `/app/state`          | Session secret, runtime state.         |
+| `app-state`   | `/app/state`          | Generated session/settings keys and runtime state. |
 | `app-uploads` | `/app/state/uploads`  | Uploaded documents.                    |
 | `app-certs`   | `/app/state/certs`    | TLS material (private keys + chains).  |
 
 Default seeded admin: `admin` / `admin` — **change immediately before normal
-use**. Production operators must also provide the externally managed
-`DATABASE_URL`, `SESSION_SECRET`, and `SETTINGS_ENCRYPTION_KEY`.
+use**. Production operators must provide the externally managed
+`DATABASE_URL`. Runtime keys are generated in `/app/state` when they are not
+provided explicitly, so that location must use persistent storage.
 
 See [`DEPLOY.md`](./DEPLOY.md) for the full operator guide and troubleshooting
 notes.
@@ -715,7 +716,7 @@ Nexus should pull a chosen immutable GHCR tag, then mirror it with its own
 Nexus credentials:
 
 ```bash
-export GHCR_IMAGE=ghcr.io/<lowercase-owner>/<repo>
+export GHCR_IMAGE=ghcr.io/<lowercase-owner>/purchasing-management-app
 export NEXUS_REGISTRY=nexus.example.invalid
 export NEXUS_REPOSITORY=docker-hosted
 export IMAGE_TAG=sha-<commit>

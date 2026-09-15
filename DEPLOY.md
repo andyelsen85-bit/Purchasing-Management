@@ -10,21 +10,27 @@ network controls, monitoring, backups, retention, and recovery procedures.
 Set `DATABASE_URL` to that service through the deployment secret manager.
 
 The default CI/publishing destination is GHCR:
-`ghcr.io/<lowercase-owner>/<repository>`. Pushes to `main` and version tags
+`ghcr.io/<lowercase-owner>/purchasing-management-app`. Pushes to `main` and version tags
 publish branch/version tags and immutable `sha-<commit>` tags. See the README
 for the organization-managed GHCR-to-Nexus mirror procedure; this repository
 does not contain Nexus credentials or assume a Nexus hostname.
 
-## 1. (Optional) Provide your own `SESSION_SECRET`
+## 1. (Optional) Provide your own runtime keys
 
 You can skip this step. By default the container's entrypoint generates a
 cryptographically strong 64-character `SESSION_SECRET` on first boot and
 persists it inside the `app-state` Docker volume
 (`/app/state/session_secret`), so it survives restarts and rebuilds.
+It independently generates `SETTINGS_ENCRYPTION_KEY` and persists it at
+`/app/state/settings_encryption_key`.
 
-If you'd rather manage the secret yourself (e.g. to share it across
-multiple replicas or store it in a secrets manager), create a `.env` file
-next to `docker-compose.yml`:
+The state volume must be persistent. Losing it invalidates active sessions
+and makes encrypted SMTP, LDAP, and AD FS settings unreadable. For multiple
+replicas, provide the same operator-managed keys to every replica instead
+of relying on per-container generation.
+
+If you'd rather manage the keys yourself, create a `.env` file next to
+`docker-compose.yml`:
 
 **Using the helper scripts:**
 
@@ -41,7 +47,7 @@ cp .env.example .env
 #   SESSION_SECRET=$(openssl rand -hex 32)
 ```
 
-Also set an independent settings-encryption key:
+Optionally set an independent settings-encryption key:
 
 ```bash
 SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)
@@ -92,8 +98,8 @@ Provide these values through a secret manager or protected environment:
 | Variable | Production expectation |
 | --- | --- |
 | `DATABASE_URL` | CHdN-managed PostgreSQL connection string; never the local Compose database. |
-| `SESSION_SECRET` | At least 32 random characters, unique per environment. |
-| `SETTINGS_ENCRYPTION_KEY` | 32-byte hex or base64url key, independent from `SESSION_SECRET`; encrypts SMTP, LDAP, and AD FS secrets with AES-256-GCM. |
+| `SESSION_SECRET` | Optional override: at least 32 random characters, unique per environment. Otherwise generated in `STATE_DIR`. |
+| `SETTINGS_ENCRYPTION_KEY` | Optional override: 32-byte hex or base64url key, independent from `SESSION_SECRET`. Otherwise generated in `STATE_DIR`. |
 | `NODE_ENV` | `production`. |
 | `CORS_ORIGINS` | Explicit origins when SPA and API are split; same-origin is preferred. |
 | `PORT`, `HTTPS_PORT` | HTTP/HTTPS listener ports as required by the edge. |
@@ -124,10 +130,10 @@ local `db-data` volume is not that policy.
 
 ## Troubleshooting
 
-**`required variable SESSION_SECRET is missing a value`**
-You did not create a `.env` file (or it lives in a different directory than
-the one you ran `docker compose` from). Run `cp .env.example .env`, edit it,
-and re-run `docker compose up -d`.
+**Generated runtime keys change after a pod replacement**
+The `/app/state` mount is not persistent. Mount a persistent volume at
+`/app/state`, or provide operator-managed `SESSION_SECRET` and
+`SETTINGS_ENCRYPTION_KEY` values shared by all replicas.
 
 **`SESSION_SECRET must be at least 32 characters`**
 The value in `.env` is too short or matches a known placeholder
