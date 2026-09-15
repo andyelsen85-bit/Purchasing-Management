@@ -43,9 +43,9 @@ services:
       # `app-state` volume (at /app/state/session_secret), so the same
       # secret survives restarts and image rebuilds.
       SESSION_SECRET: ${SESSION_SECRET:-}
-      # SETTINGS_ENCRYPTION_KEY is also optional for this single-replica
-      # stack. The entrypoint generates an independent key on first boot
-      # and persists it at /app/state/settings_encryption_key.
+      # Deprecated migration-only input. Fresh/current deployments leave this
+      # empty. Upgrades with scv1 settings may supply their former key for one
+      # successful boot so values can be rewritten to the no-key scv2 format.
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       WEB_DIST: /app/web/dist
     ports:

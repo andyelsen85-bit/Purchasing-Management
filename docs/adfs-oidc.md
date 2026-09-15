@@ -22,8 +22,8 @@ document can be supplied with `ADFS_DISCOVERY_URL`.
 Use an Authorization Code OIDC application. Enable PKCE and register the
 redirect URI above. A public client does not have a secret; leave the secret
 blank and InvestFlow uses `none` client authentication. A confidential client
-uses `client_secret_post`; the secret is authenticated-encrypted with a key
-derived from `SESSION_SECRET` before it is stored. The secret and CA
+uses `client_secret_post`; the secret is authenticated-encrypted with the
+application's compatibility key before it is stored. The secret and CA
 certificate are never returned by the API.
 
 Request only these scopes (or a subset that includes the mandatory `openid`):

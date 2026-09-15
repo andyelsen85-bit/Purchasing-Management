@@ -89,11 +89,8 @@ export function decryptAdfsClientSecret(encoded: string): string | null {
       return null;
     }
   }
-  if (process.env.NODE_ENV === "production" && !process.env.SETTINGS_ENCRYPTION_KEY?.trim()) {
-    return null;
-  }
   // Compatibility with the historical v1 format, which was encrypted using
-  // the session signing key. New writes always use SETTINGS_ENCRYPTION_KEY.
+  // the session signing key.
   try {
     const [, ivText, tagText, ciphertextText] = encoded.split(".");
     if (!ivText || !tagText || !ciphertextText) return null;

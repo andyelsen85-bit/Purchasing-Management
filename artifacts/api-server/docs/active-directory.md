@@ -41,8 +41,8 @@ provide deployment fallbacks using the `ADFS_*` variables in `.env.example`:
 
 Persisted Settings values take precedence over environment fallbacks. The
 client secret and private CA are encrypted before storage and are never
-returned by the API. Production requires `SETTINGS_ENCRYPTION_KEY`, which is
-independent from `SESSION_SECRET`.
+returned by the API. This compatibility version requires no separate settings
+encryption environment variable.
 
 The ID token is accepted only after issuer, audience, signature/JWKS, nonce,
 and expiry validation. The callback state is one-time, HttpOnly, and short
@@ -151,12 +151,11 @@ provider tokens, passwords, or client secrets in issue reports or logs.
 - Rotate the directory bind password in AD, update it in Settings, and test
   the next sign-in. The value is not displayed back to the browser.
 - Replace a directory CA PEM in Settings before the old certificate expires.
-- Rotate `SETTINGS_ENCRYPTION_KEY` only through the organization's secret
-  process and re-save encrypted settings according to the deployment
-  runbook.
+- Restrict access to both the database and application image because the
+  embedded settings compatibility key is not a boundary against joint access.
 - Review group maps and directory memberships whenever a role or department
   changes.
 - Keep AD FS redirect URIs, scopes, claim names, and relying-party
   configuration under change control.
-- Keep `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, and provider secrets out of
-  source control and routine logs.
+- Keep `SESSION_SECRET` and provider secrets out of source control and routine
+  logs.

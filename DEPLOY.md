@@ -15,21 +15,18 @@ publish branch/version tags and immutable `sha-<commit>` tags. See the README
 for the organization-managed GHCR-to-Nexus mirror procedure; this repository
 does not contain Nexus credentials or assume a Nexus hostname.
 
-## 1. (Optional) Provide your own runtime keys
+## 1. Session key handling
 
 You can skip this step. By default the container's entrypoint generates a
 cryptographically strong 64-character `SESSION_SECRET` on first boot and
 persists it inside the `app-state` Docker volume
 (`/app/state/session_secret`), so it survives restarts and rebuilds.
-It independently generates `SETTINGS_ENCRYPTION_KEY` and persists it at
-`/app/state/settings_encryption_key`.
 
-The state volume must be persistent. Losing it invalidates active sessions
-and makes encrypted SMTP, LDAP, and AD FS settings unreadable. For multiple
-replicas, provide the same operator-managed keys to every replica instead
-of relying on per-container generation.
+The state volume must be persistent. Losing it invalidates active sessions.
+For multiple replicas, provide the same operator-managed `SESSION_SECRET` to
+every replica instead of relying on per-container generation.
 
-If you'd rather manage the keys yourself, create a `.env` file next to
+If you'd rather manage the session key yourself, create a `.env` file next to
 `docker-compose.yml`:
 
 **Using the helper scripts:**
@@ -47,17 +44,16 @@ cp .env.example .env
 #   SESSION_SECRET=$(openssl rand -hex 32)
 ```
 
-Optionally set an independent settings-encryption key:
+This compatibility version does not require `SETTINGS_ENCRYPTION_KEY`.
+Persisted SMTP, LDAP, and AD FS values use an embedded compatibility key. This
+prevents plaintext storage but does not protect those values from an attacker
+who has both the database and application image.
 
-```bash
-SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)
-```
-
-This 32-byte AES-256-GCM key protects SMTP passwords, LDAP bind passwords,
-and AD FS client secrets. It must not be reused as `SESSION_SECRET`. Existing
-legacy values are migrated when settings are next saved. To rotate, re-save
-all secret settings after deploying the new key; never print either key in
-logs.
+An upgrade that already contains `scv1` settings encrypted with a former
+operator-managed key should provide that old `SETTINGS_ENCRYPTION_KEY` for one
+successful boot. The startup migration rewrites recoverable values to `scv2`;
+the variable can then be removed. If the former key is unavailable, startup
+continues and the affected secret settings must be entered again.
 
 Docker Compose automatically loads `.env` from the directory you run
 `docker compose` in, so no extra flags are needed.
@@ -99,7 +95,6 @@ Provide these values through a secret manager or protected environment:
 | --- | --- |
 | `DATABASE_URL` | CHdN-managed PostgreSQL connection string; never the local Compose database. |
 | `SESSION_SECRET` | Optional override: at least 32 random characters, unique per environment. Otherwise generated in `STATE_DIR`. |
-| `SETTINGS_ENCRYPTION_KEY` | Optional override: 32-byte hex or base64url key, independent from `SESSION_SECRET`. Otherwise generated in `STATE_DIR`. |
 | `NODE_ENV` | `production`. |
 | `CORS_ORIGINS` | Explicit origins when SPA and API are split; same-origin is preferred. |
 | `PORT`, `HTTPS_PORT` | HTTP/HTTPS listener ports as required by the edge. |
@@ -111,7 +106,8 @@ AD FS fallback variables (`ADFS_ENABLED`, `ADFS_ISSUER` or
 `ADFS_CA_PEM`) are listed in `.env.example`. Persisted Settings values take
 precedence. Register the exact callback documented in
 [`docs/adfs-oidc.md`](./docs/adfs-oidc.md). SMTP and LDAP values are managed
-in Settings and sensitive values require `SETTINGS_ENCRYPTION_KEY`.
+in Settings. This compatibility version does not require a separate settings
+encryption environment variable.
 
 ## 5. Backup retention and encryption
 
@@ -132,8 +128,8 @@ local `db-data` volume is not that policy.
 
 **Generated runtime keys change after a pod replacement**
 The `/app/state` mount is not persistent. Mount a persistent volume at
-`/app/state`, or provide operator-managed `SESSION_SECRET` and
-`SETTINGS_ENCRYPTION_KEY` values shared by all replicas.
+`/app/state`, or provide an operator-managed `SESSION_SECRET` shared by all
+replicas.
 
 **`SESSION_SECRET must be at least 32 characters`**
 The value in `.env` is too short or matches a known placeholder

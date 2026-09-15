@@ -5,7 +5,6 @@ import { decryptSettingSecret } from "./secret-crypto";
 
 test("startup settings migration encrypts legacy secrets and preserves null precedence", () => {
   process.env.NODE_ENV = "development";
-  process.env.SETTINGS_ENCRYPTION_KEY = "55".repeat(32);
   const result = migrateSettingsData({
     appName: "InvestFlow",
     ldap: { bindPassword: "legacy-ldap" },

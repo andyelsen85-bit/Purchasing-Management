@@ -92,8 +92,8 @@ ENV CERTS_DIR=/app/state/certs
 
 EXPOSE 80 443
 
-# Entrypoint auto-generates independent session and settings-encryption
-# keys in the state volume when the operator does not provide them.
+# Entrypoint auto-generates a session key in the state volume when the
+# operator does not provide one.
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

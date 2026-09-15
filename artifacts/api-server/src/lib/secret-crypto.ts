@@ -5,64 +5,61 @@ import {
   randomBytes,
   scryptSync,
 } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 /**
- * Settings secrets deliberately use a key which is unrelated to SESSION_SECRET.
- * Accepted operator formats are exactly 64 hexadecimal characters or a
- * base64/base64url encoding of 32 bytes.  A development-only in-memory-safe
- * fallback is used when NODE_ENV is not production; it never stores plaintext.
+ * Settings secrets use a deterministic compatibility key so this deployment
+ * does not require an operator-managed encryption key. This prevents plaintext
+ * storage but is not protection against an attacker who has both the database
+ * and application image.
  */
 export type SecretContext = "smtp.password" | "ldap.bindPassword" | "adfs.clientSecret";
-const VERSION = "scv1";
+const VERSION = "scv2";
+const LEGACY_VERSION = "scv1";
 const KEY_BYTES = 32;
 const AAD_PREFIX = "investflow/settings/";
+const COMPATIBILITY_KEY = createHash("sha256")
+  .update("investflow-embedded-settings-compatibility-key", "utf8")
+  .digest();
 
 export class SecretCryptoError extends Error {
-  readonly code: "missing-key" | "invalid-key" | "invalid-ciphertext";
+  readonly code: "invalid-ciphertext";
   constructor(code: SecretCryptoError["code"]) {
-    super(
-      code === "missing-key"
-        ? "Settings encryption key is not configured"
-        : code === "invalid-key"
-          ? "Settings encryption key has an invalid format"
-          : "Stored setting secret could not be decrypted",
-    );
+    super("Stored setting secret could not be decrypted");
     this.name = "SecretCryptoError";
     this.code = code;
   }
 }
 
-function production(): boolean {
-  return process.env.NODE_ENV === "production";
+function compatibilityKey(): Buffer {
+  return COMPATIBILITY_KEY;
 }
 
-function keyFromEnvironment(): Buffer {
-  const raw = process.env.SETTINGS_ENCRYPTION_KEY?.trim();
-  if (!raw) {
-    if (production()) throw new SecretCryptoError("missing-key");
-    // Development must remain usable, but this is still encrypted and is
-    // intentionally not derived from SESSION_SECRET.
-    return createHash("sha256")
-      .update("investflow-development-settings-encryption-key", "utf8")
-      .digest();
-  }
-  if (/^[0-9a-f]{64}$/i.test(raw)) return Buffer.from(raw, "hex");
+function parseLegacyKey(raw: string | undefined): Buffer | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  if (/^[0-9a-f]{64}$/i.test(value)) return Buffer.from(value, "hex");
   try {
-    const decoded = Buffer.from(raw, "base64url");
-    if (decoded.length === KEY_BYTES) return decoded;
+    const decoded = Buffer.from(value, "base64url");
+    return decoded.length === KEY_BYTES ? decoded : null;
   } catch {
-    /* handled by the common error below */
+    return null;
   }
-  throw new SecretCryptoError("invalid-key");
 }
 
-/** Fail during module initialization in production, before any listener starts. */
-export function assertSettingsEncryptionKey(): void {
-  if (production()) keyFromEnvironment();
+function legacyKey(): Buffer | null {
+  const environmentKey = parseLegacyKey(process.env.SETTINGS_ENCRYPTION_KEY);
+  if (environmentKey) return environmentKey;
+  const file = process.env.SETTINGS_ENCRYPTION_KEY_FILE ?? "/app/state/settings_encryption_key";
+  try {
+    return parseLegacyKey(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
-function aad(context: SecretContext): Buffer {
-  return Buffer.from(`${AAD_PREFIX}${context}/${VERSION}`, "utf8");
+function aad(context: SecretContext, version = VERSION): Buffer {
+  return Buffer.from(`${AAD_PREFIX}${context}/${version}`, "utf8");
 }
 
 function decodePart(value: string): Buffer {
@@ -73,7 +70,7 @@ function decodePart(value: string): Buffer {
 export function encryptSettingSecret(value: string, context: SecretContext): string {
   if (typeof value !== "string") throw new SecretCryptoError("invalid-ciphertext");
   const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", keyFromEnvironment(), nonce);
+  const cipher = createCipheriv("aes-256-gcm", compatibilityKey(), nonce);
   cipher.setAAD(aad(context));
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   return [VERSION, nonce.toString("base64url"), cipher.getAuthTag().toString("base64url"), ciphertext.toString("base64url")].join(".");
@@ -83,13 +80,18 @@ export function encryptSettingSecret(value: string, context: SecretContext): str
 export function decryptSettingSecret(encoded: string, context: SecretContext): string {
   try {
     const parts = encoded.split(".");
-    if (parts.length !== 4 || parts[0] !== VERSION) throw new Error("format");
+    const version = parts[0];
+    if (parts.length !== 4 || (version !== VERSION && version !== LEGACY_VERSION)) {
+      throw new Error("format");
+    }
     const nonce = decodePart(parts[1]!);
     const tag = decodePart(parts[2]!);
     const ciphertext = decodePart(parts[3]!);
     if (nonce.length !== 12 || tag.length !== 16 || ciphertext.length === 0) throw new Error("format");
-    const decipher = createDecipheriv("aes-256-gcm", keyFromEnvironment(), nonce);
-    decipher.setAAD(aad(context));
+    const key = version === VERSION ? compatibilityKey() : legacyKey();
+    if (!key) throw new Error("legacy-key-unavailable");
+    const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+    decipher.setAAD(aad(context, version));
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch (error) {
@@ -99,21 +101,32 @@ export function decryptSettingSecret(encoded: string, context: SecretContext): s
 }
 
 export function isSettingSecretEnvelope(value: unknown): boolean {
-  return typeof value === "string" && value.startsWith(`${VERSION}.`);
+  return (
+    typeof value === "string" &&
+    (value.startsWith(`${VERSION}.`) || value.startsWith(`${LEGACY_VERSION}.`))
+  );
 }
 
 /**
- * Read a value while identifying legacy plaintext. Legacy values are accepted
- * for migration only; production refuses to expose them without a key.
+ * Read a value while identifying legacy plaintext for migration.
  */
 export function readSettingSecret(
   value: string | null | undefined,
   context: SecretContext,
 ): { value: string | null; legacy: boolean } {
   if (value == null || value === "") return { value: null, legacy: false };
-  if (isSettingSecretEnvelope(value)) return { value: decryptSettingSecret(value, context), legacy: false };
-  if (production() && !process.env.SETTINGS_ENCRYPTION_KEY?.trim()) {
-    throw new SecretCryptoError("missing-key");
+  if (value.startsWith(`${VERSION}.`)) {
+    return { value: decryptSettingSecret(value, context), legacy: false };
+  }
+  if (value.startsWith(`${LEGACY_VERSION}.`)) {
+    try {
+      return { value: decryptSettingSecret(value, context), legacy: true };
+    } catch {
+      // A previous operator key cannot be reconstructed. Keep the ciphertext
+      // in storage, start normally, and let an administrator enter the value
+      // again instead of aborting the entire application.
+      return { value: null, legacy: false };
+    }
   }
   return { value, legacy: true };
 }

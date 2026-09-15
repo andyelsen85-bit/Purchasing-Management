@@ -228,21 +228,23 @@ normal production use.
 | ---------------- | :------: | ------- | --------------------------------------------------------------------------- |
 | `DATABASE_URL`   | ✅       | —       | PostgreSQL connection string.                                               |
 | `SESSION_SECRET` | ⚠️       | auto    | Cookie-session signing key. ≥32 chars. Auto-generated & persisted in Docker.|
-| `SETTINGS_ENCRYPTION_KEY` | override | auto | 32-byte hex/base64url key for AES-256-GCM encryption of SMTP, LDAP, and AD FS secrets; generated in persistent `STATE_DIR` when omitted. |
 | `CORS_ORIGINS` |          | same origin | Comma-separated production origin allowlist when the SPA and API are separated. |
 | `PORT`           |          | `80`    | Plain HTTP port (also used for the HTTP→HTTPS redirect).                    |
 | `HTTPS_PORT`     |          | `443`   | TLS port (active once a certificate has been imported in-app).              |
 | `NODE_ENV`       |          | `production` in image | Toggles dev tooling.                                                |
 | `WEB_DIST`       |          | `/app/web/dist` (image) | Path to the built SPA, served by the API.                              |
-| `STATE_DIR`      |          | `/app/state` (image) | Persistent location for generated runtime keys and other state.        |
+| `STATE_DIR`      |          | `/app/state` (image) | Persistent location for the generated session key and other state.     |
 | `UPLOADS_DIR`     |          | `/app/state/uploads` (image) | Persistent uploaded document directory. |
 | `CERTS_DIR`       |          | `/app/state/certs` (image) | Persistent TLS certificate/private-key directory. |
 
 Runtime configuration (SMTP, LDAPS, Limite X, Logo, GT Invest recipients,
 signing toggle, and AD FS values) is **stored in the database** and managed
 from the **Paramètres** page. The `ADFS_*` variables in `.env.example` are
-safe deployment fallbacks; persisted AD FS settings take precedence. SMTP and
-LDAP passwords are encrypted with `SETTINGS_ENCRYPTION_KEY`.
+safe deployment fallbacks; persisted AD FS settings take precedence. In this
+compatibility version, SMTP, LDAP, and AD FS secrets use an embedded encryption
+key and require no settings-key environment variable.
+For upgrades only, a former `SETTINGS_ENCRYPTION_KEY` may be supplied for one
+boot to migrate existing `scv1` values; it can be removed afterward.
 
 ---
 
@@ -688,7 +690,7 @@ Volumes:
 | Volume        | Mounted at            | Purpose                                |
 | ------------- | --------------------- | -------------------------------------- |
 | `db-data`     | `/var/lib/postgresql` | PostgreSQL data dir.                   |
-| `app-state`   | `/app/state`          | Generated session/settings keys and runtime state. |
+| `app-state`   | `/app/state`          | Generated session key and runtime state. |
 | `app-uploads` | `/app/state/uploads`  | Uploaded documents.                    |
 | `app-certs`   | `/app/state/certs`    | TLS material (private keys + chains).  |
 

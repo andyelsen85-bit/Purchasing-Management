@@ -389,15 +389,20 @@ export function migrateSettingsData(
       migrated += 1;
     }
   }
-  if (
-    typeof adfs.clientSecretEncrypted === "string" &&
-    adfs.clientSecretEncrypted &&
-    !isSettingSecretEnvelope(adfs.clientSecretEncrypted)
-  ) {
-    const legacy = decryptAdfsClientSecret(adfs.clientSecretEncrypted);
-    if (legacy === null) throw new Error("Stored AD FS client secret could not be migrated");
-    adfs.clientSecretEncrypted = encryptAdfsClientSecret(legacy);
-    migrated += 1;
+  if (typeof adfs.clientSecretEncrypted === "string" && adfs.clientSecretEncrypted) {
+    if (isSettingSecretEnvelope(adfs.clientSecretEncrypted)) {
+      const read = readSettingSecret(adfs.clientSecretEncrypted, "adfs.clientSecret");
+      if (read.legacy && read.value) {
+        adfs.clientSecretEncrypted = encryptAdfsClientSecret(read.value);
+        migrated += 1;
+      }
+    } else {
+      const legacy = decryptAdfsClientSecret(adfs.clientSecretEncrypted);
+      if (legacy !== null) {
+        adfs.clientSecretEncrypted = encryptAdfsClientSecret(legacy);
+        migrated += 1;
+      }
+    }
   }
   return { data: { ...original, ldap, smtp, adfs }, migrated };
 }
