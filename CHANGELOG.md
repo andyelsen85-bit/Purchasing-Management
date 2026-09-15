@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.1 — Security baseline documentation and delivery controls
+## 1.2.0 — Security baseline remediation and delivery controls
 
 - Added pull-request/push CI with Node 20, the pinned pnpm toolchain, frozen
   installs, typechecking, API/frontend tests, full builds, and Docker build
