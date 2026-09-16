@@ -1,2 +1,3 @@
 - [Accord de principe workflow](accord-principe-workflow.md) — keep requests at GT Invest until an explicit audited validation resumes the flow; include the decision in the meeting CR.
 - [AD FS HTTP runtime](adfs-http-runtime.md) — keep the AD FS HTTP client compatible with the deployment’s Node 20 runtime; newer Undici releases can fail during module initialization.
+- [Settings encryption rollout](settings-encryption-rollout.md) — the operator-managed key and legacy-secret migration path are confirmed working in the Kubernetes/GitOps deployment.
