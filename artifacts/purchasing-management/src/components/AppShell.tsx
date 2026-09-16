@@ -51,7 +51,7 @@ import { clearAdfsLoginPreference } from "@/lib/auth-flow";
 
 // Version affichée dans la barre latérale. À incrémenter de 0.0.1
 // pour chaque nouvel ajout fonctionnel livré.
-const APP_VERSION = "1.0.9";
+const APP_VERSION = "1.4.0";
 
 interface NavItem {
   to: string;

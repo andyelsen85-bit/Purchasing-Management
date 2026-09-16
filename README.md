@@ -228,6 +228,7 @@ normal production use.
 | ---------------- | :------: | ------- | --------------------------------------------------------------------------- |
 | `DATABASE_URL`   | ✅       | —       | PostgreSQL connection string.                                               |
 | `SESSION_SECRET` | ⚠️       | auto    | Cookie-session signing key. ≥32 chars. Auto-generated & persisted in Docker.|
+| `SETTINGS_ENCRYPTION_KEY` | ✅ | — | Independent 32-byte key for SMTP, LDAP, and AD FS settings; use 64 random hex characters. |
 | `CORS_ORIGINS` |          | same origin | Comma-separated production origin allowlist when the SPA and API are separated. |
 | `PORT`           |          | `80`    | Plain HTTP port (also used for the HTTP→HTTPS redirect).                    |
 | `HTTPS_PORT`     |          | `443`   | TLS port (active once a certificate has been imported in-app).              |
@@ -240,11 +241,10 @@ normal production use.
 Runtime configuration (SMTP, LDAPS, Limite X, Logo, GT Invest recipients,
 signing toggle, and AD FS values) is **stored in the database** and managed
 from the **Paramètres** page. The `ADFS_*` variables in `.env.example` are
-safe deployment fallbacks; persisted AD FS settings take precedence. In this
-compatibility version, SMTP, LDAP, and AD FS secrets use an embedded encryption
-key and require no settings-key environment variable.
-For upgrades only, a former `SETTINGS_ENCRYPTION_KEY` may be supplied for one
-boot to migrate existing `scv1` values; it can be removed afterward.
+safe deployment fallbacks; persisted AD FS settings take precedence. Production
+requires an independent `SETTINGS_ENCRYPTION_KEY` for SMTP, LDAP, and AD FS
+secrets. Values written by the 1.3.0 embedded-key compatibility release are
+automatically migrated to the operator-keyed format at startup.
 
 ---
 
@@ -666,9 +666,9 @@ the published image and an externally managed CHdN PostgreSQL database; do not
 deploy the Compose `db` service as the production database.
 
 ```bash
-# Optional: provide your own SESSION_SECRET (else it is auto-generated)
+# Generate independent session and settings encryption keys
 cp .env.example .env
-# edit .env, set SESSION_SECRET to `openssl rand -hex 32`
+# or run: bash scripts/setup-env.sh
 
 docker compose up -d --build
 ```
@@ -792,7 +792,7 @@ Helper scripts (`scripts/`):
 
 | Script                          | Purpose                                            |
 | ------------------------------- | -------------------------------------------------- |
-| `scripts/setup-env.sh` / `.ps1` | Generate a `.env` with a strong `SESSION_SECRET`.  |
+| `scripts/setup-env.sh` / `.ps1` | Generate a `.env` with independent session and settings encryption keys. |
 
 ---
 

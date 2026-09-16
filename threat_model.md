@@ -35,9 +35,9 @@ service is for local development and test only.
 - **Directory and identity configuration** -- AD FS issuer/client metadata,
   LDAP bind identity, CA certificates, group-to-role mappings, and department
   mappings.  These determine who can enter and what they can approve.
-- **Secrets and cryptographic material** -- `SESSION_SECRET`, encrypted
-  SMTP/LDAP/AD FS secrets, generated TLS private keys, certificate chains, and
-  the signing-agent bearer token.
+- **Secrets and cryptographic material** -- `SESSION_SECRET`,
+  `SETTINGS_ENCRYPTION_KEY`, encrypted SMTP/LDAP/AD FS secrets, generated TLS
+  private keys, certificate chains, and the signing-agent bearer token.
 - **PostgreSQL data and audit evidence** -- users, sessions, settings,
   workflows, documents, history, audit logs, and notification status.  Audit
   records support accountability and must not be silently rewritten.
@@ -155,9 +155,8 @@ valid session and be filtered by role and department.  Admin-only data
 (including audit, settings secrets, TLS state, and backups) MUST never be
 returned to ordinary users.  Uploaded files MUST remain outside the public
 web root, use validated paths/types/size limits, and avoid secrets in logs.
-Production traffic MUST use HTTPS, and database transport and SMTP/LDAP TLS
-MUST be configured. The embedded settings compatibility key is not a security
-boundary when an attacker has both the database and application image.
+Production traffic MUST use HTTPS, database transport and SMTP/LDAP TLS MUST
+be configured, and `SETTINGS_ENCRYPTION_KEY` MUST be independently managed.
 The backup download is an authenticated AES-256-GCM archive, but operators
 MUST still protect its passphrase, use authenticated TLS, restrict access, and
 apply encrypted external retention and deletion.
@@ -193,13 +192,13 @@ arbitrary code execution.
   controlled break-glass path and LDAPS/AD is an explicitly configured
   directory integration.  Kerberos/SPNEGO is retired and MUST NOT be
   reintroduced as a production login path.
-- A production process MUST fail closed without a strong `SESSION_SECRET` and
-  controlled `DATABASE_URL`; deployment secrets MUST not be committed.
+- A production process MUST fail closed without strong `SESSION_SECRET`,
+  `SETTINGS_ENCRYPTION_KEY`, and a controlled `DATABASE_URL`; deployment
+  secrets MUST not be committed.
 - SMTP, LDAP bind, and AD FS client secrets MUST use the versioned
-  authenticated encryption in `lib/secret-crypto.ts`. The accepted
-  compatibility risk is that its embedded key does not protect against joint
-  database-and-image compromise. Plaintext legacy values MUST be migrated and
-  MUST not be exposed in production.
+  authenticated encryption in `lib/secret-crypto.ts` with the independently
+  managed settings key. Plaintext and embedded-key legacy values MUST be
+  migrated and MUST not be exposed in production.
 - All authenticated state-changing requests MUST have CSRF protection
   appropriate to the deployed client, in addition to same-origin/CORS
   controls.  This requirement must be verified in route tests; documentation
@@ -233,9 +232,6 @@ arbitrary code execution.
 - Multi-factor authentication, immutable external audit storage, and database
   high-availability are deployment or organizational controls, not claimed by
   this application baseline.
-- SMTP, LDAP, and AD FS settings use an embedded deterministic compatibility
-  key so deployments do not require a separate settings key. This is accepted
-  only with restricted access to both the database and application image.
 
 ## Operational Responsibilities
 
@@ -246,8 +242,9 @@ network restrictions, encryption, patching, monitoring, tested backups, and
 recovery objectives; the local Compose database does not satisfy those
 requirements.
 
-Operators must inject or persist a strong `SESSION_SECRET` and provide
-`DATABASE_URL`. Known deployment variables also include `NODE_ENV`,
+Operators must inject or persist a strong `SESSION_SECRET`, inject a stable
+`SETTINGS_ENCRYPTION_KEY`, and provide `DATABASE_URL`. Known deployment
+variables also include `NODE_ENV`,
 `CORS_ORIGINS`, `PORT`, `HTTPS_PORT`, `WEB_DIST`, `STATE_DIR`, `UPLOADS_DIR`,
 `CERTS_DIR`, and the documented `ADFS_*` OIDC variables.  SMTP/LDAP settings
 are primarily administered in the application and must be protected in the

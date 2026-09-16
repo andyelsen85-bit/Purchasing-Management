@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 — Operator-managed settings encryption
+
+- Restored the production requirement for an independent
+  `SETTINGS_ENCRYPTION_KEY` and moved new SMTP, LDAP, and AD FS secret values
+  to the operator-keyed `scv3` envelope.
+- Added automatic migration from the embedded-key `scv2` compatibility format
+  and retained migration support for older `scv1` values.
+
 ## 1.3.0 — Deployment compatibility
 
 - Added a deployment compatibility mode that does not require

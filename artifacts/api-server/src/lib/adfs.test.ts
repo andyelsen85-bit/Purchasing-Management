@@ -19,6 +19,17 @@ import {
 } from "./adfs";
 import { establishAuthenticatedSession } from "./auth";
 
+const originalSettingsKey = process.env.SETTINGS_ENCRYPTION_KEY;
+
+test.beforeEach(() => {
+  process.env.SETTINGS_ENCRYPTION_KEY = "99".repeat(32);
+});
+
+test.afterEach(() => {
+  if (originalSettingsKey === undefined) delete process.env.SETTINGS_ENCRYPTION_KEY;
+  else process.env.SETTINGS_ENCRYPTION_KEY = originalSettingsKey;
+});
+
 test("return targets accept only local paths", () => {
   assert.equal(validateLocalReturnTarget("/workflows/7?tab=quotes"), "/workflows/7?tab=quotes");
   for (const value of ["https://evil.invalid", "//evil.invalid", "/\\evil", "/%zz", "/%0d%0a"]) {

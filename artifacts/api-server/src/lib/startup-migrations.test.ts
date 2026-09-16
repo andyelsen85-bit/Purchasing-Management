@@ -3,6 +3,17 @@ import test from "node:test";
 import { migrateSettingsData } from "./startup-migrations";
 import { decryptSettingSecret } from "./secret-crypto";
 
+const originalSettingsKey = process.env.SETTINGS_ENCRYPTION_KEY;
+
+test.beforeEach(() => {
+  process.env.SETTINGS_ENCRYPTION_KEY = "aa".repeat(32);
+});
+
+test.afterEach(() => {
+  if (originalSettingsKey === undefined) delete process.env.SETTINGS_ENCRYPTION_KEY;
+  else process.env.SETTINGS_ENCRYPTION_KEY = originalSettingsKey;
+});
+
 test("startup settings migration encrypts legacy secrets and preserves null precedence", () => {
   process.env.NODE_ENV = "development";
   const result = migrateSettingsData({

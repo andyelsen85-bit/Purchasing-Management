@@ -10,9 +10,11 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
 import { csrfProtection } from "./middlewares/csrf";
+import { assertSettingsEncryptionKey } from "./lib/secret-crypto";
 
 const PgStore = ConnectPgSimple(session);
 
+assertSettingsEncryptionKey();
 const app: Express = express();
 // The deployment has one known reverse-proxy hop (the Replit/dev proxy and
 // production ingress).  Express must be the sole authority for interpreting

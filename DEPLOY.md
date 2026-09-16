@@ -40,20 +40,17 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1     # Windows
 
 ```bash
 cp .env.example .env
-# Then edit .env and replace SESSION_SECRET with a long random value:
+# Then edit .env and replace both secrets with independent random values:
 #   SESSION_SECRET=$(openssl rand -hex 32)
+#   SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)
 ```
 
-This compatibility version does not require `SETTINGS_ENCRYPTION_KEY`.
-Persisted SMTP, LDAP, and AD FS values use an embedded compatibility key. This
-prevents plaintext storage but does not protect those values from an attacker
-who has both the database and application image.
-
-An upgrade that already contains `scv1` settings encrypted with a former
-operator-managed key should provide that old `SETTINGS_ENCRYPTION_KEY` for one
-successful boot. The startup migration rewrites recoverable values to `scv2`;
-the variable can then be removed. If the former key is unavailable, startup
-continues and the affected secret settings must be entered again.
+Production requires `SETTINGS_ENCRYPTION_KEY` as exactly 32 random bytes
+encoded as 64 hexadecimal characters (or a 32-byte base64/base64url value).
+Keep it stable, independent from `SESSION_SECRET`, and supply it through the
+deployment secret manager. On first startup, values written by the 1.3.0
+embedded-key compatibility release are automatically migrated from `scv2` to
+the operator-keyed `scv3` format.
 
 Docker Compose automatically loads `.env` from the directory you run
 `docker compose` in, so no extra flags are needed.
@@ -95,6 +92,7 @@ Provide these values through a secret manager or protected environment:
 | --- | --- |
 | `DATABASE_URL` | CHdN-managed PostgreSQL connection string; never the local Compose database. |
 | `SESSION_SECRET` | Optional override: at least 32 random characters, unique per environment. Otherwise generated in `STATE_DIR`. |
+| `SETTINGS_ENCRYPTION_KEY` | Required independent 32-byte key (64 hex characters recommended); keep stable and provide through the deployment secret manager. |
 | `NODE_ENV` | `production`. |
 | `CORS_ORIGINS` | Explicit origins when SPA and API are split; same-origin is preferred. |
 | `PORT`, `HTTPS_PORT` | HTTP/HTTPS listener ports as required by the edge. |
@@ -106,8 +104,13 @@ AD FS fallback variables (`ADFS_ENABLED`, `ADFS_ISSUER` or
 `ADFS_CA_PEM`) are listed in `.env.example`. Persisted Settings values take
 precedence. Register the exact callback documented in
 [`docs/adfs-oidc.md`](./docs/adfs-oidc.md). SMTP and LDAP values are managed
-in Settings. This compatibility version does not require a separate settings
-encryption environment variable.
+in Settings and encrypted with `SETTINGS_ENCRYPTION_KEY`.
+
+For upgrades from 1.3.0, provide the newly managed key and startup will migrate
+embedded-key `scv2` values to `scv3`. For older installations with `scv1`
+values, use the original settings key that encrypted those values; generating a
+replacement first makes them undecryptable. If that original key is lost,
+restore it from the protected deployment secret or backup before upgrading.
 
 ## 5. Backup retention and encryption
 
@@ -135,6 +138,15 @@ replicas.
 The value in `.env` is too short or matches a known placeholder
 (`change-me`, `dev-secret-change-me`, etc). Replace it with the output of
 `openssl rand -hex 32`.
+
+**`Settings encryption key is not configured`**
+Add `SETTINGS_ENCRYPTION_KEY` through the deployment secret manager. Generate
+32 random bytes as 64 hexadecimal characters with `openssl rand -hex 32`.
+Keep it stable and do not reuse `SESSION_SECRET`.
+
+**`Settings encryption key is invalid`**
+The value is malformed, not exactly 32 decoded bytes, or reuses the session
+secret. Generate a separate value with `openssl rand -hex 32`.
 
 ## Security policies
 
