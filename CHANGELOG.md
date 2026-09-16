@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.0 — Major version release
+
+- Updated the application, API, package metadata, and in-app version display
+  to 3.0.0.
+
 ## 1.5.0 — Immutable audit trail
 
 - Added an `ENABLE ALWAYS` PostgreSQL trigger that rejects direct updates,
