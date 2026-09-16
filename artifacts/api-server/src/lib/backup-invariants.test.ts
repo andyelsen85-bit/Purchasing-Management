@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getTableName, isTable } from "drizzle-orm";
+import * as schema from "@workspace/db/schema";
 import {
   backupJsonChunks,
   SESSION_TABLE_NAME,
@@ -9,13 +11,33 @@ import {
 import { decryptBackup, encryptBackup } from "./backup-crypto";
 
 test("backup inventory includes all persisted domain tables and never exports sessions", () => {
-  const names: string[] = TABLES.map((table) => table.name);
+  const names = TABLES.map((table) => table.name as string);
+  const intentionallyExcludedOperationalTables = new Set([
+    // Transient connect-pg-simple session stores are cleared, never exported.
+    SESSION_TABLE_NAME,
+    "sessions",
+  ]);
+  const schemaNames = Object.values(schema)
+    .filter(isTable)
+    .map(getTableName);
+  const expectedBackupNames = schemaNames.filter(
+    (name) => !intentionallyExcludedOperationalTables.has(name),
+  );
+
   assert.equal(SESSION_TABLE_NAME, "session");
   assert.equal(names.includes("session"), false);
   assert.equal(names.includes("sessions"), false);
-  assert.equal(names.includes("external_identity_mappings"), true);
-  assert.equal(names.includes("notification_rules"), true);
-  assert.equal(names.includes("service_signatures"), true);
+  assert.equal(new Set(names).size, names.length, "backup inventory has duplicate tables");
+  assert.equal(
+    new Set(schemaNames).size,
+    schemaNames.length,
+    "schema exports duplicate table declarations",
+  );
+  assert.deepEqual(
+    [...names].sort(),
+    [...expectedBackupNames].sort(),
+    "every persisted domain table must be covered by backup/restore",
+  );
 });
 
 test("backup snapshot wrapper sets repeatable-read and rolls back errors", async () => {

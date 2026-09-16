@@ -83,7 +83,12 @@ versioning, and complete audit logging.
 - **Dashboard** — counts per step, average time per step, stalled-workflow
   alerts, recent-activity feed, priority distribution.
 - **Audit log** — every login, mutation and document change recorded;
-  visible to admins only.
+  visible to admins only. PostgreSQL rejects direct updates, deletions, and
+  truncation; startup fails if that database protection is unavailable.
+- **CSRF protection** — every authenticated state-changing request must present
+  a session-bound token matching both the CSRF cookie and request header.
+- **Brute-force protection** — progressive per-account and per-IP lockouts
+  throttle repeated authentication failures without revealing account validity.
 - **Excel/CSV + PDF export** — workflows by department/step/date range;
   per-workflow PDF export and merged GT Invest packs.
 - **Soft-delete + restore** — deleted requests recoverable from the recycle
@@ -91,8 +96,9 @@ versioning, and complete audit logging.
 - **Internal notes per step** — discussion thread scoped to each step.
 - **Resizable, persisted UI** — sidebar widths stored per user.
 - **In-app backup & restore** — admins can download a single self-contained,
-  authenticated AES-256-GCM backup of every persisted table (documents
-  included as base64 inside the encrypted payload) and restore it
+  authenticated AES-256-GCM backup of every persisted domain table (the two
+  transient session stores are excluded; documents are included as base64
+  inside the encrypted payload) and restore it
   transactionally from the Settings page. The server-enforced restore-upload
   limit is **512 MiB (536,870,912 bytes)**.
 
@@ -271,6 +277,7 @@ Tables (Drizzle, schema file: `lib/db/src/schema/index.ts`):
 | `gt_invest_results`    | Catalog of committee decision options.                             |
 | `settings`             | Singleton JSONB row holding all runtime configuration.             |
 | `session`              | `connect-pg-simple` `express-session` store (excluded from backup and truncated transactionally on restore). |
+| `sessions`             | Legacy/alternate session-store declaration (excluded from backup and not restored). |
 | `tls_state`            | Generated CSRs, private keys (encrypted), imported chain.          |
 
 The `investmentForm` JSONB column on `workflows` stores the entire
@@ -600,18 +607,21 @@ See `tools/signing-agent/README.md` for the full operator + build reference.
   in `document_versions` with timestamps and uploader.
 - **Audit log** — `audit_log` table; logins, mutations, undo, deletes,
   permission changes, plus `BACKUP` and `RESTORE` events. Admin-only view,
-  accessed from **Paramètres → Journal d'audit**.
+  accessed from **Paramètres → Journal d'audit**. A database trigger rejects
+  direct `UPDATE`, `DELETE`, and `TRUNCATE`; API startup fails if the trigger
+  cannot be confirmed.
 - **Soft-delete + restore** — deleting a request flags it; admins can restore
   it from `/api/workflows/deleted`.
 - **In-app database backup & restore** — admin-only, served from Paramètres →
   Sauvegarde & Restauration:
-  - **`GET /api/admin/backup`** dumps every persisted table and returns an
+  - **`GET /api/admin/backup`** dumps every persisted domain table except the
+    two transient session-store tables and returns an
     authenticated AES-256-GCM `.backup` envelope. The operator supplies the
     passphrase in `X-Backup-Passphrase` (minimum 12 characters); it is never
     stored. Inside the envelope, document blobs are base64 in
     `documents` / `document_versions`, so the decrypted dump is
-    self-contained. Tables included (20 of 21 — the canonical `session` table
-     is excluded):
+    self-contained. Both `session` and the legacy/alternate `sessions` table
+    are explicitly excluded. Included domain tables:
 
         users, external_identity_mappings, notification_rules, departments, user_departments,
         companies, contacts, workflows, service_signatures, documents, document_versions,
@@ -630,9 +640,12 @@ See `tools/signing-agent/README.md` for the full operator + build reference.
     IDENTITY CASCADE`s all backed-up tables, streams the dump table-by-table
     back into Postgres in 1 000-row batches, refuses partial dumps and unknown
     tables, and finally bumps each serial sequence past the largest restored
-    id. Sessions are also cleared; the caller's own session is destroyed on
-    success — every signed-in user must re-authenticate. Any failure rolls the
-    whole transaction back, leaving the previous data intact.
+    id. The audit immutability trigger is suspended only inside this restore
+    transaction and is re-enabled before commit. The active `session` store is
+    cleared and neither session table is imported; the caller's own session is
+    destroyed on success, so every signed-in user must re-authenticate. Any
+    failure rolls the whole transaction back, leaving the previous data and
+    trigger state intact.
       Plaintext legacy JSON restores are development-only by default; a
       production import requires a short-lived audited exception. Apply the
       organisation's retention schedule to encrypted backup files and securely

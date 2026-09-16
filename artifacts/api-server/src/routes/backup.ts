@@ -41,6 +41,7 @@ import {
   MAX_BACKUP_BYTES,
   MAX_BACKUP_PLAINTEXT_BYTES,
 } from "../lib/backup-crypto";
+import { withAuditLogRestoreBypass } from "../lib/audit-immutability";
 
 const router: IRouter = Router();
 
@@ -114,9 +115,10 @@ export function withBackupSnapshot<T>(
 /**
  * GET /api/admin/backup
  *
- * Streams every persisted table (except the transient `session` table) through
- * authenticated encryption. Rows are paged from Postgres so neither the
- * complete database nor the encrypted response is held in memory.
+ * Streams every persisted domain table (except the transient `session` and
+ * `sessions` stores) through authenticated encryption. Rows are paged from
+ * Postgres so neither the complete database nor the encrypted response is held
+ * in memory.
  */
 router.get(
   "/admin/backup",
@@ -289,41 +291,43 @@ router.post(
 
       try {
         await db.transaction(async (tx) => {
-          // CASCADE so child FKs (when present) follow; RESTART IDENTITY
-          // so sequences zero out before we re-seed them.
-          const all = TABLES.map((x) => `"${x.name}"`).join(", ");
-          await tx.execute(
-            sql.raw(`truncate ${all} restart identity cascade`),
-          );
-           // connect-pg-simple uses the singular `session` table. Clear it
-           // in this same transaction so every pre-restore cookie is revoked.
-           await tx.execute(sql.raw(`truncate "${SESSION_TABLE_NAME}"`));
-
-          for (const meta of TABLES) {
-            await streamTableRows(parsePath, meta.name, async (batch) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await tx.insert(meta.t as any).values(batch as any);
-              restored += batch.length;
-            });
-          }
-
-          // Bump every serial sequence past the largest restored id so
-          // future inserts don't collide. Use the 3-arg form of setval
-          // and pass `is_called=false` when the table is empty so that
-          // the next nextval() returns 1 (rather than 2 with the 2-arg
-          // form, which always sets is_called=true).
-          for (const { name, hasSerial } of TABLES) {
-            if (!hasSerial) continue;
+          await withAuditLogRestoreBypass(tx, async () => {
+            // CASCADE so child FKs (when present) follow; RESTART IDENTITY
+            // so sequences zero out before we re-seed them.
+            const all = TABLES.map((x) => `"${x.name}"`).join(", ");
             await tx.execute(
-              sql.raw(
-                `select setval(
-                   pg_get_serial_sequence('"${name}"', 'id'),
-                   greatest((select coalesce(max(id), 0) from "${name}"), 1),
-                   (select count(*) > 0 from "${name}")
-                 )`,
-              ),
+              sql.raw(`truncate ${all} restart identity cascade`),
             );
-          }
+             // connect-pg-simple uses the singular `session` table. Clear it
+             // in this same transaction so every pre-restore cookie is revoked.
+             await tx.execute(sql.raw(`truncate "${SESSION_TABLE_NAME}"`));
+
+            for (const meta of TABLES) {
+              await streamTableRows(parsePath, meta.name, async (batch) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await tx.insert(meta.t as any).values(batch as any);
+                restored += batch.length;
+              });
+            }
+
+            // Bump every serial sequence past the largest restored id so
+            // future inserts don't collide. Use the 3-arg form of setval
+            // and pass `is_called=false` when the table is empty so that
+            // the next nextval() returns 1 (rather than 2 with the 2-arg
+            // form, which always sets is_called=true).
+            for (const { name, hasSerial } of TABLES) {
+              if (!hasSerial) continue;
+              await tx.execute(
+                sql.raw(
+                  `select setval(
+                     pg_get_serial_sequence('"${name}"', 'id'),
+                     greatest((select coalesce(max(id), 0) from "${name}"), 1),
+                     (select count(*) > 0 from "${name}")
+                   )`,
+                ),
+              );
+            }
+          });
         });
       } catch (err) {
         req.log?.error({ err }, "restore failed");

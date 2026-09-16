@@ -14,6 +14,7 @@ import {
 } from "./adfs";
 import type { AppSettings, AdfsConfigStored, LdapConfigStored, SmtpConfigStored } from "./settings";
 import { isDefaultBootstrapAdmin } from "./auth";
+import { installAndVerifyAuditLogProtection } from "./audit-immutability";
 
 /**
  * One-shot, idempotent data migrations that run on server boot.
@@ -26,6 +27,7 @@ import { isDefaultBootstrapAdmin } from "./auth";
  */
 export async function runStartupMigrations(): Promise<void> {
   try {
+    await installAndVerifyAuditLogProtection();
     await migrateSettingsSecrets();
     // Local temporary credentials are explicitly marked so an operator
     // cannot accidentally leave a bootstrap password in service.  The

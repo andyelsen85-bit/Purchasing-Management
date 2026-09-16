@@ -15,6 +15,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -36,12 +50,16 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Prepare test database
+        run: pnpm --filter @workspace/db push
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+
       - name: API tests
         run: pnpm --filter @workspace/api-server test
         env:
-          # Unit tests import the DB package for schema/query objects but never
-          # connect. CI has no provisioned database, so provide a non-secret,
-          # intentionally unreachable URL to satisfy module initialization.
+          # Most tests are isolated; the audit immutability regression test
+          # exercises PostgreSQL triggers against this disposable CI database.
           DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
 
       - name: Frontend tests

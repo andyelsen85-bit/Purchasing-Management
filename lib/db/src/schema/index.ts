@@ -287,6 +287,9 @@ export const historyTable = pgTable(
 export type DbHistory = typeof historyTable.$inferSelect;
 
 // ---------------- AUDIT LOG ----------------
+// UPDATE, DELETE, and TRUNCATE are rejected by a PostgreSQL trigger installed
+// and verified during API startup. Only the transactional restore path may
+// temporarily suspend that named trigger.
 export const auditLogTable = pgTable("audit_log", {
   id: serial("id").primaryKey(),
   actorId: integer("actor_id"),
