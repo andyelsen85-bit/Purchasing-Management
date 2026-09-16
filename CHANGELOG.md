@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0 — Immutable audit trail
+
+- Added an `ENABLE ALWAYS` PostgreSQL trigger that rejects direct updates,
+  deletes, and truncation of `audit_log`, with fail-closed startup verification.
+- Restricted audit-log replacement to the transactional restore path and added
+  live PostgreSQL tests for trigger tampering, restore success, and rollback.
+- Added automatic schema-to-backup coverage checks and documented CSRF,
+  authentication lockouts, audit protection, and session-store exclusions.
+
 ## 1.4.0 — Operator-managed settings encryption
 
 - Restored the production requirement for an independent
